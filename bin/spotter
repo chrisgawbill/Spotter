@@ -20,6 +20,18 @@ fi
 
 # A --repo outside the projects root (another clone or worktree) is mounted too.
 extra_mounts=()
+# Private state is opt-in and mounted read-only, separately from project exports.
+if [[ -n ${SPOTTER_AUTH_DIR:-} ]]; then
+  auth_dir=$(readlink -f "$SPOTTER_AUTH_DIR")
+  [[ -d $auth_dir ]] || { echo 'SPOTTER_AUTH_DIR must be a directory' >&2; exit 2; }
+  extra_mounts+=(-v "$auth_dir:/run/spotter-auth:ro")
+fi
+# Pass variable names, never credential values in Docker arguments.
+read -r -a auth_env_names <<< "${SPOTTER_AUTH_ENV:-}"
+for auth_env in "${auth_env_names[@]}"; do
+  [[ $auth_env =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || { echo 'Invalid SPOTTER_AUTH_ENV variable name' >&2; exit 2; }
+  extra_mounts+=(-e "$auth_env")
+done
 args=("$@")
 for ((i = 0; i < ${#args[@]}; i++)); do
   if [[ ${args[i]} == --repo && -n ${args[i + 1]:-} ]]; then

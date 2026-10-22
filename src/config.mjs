@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
 import { spotterRoot } from './paths.mjs';
+import { readSessionState } from './sessions.mjs';
 
 const projectsDir = path.join(spotterRoot, 'projects');
 
@@ -26,13 +27,19 @@ export async function listProjectNames() {
 }
 
 /** Loads, validates and fills defaults for a project config. Throws a readable error on bad config. */
-export async function loadProjectConfig(projectName) {
+export async function loadProjectConfig(projectName, { includeSessions = true } = {}) {
   const file = path.join(projectsDir, `${projectName}.yml`);
   const source = await readFile(file, 'utf8').catch(() => {
     throw new Error(`No project config at projects/${projectName}.yml`);
   });
   const config = YAML.parse(source) ?? {};
-  return normalizeConfig(config, { projectName, source });
+  const normalized = normalizeConfig(config, { projectName, source });
+  const hash = createHash('sha256').update(source);
+  for (const session of normalized.web?.sessions ?? []) {
+    if (includeSessions && session.storageState) hash.update(JSON.stringify(await readSessionState(session)));
+  }
+  normalized.configHash = hash.digest('hex').slice(0, 16);
+  return normalized;
 }
 
 /** Validates a parsed config object and applies defaults (exported for tests). */
@@ -44,11 +51,23 @@ export function normalizeConfig(config, { projectName, source = '' }) {
   }
   if (config.web) {
     const specs = config.web.specs;
-    if (specs !== undefined && (!specs || typeof specs !== 'object' || Array.isArray(specs) || !Array.isArray(specs.files) || !specs.files.length || specs.files.some((file) => typeof file !== 'string' || !file.trim() || path.isAbsolute(file) || file.split(/[\\/]/).includes('..')) || (specs.grep !== undefined && typeof specs.grep !== 'string'))) problems.push('`web.specs` needs nonempty project-relative `files` and optional string `grep`');
+    if (specs?.mode !== undefined) problems.push('`web.specs.mode` is selected by --live-auth, not project configuration');
+    if (specs !== undefined && (!specs || typeof specs !== 'object' || Array.isArray(specs)
+      || !validSpecFiles(specs.files) || (specs.grep !== undefined && typeof specs.grep !== 'string'))) {
+      problems.push('`web.specs` needs nonempty project-relative `files` and optional string `grep`');
+    }
+    if (specs?.live !== undefined) {
+      const live = specs.live;
+      if (!live || !validSpecFiles(live.files) || !isHttpUrl(live.baseURL)
+        || !Array.isArray(live.env) || live.env.some((name) => typeof name !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))) {
+        problems.push('`web.specs.live` needs project-relative files, an http(s) baseURL and env variable names');
+      }
+    }
     if (!config.web.build?.run) problems.push('`web.build.run` is required when `web` is set');
     const sessions = config.web.sessions ?? [];
-    if (!Array.isArray(sessions) || sessions.some((s) => !s || typeof s.name !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(s.name) || s.name === 'anonymous' || Object.hasOwn(Object.prototype, s.name) || !s.localStorage || typeof s.localStorage !== 'object' || Array.isArray(s.localStorage) || Object.values(s.localStorage).some((v) => typeof v !== 'string'))) problems.push('`web.sessions` needs unique names and string localStorage entries');
-    else if (new Set(sessions.map((s) => s.name)).size !== sessions.length) problems.push('`web.sessions` names must be unique');
+    if (!Array.isArray(sessions) || sessions.some((session) => !validSession(session))) {
+      problems.push('`web.sessions` needs unique names, string localStorage entries and/or an absolute storageState file, and optional storageOrigin');
+    } else if (new Set(sessions.map((s) => s.name)).size !== sessions.length) problems.push('`web.sessions` names must be unique');
     if (config.web.faultInjection) {
       if (typeof config.web.faultInjection !== 'object' || Array.isArray(config.web.faultInjection)) problems.push('`web.faultInjection` must be an object or false');
       const selector = config.web.faultInjection.loadingSelector;
@@ -89,4 +108,30 @@ function normalizeWebConfig(web) {
     api: web.api ? { fakeOrigin: 'http://api.spotter.test', ...web.api } : null,
     routes: web.routes.map((route) => (typeof route === 'string' ? { name: route, path: route } : route)),
   };
+}
+
+function validSpecFiles(files) {
+  return Array.isArray(files) && files.length > 0 && files.every((file) =>
+    typeof file === 'string' && file.trim() && !path.isAbsolute(file) && !file.split(/[\\/]/).includes('..'));
+}
+
+function validSession(session) {
+  if (!session || typeof session.name !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(session.name)
+    || session.name === 'anonymous' || Object.hasOwn(Object.prototype, session.name)) return false;
+  if (session.localStorage === undefined && session.storageState === undefined) return false;
+  if (session.localStorage !== undefined && (!session.localStorage || typeof session.localStorage !== 'object'
+    || Array.isArray(session.localStorage) || Object.values(session.localStorage).some((value) => typeof value !== 'string'))) return false;
+  if (session.storageState !== undefined && (typeof session.storageState !== 'string' || !path.isAbsolute(session.storageState))) return false;
+  return session.storageOrigin === undefined || isOrigin(session.storageOrigin);
+}
+
+function isHttpUrl(value) {
+  try {
+    const url = new URL(value);
+    return typeof value === 'string' && ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
+  } catch { return false; }
+}
+
+function isOrigin(value) {
+  return isHttpUrl(value) && new URL(value).origin === value;
 }

@@ -8,9 +8,10 @@ const MAX_PLACES_SHOWN = 6;
 /** Known gaps, listed in every report so agents don't assume coverage that isn't there. */
 function notChecked(run) {
   const web = run.head.stages.web;
+  if (web?.specs?.mode === 'live') return ['branch comparison or automatic route sweep (live specs only)'];
   const gaps = [];
   if (run.visual?.status !== 'compared') gaps.push('visual changes vs base');
-  if (!web?.sessions?.some((name) => name !== 'anonymous')) gaps.unshift('signed-in states (no sessions configured)');
+  if (!web?.sessions?.some((name) => name !== 'anonymous')) gaps.unshift('signed-in sweep (no sessions configured)');
   if (!web?.accessibility) gaps.unshift('accessibility (axe)');
   if (!web?.keyboard) gaps.unshift('keyboard smoke');
   if (!web?.faultVisits) gaps.unshift('slow or failing endpoints');
@@ -122,9 +123,13 @@ function renderStageSummary(run) {
     } else if (stage === 'rules') {
       lines.push(`- rules: ${summary.ruleCount} text rules, ${summary.boundaryCount} import boundaries`);
     } else if (stage === 'web') {
+      if (summary.specs?.mode === 'live') {
+        lines.push(`- live authentication: ${summary.specs.passed} passed, ${summary.specs.failed} failed, ${summary.specs.skipped} skipped (deployed app; no sweep)`);
+        continue;
+      }
       const fixtures = run.fixtures ? `fixtures recorded ${run.fixtures.recordedAt}` : 'no fixtures recorded';
       lines.push(`- web: ${summary.built ? `${summary.pages} pages (${summary.shape})` : 'build failed, sweep skipped'} · ${fixtures}${summary.faultVisits ? ` · ${summary.faultVisits} fault visits` : ''}`);
-      if (summary.specs) lines.push(`- project specs: ${summary.specs.passed} passed, ${summary.specs.failed} failed, ${summary.specs.skipped} skipped`);
+      if (summary.specs) lines.push(`- project specs${summary.specs.mode ? ` (${summary.specs.mode})` : ''}: ${summary.specs.passed} passed, ${summary.specs.failed} failed, ${summary.specs.skipped} skipped`);
     }
   }
   return lines;

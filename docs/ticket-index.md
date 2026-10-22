@@ -36,12 +36,14 @@ an agent should be able to act on `report.md` without opening anything else.
 | QA-04 | Accepted 2026-10-22: project-repo specs with named tests mapping Verify items; sample report accepted. |
 | QA-05 | Workflow documentation accepted by Product Owner 2026-10-22. |
 | QA-06 | Dashboard implementation and hosting checks ready for review; sample acceptance and persistent service activation pending. |
+| QA-07 | Generic auth support and sample report accepted 2026-10-22. |
 
 ## Dependency outline
 
 ```text
 QA-01 -> QA-02, QA-03, QA-04
 QA-01 -> QA-05
+QA-02, QA-04 -> QA-07
 ```
 
 ---
@@ -292,3 +294,88 @@ this ticket.
   both listeners bound only `100.87.100.20`, and loopback access was refused.
   Temporary servers were stopped. Persistent service installation and sample
   acceptance remain pending; setup is in `docs/dashboard.md`.
+
+---
+
+## QA-07 — Generic authentication flow testing
+
+**Status:** DONE — implementation and sample report accepted by Product Owner
+2026-10-22.
+
+**Goal:** projects can test sign-in flows and signed-in pages through Spotter,
+whether authentication uses a form, cookies, browser storage or an OAuth
+redirect/popup. Provider names, selectors, token formats and account assertions
+stay in project-owned specs and project configuration; none belong in `src/`.
+
+**Scope:**
+
+- Extend sessions to accept Playwright `storageState` files (cookies and
+  localStorage), retaining existing localStorage session configuration and
+  anonymous visits. Define file resolution and Docker mounting for private
+  session files outside the exported project checkout.
+- Use the existing project-spec adapter for interactive login, redirects and
+  popups; add shared capabilities only where the adapter prevents these flows.
+- Let project specs control authentication responses and assert request bodies,
+  including success, rejection, cancellation and expired sessions. Existing
+  method/URL fixture matching alone does not distinguish exchange payloads or
+  successive responses; avoid requiring a new fixture engine where explicit
+  Playwright routing suffices.
+- Support optional live authentication with test credentials supplied through
+  explicitly selected environment variables. Keep credentials and private
+  session files out of committed configuration and reports. Routine branch
+  checks use controlled responses; live checks are explicitly selected and
+  identified in results.
+- Report named flow failures through existing findings and baseline comparison.
+  Keep `report.md` short; attach useful failure evidence without exposing tokens,
+  passwords or OAuth codes.
+- Document the difference between seeded-session checks, simulated browser
+  sign-in and live authentication. Browser response replay does not verify
+  backend identity linking, encryption or provider configuration.
+
+**Verify:**
+
+- A generic cookie-based form-login example and a separate OAuth redirect
+  example both run through the same adapter without app/provider branches in
+  Spotter. Cover popup handling if shared support is added for it.
+- Session files work in Docker; anonymous and named sessions remain isolated;
+  existing localStorage configurations continue to work.
+- Named specs cover successful login, rejected login, session restoration,
+  expiry and sign-out; OAuth specs additionally cover state/PKCE assertions,
+  cancellation and callback cleanup.
+- Controlled authentication requests never reach live providers during routine
+  checks. Optional live mode gives an actionable failure for missing required
+  credentials, and secrets do not appear in reports or captured evidence.
+- Seeded flow defects appear as new findings against a healthy baseline.
+- Run `npm test`, relevant browser integrations, HockeyStats main and a seeded
+  branch. Adopt project-owned AUTH02/SIGNIN-01 specs in HockeyStats as the first
+  consumer; backend security assertions remain in its API tests.
+- Product Owner accepts a sample report.
+
+Depends on QA-02 and QA-04.
+
+**QA-07 evidence (2026-10-22):**
+
+- `npm test`: 30 tests pass. Five Docker browser integrations pass, including
+  generic form/cookie and OAuth flows, a seeded state-validation defect reported
+  as new, session isolation, one-time state seeding, private-output redaction,
+  live-mode selection and missing-credential errors.
+- Real Docker-wrapper checks: a private state file mounted read-only yields
+  two passing session specs; explicit live mode forwards a synthetic credential
+  and passes its selection smoke check without requiring the private state
+  mount. This does not establish real-provider sign-in.
+- Full HockeyStats main: the same 17 known finding groups. Full seeded branch:
+  seven new groups (six intended defects plus their landmark violation), 17
+  existing, zero fixed, no unrelated additions. Reports:
+  `~/spotter/hockeystats-webapp/runs/20261022-181645-main-31189b8b/report.md` and
+  `~/spotter/hockeystats-webapp/runs/20261022-181905-verify-browser-depth-defects-f03b10f1/report.md`.
+- HockeyStats owns `react/qa/sign-in.spec.mjs`: 24 passing dialog/Discord specs
+  at 375/1280 in light/dark. Its separate local `hockeystats-auth` config selects
+  the spec and a controlled Discord build; standard project sweeps keep their
+  existing configuration. Use `--working-tree --no-baseline` until the new spec
+  is committed and available for comparison. Auth fixtures have been recorded.
+  Final CLI report: `~/spotter/hockeystats-auth/runs/20261022-183619-working-tree-b5badd20/report.md`;
+  typecheck, unit tests, format and all 24 specs pass. The overall run exits 1
+  for nine other finding groups, each also present in the main report.
+- Usage and evidence boundaries: [authentication testing](authentication.md).
+  Product Owner accepted the sample report 2026-10-22. No real provider credentials
+  were used; backend security and a human screen-reader pass are not claimed.

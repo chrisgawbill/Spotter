@@ -47,3 +47,14 @@ test('HTML escapes report content and keeps image URLs relative', async () => {
   assert.match(html, /screenshots\/a%20%26%20b.png/);
   assert.match(html, /1 unchanged/);
 });
+
+test('live authentication is identified without claiming a failed build or branch comparison', () => {
+  const markdown = renderMarkdownReport({
+    project: 'demo', head: { label: 'auth (live authentication)', shortSha: 'abc', stages: { web: { pages: 0, specs: { mode: 'live', passed: 2, failed: 0, skipped: 0 } } } },
+    base: null, fixtures: null, comparison: { newFindings: [], existingFindings: [], fixedFindings: [] },
+    durationMs: 1000, paths: {},
+  });
+  assert.match(markdown, /live authentication: 2 passed/);
+  assert.match(markdown, /no sweep/);
+  assert.doesNotMatch(markdown, /build failed/);
+});

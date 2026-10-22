@@ -1,6 +1,8 @@
 import { createRequire } from 'node:module';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
+import { readSessionState, redactSecrets } from '../sessions.mjs';
 import { runCommand, lastLines } from '../exec.mjs';
 import { createFinding } from '../findings.mjs';
 
@@ -10,33 +12,50 @@ const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 /** Run the project's named Playwright tests against the already-built app. */
 export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrigin }) {
   const specs = config.web.specs;
+  const live = specs.mode === 'live';
+  const required = specs.live?.env ?? [];
+  if (live) for (const name of required) {
+    if (!process.env[name]?.trim()) throw new Error(`Live authentication requires environment variable ${name}`);
+  }
+  const secrets = required.map((name) => process.env[name]).filter(Boolean);
+  for (const session of live ? [] : config.web.sessions) {
+    const state = await readSessionState(session);
+    secrets.push(...state.cookies.map((cookie) => cookie.value), ...state.origins.flatMap((entry) => (entry.localStorage ?? []).map((item) => item.value)));
+  }
+  const redact = (value) => redactSecrets(value, secrets);
   const dir = path.join(logDir, 'specs');
   await mkdir(dir, { recursive: true });
-  const reportFile = path.join(dir, 'results.json');
-  const settingsFile = path.join(dir, 'settings.json');
+  const privateDir = await mkdtemp(path.join(os.tmpdir(), 'spotter-spec-run-'));
+  const reportFile = path.join(privateDir, 'results.json');
+  const settingsFile = path.join(privateDir, 'settings.json');
   const configFile = path.join(dir, 'playwright.config.mjs');
-  await writeFile(settingsFile, JSON.stringify({ web: config.web, fixtures, appOrigin }));
-  const testMatch = specs.files.map((file) => path.resolve(workdir, file).replaceAll('\\', '/'));
-  await writeFile(configFile, `const config = ${JSON.stringify({
-    testDir: workdir, testMatch, workers: 1, retries: 0, forbidOnly: true,
-    outputDir: path.join(dir, 'artifacts'), reporter: [['json', { outputFile: reportFile }]],
-    use: { baseURL: `${appOrigin}${config.web.base.replace(/\/?$/, '/')}`, serviceWorkers: 'block', reducedMotion: 'reduce' },
-  })}; ${specs.grep ? `config.grep = new RegExp(${JSON.stringify(specs.grep)});` : ''} export default config;\n`);
   let result;
+  let report;
   try {
+    await writeFile(settingsFile, JSON.stringify({ web: config.web, fixtures, appOrigin }));
+    const testMatch = (live ? specs.live.files : specs.files).map((file) => path.resolve(workdir, file).replaceAll('\\', '/'));
+    await writeFile(configFile, `const config = ${JSON.stringify({
+      testDir: workdir, testMatch, workers: 1, retries: 0, forbidOnly: true,
+      outputDir: path.join(privateDir, 'artifacts'), reporter: [['json', { outputFile: reportFile }]],
+      use: { baseURL: live ? specs.live.baseURL : `${appOrigin}${config.web.base.replace(/\/?$/, '/')}`, trace: 'off', screenshot: 'off', video: 'off', serviceWorkers: 'block', reducedMotion: 'reduce' },
+    })}; ${specs.grep ? `config.grep = new RegExp(${JSON.stringify(specs.grep)});` : ''} export default config;\n`);
     result = await runCommand(`${quote(process.execPath)} ${quote(path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'))} test --config ${quote(configFile)}`, {
-      cwd: workdir, logFile: path.join(dir, 'run.log'), env: {
+      cwd: workdir, env: {
+        ...Object.fromEntries(required.map((name) => [name, live ? process.env[name] : undefined])),
         SPOTTER_TEST_MODULE: new URL('./specsFixture.mjs', import.meta.url).href,
         SPOTTER_SPEC_SETTINGS: settingsFile,
       },
     });
+    report = await readFile(reportFile, 'utf8').then(JSON.parse).catch(() => null);
+    await writeFile(path.join(dir, 'run.log'), live ? 'Live authentication: raw output withheld to protect credentials.\n' : redact(result.output));
+    if (!live && report) await writeFile(path.join(dir, 'results.json'), JSON.stringify(redact(report), null, 2));
   } finally {
-    await rm(settingsFile, { force: true });
+    await rm(privateDir, { recursive: true, force: true });
   }
-  const report = await readFile(reportFile, 'utf8').then(JSON.parse).catch(() => null);
-  const findings = report ? specFindings(report, workdir) : [];
+  const findings = report ? specFindings(redact(report), workdir) : [];
   if (result.exitCode && !findings.length) findings.push(createFinding({ stage: 'web', check: 'project-spec', severity: 'high', title: 'project specs could not complete', detail: report?.errors?.map((error) => error.message).join('\n') || lastLines(result.output, 10), key: { reason: 'runner' } }));
-  return { findings, summary: { passed: report?.stats?.expected ?? 0, failed: findings.length, skipped: report?.stats?.skipped ?? 0 } };
+  for (const finding of findings) finding.detail = live ? 'Live authentication failed; inspect the named project spec. Raw output and browser artifacts are withheld.' : redact(finding.detail ?? '');
+  return { findings, summary: { mode: live ? 'live' : 'replay', passed: report?.stats?.expected ?? 0, failed: findings.length, skipped: report?.stats?.skipped ?? 0 } };
 }
 
 /** Identify failures by file, test name and project, independently of source lines. */

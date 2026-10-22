@@ -10,6 +10,7 @@ import { recordFixtures, replayFixtures } from '../fixtures.mjs';
 import { startStaticServer } from '../staticServer.mjs';
 import { findHorizontalOverflow, measureVisibleContent } from './pageProbes.mjs';
 import { runSpecsStage } from './specs.mjs';
+import { sessionStorageState, redactSecrets } from '../sessions.mjs';
 
 const require = createRequire(import.meta.url);
 const axePath = require.resolve('axe-core/axe.min.js');
@@ -25,6 +26,12 @@ const MAX_NETWORK_WAIT_MS = 15_000;
  */
 export async function runWebStage({ config, workdir, logDir, screenshotDir, fixtures, mode = 'sweep', recordedEntries, log = () => {} }) {
   const web = config.web;
+  if (web.specs?.mode === 'live') {
+    log('live authentication specs');
+    const specs = await runSpecsStage({ config, workdir, logDir, fixtures: null, appOrigin: new URL(web.specs.live.baseURL).origin });
+    log('live authentication specs', 'done');
+    return { findings: specs.findings, summary: { pages: 0, specs: specs.summary } };
+  }
   log('web build');
   const build = await buildApp({ config, workdir, logDir });
   log('web build', 'done');
@@ -114,23 +121,17 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
   const requests = new Set();
   let loading = [];
   let blank = false;
+  const storageState = await sessionStorageState(session, appOrigin, web.colorSchemeStorage?.[colorScheme]);
+  const secrets = session.storageState ? [...storageState.cookies.map((cookie) => cookie.value), ...storageState.origins.flatMap((origin) => origin.localStorage.map((entry) => entry.value))] : [];
   const sessionFixtures = session.name === 'anonymous' ? fixtures : { ...fixtures, entries: fixtures?.sessions?.[session.name] ?? {} };
   const screenshotName = `${route.name}-${viewport.width}-${colorScheme}-${session.name}${fault ? `-${fault.kind}-${createHash('sha1').update(fault.key).digest('hex').slice(0, 10)}` : ''}`;
-  const where = `${route.path} [${session.name}]${fault ? ` ${fault.kind} ${fault.key}` : ''} @${viewport.width} ${colorScheme}`;
+  const where = redactSecrets(`${route.path} [${session.name}]${fault ? ` ${fault.kind} ${fault.key}` : ''} @${viewport.width} ${colorScheme}`, secrets);
   log(`browser: ${where}`);
   const problems = [];
   const report = (problem) => problems.push(problem);
 
-  const context = await browser.newContext({ viewport, colorScheme, serviceWorkers: 'block', reducedMotion: 'reduce' });
+  const context = await browser.newContext({ viewport, colorScheme, storageState, serviceWorkers: 'block', reducedMotion: 'reduce' });
   if (fixtures?.recordedAt) await context.clock.setFixedTime(new Date(fixtures.recordedAt));
-  const seededStorage = { ...session.localStorage, ...web.colorSchemeStorage?.[colorScheme] };
-  if (seededStorage) {
-    // Apps with their own theme switch read it from storage rather than prefers-color-scheme.
-    await context.addInitScript(({ entries, origin }) => {
-      if (location.origin !== origin) return;
-      for (const [key, value] of Object.entries(entries)) localStorage.setItem(key, value);
-    }, { entries: seededStorage, origin: appOrigin });
-  }
   if (web.api && mode === 'record') {
     await recordFixtures(context, { fakeOrigin: web.api.fakeOrigin, liveOrigin: web.api.recordFrom, appOrigin, entries: session.name === 'anonymous' ? recordedEntries.entries : (recordedEntries.sessions[session.name] ??= {}) });
   } else if (web.api) {
@@ -187,9 +188,9 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
         if (web.accessibility) await runAccessibility(page, axePath, report);
       }
       const screenshotFile = path.join(screenshotDir, `${screenshotName}.png`);
-      await page.screenshot({ path: screenshotFile, fullPage: true, animations: 'disabled' });
+      if (!session.storageState) await page.screenshot({ path: screenshotFile, fullPage: true, animations: 'disabled' });
       if (!fault && web.keyboard) await runKeyboardSmoke(page, report);
-      problems.forEach((problem) => (problem.artifacts = [screenshotFile]));
+      problems.forEach((problem) => (problem.artifacts = session.storageState ? [] : [screenshotFile]));
     }
   } catch (error) {
     if (mode === 'record') throw error;
@@ -202,7 +203,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
   if (mode === 'record') return { findings: [] };
   return {
     requests: [...requests], job, loading, blank,
-    findings: problems.map((problem) =>
+    findings: redactSecrets(problems, secrets).map((problem) =>
       createFinding({
         stage: 'web',
         severity: problem.severity,

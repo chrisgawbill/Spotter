@@ -19,7 +19,7 @@ import { runWebStage } from './stages/web.mjs';
 
 const USAGE = `Spotter — automatic QA that reports what is new on a branch.
 
-  spotter run <project> [--ref <ref>] [--repo <path>] [--working-tree] [--no-baseline] [--skip static,rules,web]
+  spotter run <project> [--ref <ref>] [--repo <path>] [--working-tree] [--no-baseline] [--live-auth] [--skip static,rules,web]
       Check <ref> (default: the checkout's HEAD) against its merge base with
       the base branch. --repo checks another clone or worktree of the project;
       --working-tree includes uncommitted changes. Prints report.md; exit 1 if anything new is high
@@ -48,6 +48,7 @@ export function parseArguments(argv) {
     else if (flag === '--repo') options.repo = path.resolve(flags[++index]);
     else if (flag === '--working-tree') options.workingTree = true;
     else if (flag === '--no-baseline') options.noBaseline = true;
+    else if (flag === '--live-auth') options.liveAuth = true;
     else if (flag === '--merge') options.merge = true;
     else if (flag === '--skip') {
       for (const stage of flags[++index].split(',')) options.skip.add(stage.trim());
@@ -73,8 +74,14 @@ async function runCommandLine(argv) {
     console.log(USAGE);
     return options.command && options.command !== 'help' ? EXIT_ERROR : EXIT_PASS;
   }
-  const projectConfig = await loadProjectConfig(options.project);
+  const projectConfig = await loadProjectConfig(options.project, { includeSessions: !options.liveAuth });
   const config = options.repo ? { ...projectConfig, repo: options.repo } : projectConfig;
+  if (options.liveAuth) {
+    if (options.command !== 'run' || !config.web?.specs?.live) throw new Error('--live-auth requires run and web.specs.live configuration');
+    if (options.skip.has('web')) throw new Error('--live-auth cannot be combined with --skip web');
+    config.web.specs = { ...config.web.specs, mode: 'live' };
+    options.noBaseline = true;
+  }
   return options.command === 'run' ? runProject(config, options) : recordProject(config, options);
 }
 
@@ -85,8 +92,8 @@ async function runProject(config, options) {
   const headRef = options.ref ?? 'HEAD';
   const headSha = await resolveCommit(config.repo, headRef);
   const baseSha = options.noBaseline ? null : await findMergeBase(config.repo, config.baseBranch, headSha);
-  const fixtures = config.web?.api ? await loadFixtures(directories.fixtures) : null;
-  if (config.web?.api && !fixtures) log(`no fixtures yet — run: spotter record ${config.name}`);
+  const fixtures = config.web?.api && !options.liveAuth ? await loadFixtures(directories.fixtures) : null;
+  if (config.web?.api && !fixtures && !options.liveAuth) log(`no fixtures yet — run: spotter record ${config.name}`);
 
   const runDir = path.join(directories.runs, process.env.SPOTTER_RUN_ID ?? `${timestampForPath()}-${slugify(options.workingTree ? 'working-tree' : headRef)}-${randomUUID().slice(0, 8)}`);
   const workRoot = path.join(directories.work, path.basename(runDir));
@@ -123,7 +130,7 @@ async function runProject(config, options) {
 
     const run = {
       project: config.name,
-      head: { label: options.workingTree ? `${headRef} + working tree` : headRef, sha: headSha, shortSha: headSha.slice(0, 7), stages: head.stages },
+      head: { label: `${options.workingTree ? `${headRef} + working tree` : headRef}${options.liveAuth ? ' (live authentication)' : ''}`, sha: headSha, shortSha: headSha.slice(0, 7), stages: head.stages },
       base: baseSha ? { label: `${config.baseBranch} merge base`, sha: baseSha, shortSha: baseSha.slice(0, 7) } : null,
       fixtures: fixtures ? { recordedAt: fixtures.recordedAt, hash: fixtures.hash } : null,
       comparison,

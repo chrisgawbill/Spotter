@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Authentication example</title>
+<main><h1>Account</h1><p role="status">Signed out</p>
+<form><label>Email <input name="email" type="email"></label><label>Password <input name="password" type="password"></label><button>Sign in</button></form>
+<button id="oauth">Continue with provider</button><button id="logout">Sign out</button></main>
+<script type="module">
+const status = document.querySelector('[role=status]');
+async function restore() {
+  const response = await fetch('/api/me');
+  status.textContent = response.ok ? 'Signed in' : 'Signed out';
+}
+document.querySelector('form').onsubmit = async (event) => {
+  event.preventDefault();
+  const response = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) });
+  if (response.ok) await restore(); else status.textContent = 'Sign-in rejected';
+};
+document.querySelector('#logout').onclick = async () => { await fetch('/api/logout', { method: 'POST' }); await restore(); };
+document.querySelector('#oauth').onclick = async () => {
+  const state = crypto.randomUUID();
+  const verifier = crypto.randomUUID() + crypto.randomUUID();
+  sessionStorage.setItem('pending', JSON.stringify({ state, verifier }));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = btoa(String.fromCharCode(...new Uint8Array(digest))).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+  const query = new URLSearchParams({ state, code_challenge: challenge, code_challenge_method: 'S256', response_type: 'code', redirect_uri: location.origin + '/' });
+  location.assign('https://identity.example/authorize?' + query);
+};
+const query = new URLSearchParams(location.search);
+if (query.has('code') || query.has('error')) {
+  const pending = JSON.parse(sessionStorage.getItem('pending') || 'null');
+  sessionStorage.removeItem('pending');
+  history.replaceState(null, '', location.pathname);
+  if (query.has('code') && pending?.state === query.get('state')) {
+    await fetch('/api/exchange', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: query.get('code'), codeVerifier: pending.verifier, redirectUri: location.origin + '/' }) });
+  }
+}
+await restore();
+</script></html>

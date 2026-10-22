@@ -47,7 +47,7 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `web.api` | `envVar` the build reads the API origin from; `recordFrom` live API for `record` |
 | `web.routes[]` | `{ name, path }` (hash routes include `#/`) |
 | `web.viewports`, `web.colorSchemes` | Widths (or `{ width, height }`) and `light`/`dark` |
-| `web.sessions` | Additional `{ name, localStorage }` sessions; anonymous visits always run |
+| `web.sessions` | Additional `{ name, localStorage }` or `{ name, storageState, storageOrigin }` sessions; anonymous visits always run |
 | `web.specs` | Optional `{ files: ['qa/ticket.spec.mjs'], grep: 'Verify' }`; project-owned Playwright tests run against the same build and recorded fixtures |
 | `web.settleMs`, `web.pageTimeoutMs`, `web.concurrency` | Healthy-page settling delay, navigation timeout and parallel visits |
 | `web.accessibility`, `web.keyboard` | Enable axe and advisory Tab/focus checks (both default true) |
@@ -134,6 +134,15 @@ to observe pending requests. Choose settling and fault budgets that allow the
 app's retry window to finish. Set `web.faultInjection: false` to skip this sweep.
 Screenshots include session and fault identity. Visual comparisons and manual
 keyboard/accessibility judgment remain outside this ticket.
+
+## Authentication flows
+
+[Authentication testing](docs/authentication.md) covers cookie/localStorage
+sessions, project-owned form and OAuth specs, and optional live checks selected
+with `--live-auth`. Provider behavior stays in project specs. Private state is
+mounted with `SPOTTER_AUTH_DIR`; live credential variable names are forwarded
+with `SPOTTER_AUTH_ENV`. See the generic runnable examples in
+[`examples/authentication/`](examples/authentication/).
 
 ## Project specs and API contracts
 
