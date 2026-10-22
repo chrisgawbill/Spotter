@@ -34,7 +34,7 @@ an agent should be able to act on `report.md` without opening anything else.
 | QA-02 | Approved 2026-10-22: localStorage sessions; serious/critical axe violations block, others advisory. Sample report accepted 2026-10-22. |
 | QA-03 | Jenkins job shape, the Tailscale port for the HTML report, and whether to post PR comments (needs a GitHub token on the server). |
 | QA-04 | Accepted 2026-10-22: project-repo specs with named tests mapping Verify items; sample report accepted. |
-| QA-05 | Changes to HockeyStatsWebApp's agent workflow docs. |
+| QA-05 | Workflow documentation accepted by Product Owner 2026-10-22. |
 
 ## Dependency outline
 
@@ -210,11 +210,19 @@ drift remains advisory and is saved alongside fixture snapshots.
 
 ## QA-05 — Adopt Spotter in HockeyStatsWebApp's agent workflow
 
-**Status:** IDEA
+**Status:** DONE — workflow documentation accepted by Product Owner 2026-10-22.
 
 - `docs/agent-development.md`: coder runs Spotter before handing off; QA
   worker starts from `report.md` and only checks ticket-specific criteria and
   rendered judgment calls.
+
+The workflow now includes committed-ref and working-tree commands, exact run
+artifact handoff, exit-code interpretation, and report-first QA. Ticket-required
+checks outside Spotter coverage and human acceptance remain required.
+
+Verification: independent documentation review passed; all eight Spotter test
+files passed. The main run completed with 17 existing/advisory findings. Seeded
+defect verification was not rerun for this documentation change.
 
 
 ---
@@ -223,9 +231,36 @@ drift remains advisory and is saved alongside fixture snapshots.
 
 **Status:** IDEA — proposed by Product Owner 2026-10-22.
 
+- Product Owner decisions: start runs from the dashboard; text activity first;
+  self-hosted access restricted to devices on the Tailscale network.
 - Project overview and recent runs, with pass/fail status.
-- Links to actionable findings and before/after/diff review.
-- Read existing `report.json` artifacts; decide dashboard scope before starting.
+- Start a run by selecting a configured project and a branch.
+- Show running tests/runs with live progress and their current activity.
+- List completed test reports. Clicking a report opens it inside the dashboard,
+  including actionable findings, check results, screenshots, and before/after/diff
+  review.
+- Provide a live text activity page showing what has completed and what is
+  currently running: stage/check and browser route/scenario when applicable.
+  Keep the initial implementation simple. Auto-refreshing browser screenshots
+  or live video are deferred enhancements.
+- Read existing `report.json` artifacts for completed runs; add live progress
+  data for active runs.
+- Serve only on the Tailscale network; no user sign-in in the initial scope.
+- Use `@chrisgawbill/aero-md3-core`, the shared UI styling library used by
+  HockeyStatsWebApp. Import its `core.css` and reuse its design tokens and
+  component styles for the dashboard.
+
+**Verify:**
+
+- Selecting a configured project and branch starts a run and opens its activity
+  page; the page identifies the selected project and branch.
+- A running run appears and updates its current activity without a page reload;
+  its final status and report become available when it completes or fails.
+- A completed report can be opened and read inside the dashboard, including
+  findings and associated visual evidence.
+- The activity page shows completed and current work, including the current
+  browser scenario when applicable, and makes the last update time clear.
+- Hosting restricts dashboard and run-control access to the Tailscale network.
 
 Depends on QA-03. Live hosting and Jenkins activation can be coordinated with
 this ticket.
