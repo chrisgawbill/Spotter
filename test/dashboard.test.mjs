@@ -216,6 +216,18 @@ test('folder setup drafts nested apps without executing scripts and confines bro
     assert.equal(npm.install, 'npm ci');
     assert.deepEqual(npm.checks.map((check) => check.name), ['test']);
     assert.equal(npm.web, undefined);
+    await writeFile(path.join(app, 'package.json'), JSON.stringify({ scripts: { build: 'next build' }, dependencies: { next: '*' } }));
+    await writeFile(path.join(app, 'next.config.ts'), "export default { output: 'export', basePath: '/portal' };");
+    await mkdir(path.join(app, 'app/about'), { recursive: true });
+    await writeFile(path.join(app, 'app/about/page.tsx'), 'export default function Page() { return <h1>About</h1>; }');
+    const next = YAML.parse((await (await setup(app)).json()).source);
+    assert.equal(next.web.build.outDir, 'out');
+    assert.equal(next.web.base, '/portal');
+    assert.deepEqual(next.web.routes.map((route) => route.path), ['/about']);
+    await writeFile(path.join(app, 'next.config.ts'), "export default { output: 'standalone' };");
+    const serverApp = await (await setup(app)).json();
+    assert.equal(YAML.parse(serverApp.source).web, undefined);
+    assert.match(serverApp.notes.join(' '), /Discovered route URLs: \/about/);
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));

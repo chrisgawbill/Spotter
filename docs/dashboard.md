@@ -111,13 +111,28 @@ contains `package.json`, then choose **Generate configuration**. When a selected
 repository has exactly one immediate app subfolder, Spotter selects it automatically. Spotter detects
 the repository, default branch, app subdirectory, npm/pnpm/Yarn/Bun install
 command, common check scripts and Vite/Create React App static build defaults.
+Route discovery identifies the frontend from dependencies and source: React
+Router JSX/object routes, Vue Router and Angular route arrays (including relative
+imports), and file-based pages in Next.js, Nuxt, SvelteKit and Astro. It joins
+nested routes, recognizes hash URLs and excludes framework layouts, API handlers
+and private pages. Literal build base paths and output directories are detected
+without executing project source. Next static exports, Nuxt generate, static
+SvelteKit, Astro, Vue CLI and unambiguous Angular build output can also receive
+browser-check drafts; server-only or unknown builds get setup guidance and a list
+of detected URLs instead.
+
+Dynamic parameters, catch-all paths, computed route lists, unresolved aliases,
+lazy-loaded route fragments and custom file conventions require review and
+concrete sample URLs. Discovery lists these gaps instead of inventing IDs.
+The source scan is capped at 500 files and 1 MB per file and reports skipped or
+unparseable source. It does not promise all runtime-generated routes.
 The generated YAML opens in the existing editor; review it and click **Save
 configuration**. Existing configurations are never overwritten by generation.
 
 Detection reads Git metadata and `package.json`; it does not install dependencies
 or execute app scripts. Watch/fix/write check scripts are skipped. Other stacks
 receive a minimal draft with guidance. Review custom build output and base path,
-add routes beyond the home page, and supply project rules, API fixture settings,
+review detected routes and supply project rules, API fixture settings,
 private sessions and project-owned specs as needed. Monorepos may require
 adjusting install commands. Folder browsing follows the configured server root,
 not folders on the device running your browser. Custom roots must be mounted

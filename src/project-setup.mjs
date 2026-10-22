@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import YAML from 'yaml';
+import { discoverRoutes } from './route-discovery.mjs';
 import { normalizeConfig } from './config.mjs';
 
 const exec = promisify(execFile);
@@ -25,10 +26,10 @@ export async function browseProjects(root, requested) {
     .map((entry) => ({ name: entry.name, path: path.join(folder, entry.name) })).sort((a, b) => a.name.localeCompare(b.name)) };
 }
 
-async function readPackage(root, folder) {
-  const file = await realpath(path.join(folder, 'package.json'));
+async function readPackage(root, folder, name = 'package.json') {
+  const file = await realpath(path.join(folder, name));
   await projectFolder(root, path.dirname(file));
-  if ((await stat(file)).size > 1_048_576) throw new Error('package.json is too large');
+  if ((await stat(file)).size > 1_048_576) throw new Error(`${name} is too large`);
   return JSON.parse(await readFile(file, 'utf8'));
 }
 
@@ -74,10 +75,40 @@ export async function detectProject(root, requested) {
       config.checks.push({ name, run, parser: 'generic', severity: name === 'format:check' ? 'low' : 'high' });
     }
     const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-    if (typeof scripts.build === 'string' && (deps.vite || deps['react-scripts']) && !/\bvite\s+build\b[^;&]*--ssr/.test(scripts.build)) {
-      config.web = { build: { run: `${manager} run build`, outDir: deps['react-scripts'] ? 'build' : 'dist' }, routes: [{ name: 'home', path: '/' }], viewports: [375, 1280], colorSchemes: ['light', 'dark'] };
-      notes.push('Web defaults assume a static build: verify output directory, base path and routes (including hash routing). Record API fixtures before running API-backed pages.');
-    } else notes.push('Browser checks were not generated: configure a static build command, output directory and routes for this app.');
+    const sourceFiles = (await git('ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', '.')).split('\0').filter(Boolean);
+    const discovered = await discoverRoutes(folder, sourceFiles, deps);
+    notes.push(...discovered.notes);
+    let buildScript = 'build';
+    let output = deps['react-scripts'] ? 'build' : deps.next && discovered.staticExport ? 'out' : deps['@sveltejs/adapter-static'] ? 'build' : 'dist';
+    let supported = deps.vite || deps['react-scripts'] || deps['@vue/cli-service'] || deps.astro && !discovered.serverBuild
+      || deps.next && discovered.staticExport || deps['@sveltejs/adapter-static'];
+    if (deps.next) supported = discovered.staticExport;
+    if (deps['@sveltejs/kit']) supported = !!deps['@sveltejs/adapter-static'];
+    if (deps.astro) supported = !discovered.serverBuild;
+    if (deps.nuxt) supported = false;
+    if (deps.nuxt && typeof scripts.generate === 'string') { buildScript = 'generate'; output = /^\D*2\./.test(deps.nuxt) ? 'dist' : '.output/public'; supported = true; }
+    if (deps['@angular/core'] && files.includes('angular.json')) {
+      const angular = await readPackage(root, folder, 'angular.json');
+      const projects = Object.values(angular.projects ?? {});
+      if (projects.length === 1) {
+        const build = projects[0].architect?.build ?? projects[0].targets?.build;
+        const options = build?.options ?? {};
+        if (options.outputPath) {
+          output = typeof options.outputPath === 'string' ? path.posix.join(options.outputPath, build.builder?.endsWith(':application') ? 'browser' : '')
+            : path.posix.join(options.outputPath.base, options.outputPath.browser ?? 'browser');
+          if (options.baseHref) discovered.base = options.baseHref;
+          supported = true;
+        }
+      } else notes.push('Multiple Angular build targets found; select the app build and output directory manually.');
+    }
+    if (typeof scripts[buildScript] === 'string' && supported && !/\bvite\s+build\b[^;&]*--ssr/.test(scripts[buildScript])) {
+      config.web = { build: { run: `${manager} run ${buildScript}`, outDir: discovered.outDir ?? output }, base: discovered.base,
+        routes: discovered.routes, viewports: [375, 1280], colorSchemes: ['light', 'dark'] };
+      notes.push('Review static build output and record API fixtures before running API-backed pages.');
+    } else {
+      notes.push('Browser checks were not generated: this build is unknown or needs a server. Configure a static export/build command and output directory.');
+      notes.push(`Discovered route URLs: ${discovered.routes.map((route) => route.path).join(', ')}.`);
+    }
   } else notes.push('No package.json in this folder. Select the app subfolder for script detection, or add install/check/build commands manually.');
   if (!config.checks.length) notes.push('No supported check scripts found; add checks manually.');
   const name = path.basename(repo).toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'my-app';
