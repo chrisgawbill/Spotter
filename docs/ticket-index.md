@@ -30,8 +30,8 @@ an agent should be able to act on `report.md` without opening anything else.
 
 | Ticket | Human decision or review checkpoint |
 | --- | --- |
-| QA-01 | Approved 2026-10-22 (decisions above). Product Owner reviews a sample report against HockeyStatsWebApp. |
-| QA-02 | How signed-in state is faked; which accessibility rules are blocking vs advisory. |
+| QA-01 | Sample report accepted 2026-10-22. |
+| QA-02 | Approved 2026-10-22: localStorage sessions; serious/critical axe violations block, others advisory. Sample report accepted 2026-10-22. |
 | QA-03 | Jenkins job shape, the Tailscale port for the HTML report, and whether to post PR comments (needs a GitHub token on the server). |
 | QA-04 | Where project specs live (project repo vs Spotter) and how a ticket's Verify list maps to a spec. |
 | QA-05 | Changes to HockeyStatsWebApp's agent workflow docs. |
@@ -47,8 +47,8 @@ QA-01 -> QA-05
 
 ## QA-01 — Spotter MVP: static checks, rendered sweep, short report
 
-**Status:** ACTIVE — implemented and verified 2026-10-22; pending Product
-Owner review of a sample report. Verify results: 14 unit tests pass; `main`
+**Status:** DONE — sample report accepted by Product Owner 2026-10-22.
+Verify results: 14 unit tests pass; `main`
 against itself gives 6 issues, all confirmed real (see "Found on main");
 the seeded branch reported each of its 5 defects as new and nothing else
 besides Prettier on the edited file (~45s per run; base results cached).
@@ -113,7 +113,9 @@ checks (QA-04).
 
 ## QA-02 — Depth: accessibility, fault injection, signed-in state
 
-**Status:** IDEA
+**Status:** DONE — implemented, verified and sample report accepted by Product
+Owner 2026-10-22. Approved defaults: localStorage session
+seeding; serious/critical axe violations block, others are advisory.
 
 - axe-core on every swept page; serious/critical new violations reported.
 - Fault injection: each recorded endpoint returns 500, then is delayed, one at
@@ -121,6 +123,34 @@ checks (QA-04).
 - Signed-in sweep: config hook to seed a session (e.g. localStorage token)
   with recorded authenticated fixtures.
 - Keyboard smoke: tab order reaches every interactive element; focus visible.
+
+**Verify:**
+
+- Unit checks for session/fault configuration and endpoint-specific replay.
+- Browser regression: anonymous and signed-in recording/replay stay isolated;
+  seeded axe, keyboard, crash, blank-page and stuck-loading defects are new
+  against a healthy baseline; delayed requests can recover.
+- HockeyStatsWebApp main sweep and a throwaway branch with seeded type, test,
+  import, overflow, accessibility and keyboard defects.
+- Product Owner accepts the sample report.
+
+**Evidence (2026-10-22):**
+
+- `npm test` passes; 17 unit/browser tests pass in the Docker image. The browser
+  regression covers isolated session recording/replay and seeded accessibility,
+  keyboard, crash, blank-page and loading failures against a healthy baseline.
+- Full main run: 66 page variants and 308 endpoint-fault visits. Existing API,
+  layout, boundary and accessibility findings remain; keyboard focus checks are
+  advisory. Signed-in HockeyStats visits need a configured test session.
+- Seeded branch: all six intended defects are new (type, test, import, overflow,
+  unnamed button, unreachable button), plus the seeded content's landmark
+  violation: seven groups total, zero fixed, no unrelated new findings.
+  Sample: `~/spotter/hockeystats-webapp/runs/20261022-053311-verify-browser-depth-defects/report.md`.
+- Real-run timing/status false positives led to project config corrections:
+  wait for retries, including four delayed attempts; match actual spinners,
+  excluding valid empty-state status regions. Focused recheck: three affected
+  routes, 78 endpoint-fault visits, zero unexpected fault/navigation findings.
+  Evidence: `/tmp/spotter-depth-recheck/output/result.json`.
 
 ---
 

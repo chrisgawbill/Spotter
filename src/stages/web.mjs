@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { runAccessibility, runKeyboardSmoke } from './accessibility.mjs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
@@ -6,6 +9,9 @@ import { createFinding } from '../findings.mjs';
 import { recordFixtures, replayFixtures } from '../fixtures.mjs';
 import { startStaticServer } from '../staticServer.mjs';
 import { findHorizontalOverflow, measureVisibleContent } from './pageProbes.mjs';
+
+const require = createRequire(import.meta.url);
+const axePath = require.resolve('axe-core/axe.min.js');
 
 const QUIET_NETWORK_MS = 500;
 const MAX_NETWORK_WAIT_MS = 15_000;
@@ -22,17 +28,30 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
   if (build.finding) return { findings: [build.finding], summary: { built: false, pages: 0 } };
 
   const server = await startStaticServer(path.join(workdir, web.build.outDir), web.base);
-  const browser = await chromium.launch();
+  let browser;
   try {
+    browser = await chromium.launch();
     const jobs = listPageJobs(web, mode);
     await mkdir(screenshotDir, { recursive: true });
     const results = await runPool(jobs, web.concurrency, (job) =>
       visitPage({ browser, job, config, fixtures, mode, recordedEntries, appOrigin: server.origin, screenshotDir }),
     );
-    const shape = `${web.routes.length} routes × ${web.viewports.length} viewports × ${mode === 'record' ? 1 : web.colorSchemes.length} schemes`;
-    return { findings: results.flatMap((result) => result.findings), summary: { built: true, pages: jobs.length, shape, variantCount: web.viewports.length * web.colorSchemes.length } };
+    const faultJobs = [];
+    if (mode === 'sweep' && web.api && web.faultInjection) {
+      for (let i = 0; i < results.length; i++) {
+        if (jobs[i].viewport.width !== toViewport(web.viewports[0]).width || jobs[i].colorScheme !== web.colorSchemes[0]) continue;
+        for (const key of results[i].requests) {
+          for (const kind of ['500', 'delay']) faultJobs.push({ job: jobs[i], healthy: results[i], fault: { ...web.faultInjection, key, kind } });
+        }
+      }
+    }
+    const faultResults = await runPool(faultJobs, web.concurrency, ({ job, fault, healthy }) =>
+      visitPage({ browser, job, config, fixtures, mode, appOrigin: server.origin, screenshotDir, fault, healthy }),
+    );
+    const shape = `${web.routes.length} routes × ${web.viewports.length} viewports × ${mode === 'record' ? 1 : web.colorSchemes.length} schemes × ${web.sessions.length} sessions`;
+    return { findings: [...results, ...faultResults].flatMap((result) => result.findings), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length } };
   } finally {
-    await browser.close();
+    await browser?.close();
     await server.close();
   }
 }
@@ -58,7 +77,7 @@ async function buildApp({ config, workdir, logDir }) {
 function listPageJobs(web, mode) {
   const schemes = mode === 'record' ? web.colorSchemes.slice(0, 1) : web.colorSchemes;
   return web.routes.flatMap((route) =>
-    web.viewports.flatMap((viewport) => schemes.map((colorScheme) => ({ route, viewport: toViewport(viewport), colorScheme }))),
+    web.viewports.flatMap((viewport) => schemes.flatMap((colorScheme) => web.sessions.map((session) => ({ route, viewport: toViewport(viewport), colorScheme, session })))),
   );
 }
 
@@ -83,56 +102,90 @@ async function runPool(items, limit, worker) {
   return results;
 }
 
-async function visitPage({ browser, job, config, fixtures, mode, recordedEntries, appOrigin, screenshotDir }) {
+async function visitPage({ browser, job, config, fixtures, mode, recordedEntries, appOrigin, screenshotDir, fault, healthy }) {
   const web = config.web;
-  const { route, viewport, colorScheme } = job;
-  const screenshotName = `${route.name}-${viewport.width}-${colorScheme}`;
-  const where = `${route.path} @${viewport.width} ${colorScheme}`;
+  const { route, viewport, colorScheme, session } = job;
+  const requests = new Set();
+  let loading = [];
+  let blank = false;
+  const sessionFixtures = session.name === 'anonymous' ? fixtures : { ...fixtures, entries: fixtures?.sessions?.[session.name] ?? {} };
+  const screenshotName = `${route.name}-${viewport.width}-${colorScheme}-${session.name}${fault ? `-${fault.kind}-${createHash('sha1').update(fault.key).digest('hex').slice(0, 10)}` : ''}`;
+  const where = `${route.path} [${session.name}]${fault ? ` ${fault.kind} ${fault.key}` : ''} @${viewport.width} ${colorScheme}`;
   const problems = [];
   const report = (problem) => problems.push(problem);
 
   const context = await browser.newContext({ viewport, colorScheme, serviceWorkers: 'block', reducedMotion: 'reduce' });
   if (fixtures?.recordedAt) await context.clock.setFixedTime(new Date(fixtures.recordedAt));
-  const seededStorage = web.colorSchemeStorage?.[colorScheme];
+  const seededStorage = { ...session.localStorage, ...web.colorSchemeStorage?.[colorScheme] };
   if (seededStorage) {
     // Apps with their own theme switch read it from storage rather than prefers-color-scheme.
-    await context.addInitScript((entries) => {
+    await context.addInitScript(({ entries, origin }) => {
+      if (location.origin !== origin) return;
       for (const [key, value] of Object.entries(entries)) localStorage.setItem(key, value);
-    }, seededStorage);
+    }, { entries: seededStorage, origin: appOrigin });
   }
   if (web.api && mode === 'record') {
-    await recordFixtures(context, { fakeOrigin: web.api.fakeOrigin, liveOrigin: web.api.recordFrom, appOrigin, entries: recordedEntries });
+    await recordFixtures(context, { fakeOrigin: web.api.fakeOrigin, liveOrigin: web.api.recordFrom, appOrigin, entries: session.name === 'anonymous' ? recordedEntries.entries : (recordedEntries.sessions[session.name] ??= {}) });
   } else if (web.api) {
     await replayFixtures(context, {
       fakeOrigin: web.api.fakeOrigin,
       appOrigin,
-      fixtures,
+      fixtures: sessionFixtures,
+      fault,
+      onRequest: (key) => requests.add(key),
       onUnrecorded: (key) => report(unrecordedProblem(key, config)),
     });
   }
 
   const page = await context.newPage();
   const network = trackNetwork(page);
-  watchPageProblems(page, { web, appOrigin, report });
+  watchPageProblems(page, { web, appOrigin, report: (problem) => {
+    if (!fault) report(problem);
+    else if (problem.check === 'uncaught-error' && !healthy.findings.some((finding) => finding.check === 'uncaught-error' && finding.title === problem.title)) report({ ...problem, check: 'fault-crash', title: `page crashes during ${fault.kind} response` });
+  } });
 
   try {
-    await page.goto(`${appOrigin}${web.base}${route.path}`, { waitUntil: 'load', timeout: web.pageTimeoutMs });
-    await network.waitForQuiet();
-    await page.waitForTimeout(web.settleMs);
+    await page.goto(`${appOrigin}${web.base.replace(/\/?$/, '/')}${route.path.replace(/^\//, '')}`, { waitUntil: 'load', timeout: web.pageTimeoutMs });
+    if (fault) await page.waitForTimeout(fault.timeoutMs);
+    else {
+      await network.waitForQuiet();
+      await page.waitForTimeout(web.settleMs);
+    }
     if (mode === 'sweep') {
-      await probeRenderedPage(page, { web, report });
+      const content = await page.evaluate(measureVisibleContent);
+      blank = !content.textLength && !content.mediaCount;
+      if (web.faultInjection) loading = await page.locator(web.faultInjection.loadingSelector).evaluateAll((elements) =>
+        elements.filter((element) => element.checkVisibility()).map((element) => `${element.tagName}:${element.getAttribute('role') ?? ''}:${element.innerText?.trim() ?? ''}`),
+      );
+      if (fault) {
+        if (blank && !healthy.blank) report({ check: 'fault-blank', severity: 'high', title: `page renders blank during ${fault.kind} response` });
+        const remaining = [...healthy.loading];
+        const addedLoading = loading.filter((indicator) => {
+          const index = remaining.indexOf(indicator);
+          if (index < 0) return true;
+          remaining.splice(index, 1);
+          return false;
+        });
+        if (addedLoading.length) report({ check: 'fault-loading', severity: 'medium', title: `page still loading after ${fault.timeoutMs}ms during ${fault.kind} response`, detail: addedLoading.slice(0, 3).join('\n') });
+      } else {
+        await probeRenderedPage(page, { web, report });
+        if (web.accessibility) await runAccessibility(page, axePath, report);
+      }
       const screenshotFile = path.join(screenshotDir, `${screenshotName}.png`);
       await page.screenshot({ path: screenshotFile, fullPage: true, animations: 'disabled' });
+      if (!fault && web.keyboard) await runKeyboardSmoke(page, report);
       problems.forEach((problem) => (problem.artifacts = [screenshotFile]));
     }
   } catch (error) {
-    report({ check: 'navigation', severity: 'high', title: `page did not finish loading: ${firstLine(error.message)}` });
+    if (mode === 'record') throw error;
+    report({ check: fault ? 'fault-navigation' : 'navigation', severity: 'high', title: `${fault ? `${fault.kind} ${fault.key}: ` : ''}page check failed: ${firstLine(error.message)}` });
   } finally {
     await context.close();
   }
 
   if (mode === 'record') return { findings: [] };
   return {
+    requests: [...requests], job, loading, blank,
     findings: problems.map((problem) =>
       createFinding({
         stage: 'web',
@@ -143,7 +196,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
         where,
         repro: problem.repro ?? null,
         artifacts: problem.artifacts ?? [],
-        key: { route: route.path, viewport: viewport.width, colorScheme },
+        key: { route: route.path, viewport: viewport.width, colorScheme, session: session.name, ...(fault ? { endpoint: fault.key, fault: fault.kind } : {}), ...problem.key },
       }),
     ),
   };
@@ -198,7 +251,7 @@ function watchPageProblems(page, { web, appOrigin, report }) {
     if (response.status() < 400 || isIgnored(web.ignoreRequests, url)) return;
     if (web.api && url.startsWith(web.api.fakeOrigin)) {
       // Unrecorded requests are already reported by the replay handler.
-      if (!response.headers()['x-spotter-unrecorded']) report(apiErrorProblem(response, web.api.fakeOrigin));
+      if (!response.headers()['x-spotter-unrecorded'] && !response.headers()['x-spotter-injected']) report(apiErrorProblem(response, web.api.fakeOrigin));
       return;
     }
     report(requestProblem(response.request(), `HTTP ${response.status()}`, appOrigin));

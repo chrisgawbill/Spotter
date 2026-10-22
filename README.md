@@ -42,6 +42,10 @@ annotated reference. Fields:
 | `web.api` | `envVar` the build reads the API origin from; `recordFrom` live API for `record` |
 | `web.routes[]` | `{ name, path }` (hash routes include `#/`) |
 | `web.viewports`, `web.colorSchemes` | Widths (or `{ width, height }`) and `light`/`dark` |
+| `web.sessions` | Additional `{ name, localStorage }` sessions; anonymous visits always run |
+| `web.settleMs`, `web.pageTimeoutMs`, `web.concurrency` | Healthy-page settling delay, navigation timeout and parallel visits |
+| `web.accessibility`, `web.keyboard` | Enable axe and advisory Tab/focus checks (both default true) |
+| `web.faultInjection` | `{ delayMs, timeoutMs, loadingSelector }`, or false to skip endpoint fault visits |
 | `web.colorSchemeStorage` | localStorage entries to seed per scheme, for apps with their own theme switch |
 | `web.errorText`, `web.ignoreConsole`, `web.ignoreRequests` | Visible text that means failure; regexes to ignore |
 
@@ -57,5 +61,56 @@ failed.
 
 ## Development
 
-`npm test` runs the unit tests (Node's test runner). Design and tickets:
+`npm test` runs the unit tests (Node's test runner). Browser regression checks
+need the Spotter image (Chromium and Node 20+):
+
+```bash
+docker run --rm --init --ipc host \
+  -v "$PWD/src:/opt/spotter/src:ro" \
+  -v "$PWD/integration:/opt/spotter/integration:ro" \
+  --entrypoint node spotter:latest --test integration/browser-depth.test.mjs
+```
+
+Design and tickets:
 [docs/ticket-index.md](docs/ticket-index.md).
+
+## Browser depth
+
+The sweep runs axe on every route × viewport × scheme × session. New serious
+or critical violations are medium severity; minor/moderate violations and
+keyboard smoke findings are advisory. Keyboard smoke presses Tab and checks
+reachability and outline/box-shadow focus styles; review other focus styles
+manually. Composite widgets with roving tabindex are excluded from unreachable
+warnings. Set `web.accessibility: false` or `web.keyboard: false` to skip them.
+
+`web.sessions` adds isolated signed-in visits alongside anonymous visits:
+
+```yaml
+web:
+  sessions:
+    - name: signed-in
+      localStorage: { session: '{"userId":"fixture-user","token":"test-token"}' }
+  faultInjection:
+    delayMs: 2000
+    timeoutMs: 5000
+    loadingSelector: '[aria-busy="true"], [role="progressbar"]'
+```
+
+Use test sessions accepted by the app's frontend; this does not bypass server
+authentication. `spotter record` records each session into its own fixture map;
+re-record after adding a session. Fixtures and storage values may contain
+sensitive test data; keep them private. Session names must be unique letters,
+numbers, underscores or hyphens, excluding `anonymous` and object prototype
+property names (such as `constructor`).
+
+Fault injection revisits each route/session at the first viewport and scheme.
+Each API request observed there gets its own fresh visit returning 500, then a
+visit delaying that endpoint. Other endpoints replay normally. After
+`timeoutMs` (independent of the healthy-page settling delay), Spotter reports crashes, blank pages and visible loading indicators
+(customize `loadingSelector` for the app). Expected injected HTTP errors are
+suppressed; loading indicators already present on the healthy visit are excluded.
+`delayMs` controls the response delay; use a value above `timeoutMs`
+to observe pending requests. Choose settling and fault budgets that allow the
+app's retry window to finish. Set `web.faultInjection: false` to skip this sweep.
+Screenshots include session and fault identity. Visual comparisons and manual
+keyboard/accessibility judgment remain outside this ticket.

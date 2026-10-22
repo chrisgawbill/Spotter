@@ -6,7 +6,15 @@ const MAX_DETAIL_LINES = 3;
 const MAX_PLACES_SHOWN = 6;
 
 /** Known gaps, listed in every report so agents don't assume coverage that isn't there. */
-const NOT_CHECKED = ['signed-in states', 'accessibility (axe)', 'slow or failing endpoints', 'visual changes vs base'];
+function notChecked(run) {
+  const web = run.head.stages.web;
+  const gaps = ['visual changes vs base'];
+  if (!web?.sessions?.some((name) => name !== 'anonymous')) gaps.unshift('signed-in states (no sessions configured)');
+  if (!web?.accessibility) gaps.unshift('accessibility (axe)');
+  if (!web?.keyboard) gaps.unshift('keyboard smoke');
+  if (!web?.faultVisits) gaps.unshift('slow or failing endpoints');
+  return gaps;
+}
 
 /**
  * Renders the agent-facing markdown report. `run` holds head/base labels,
@@ -44,7 +52,7 @@ export function renderMarkdownReport(run) {
   }
 
   lines.push('## Checks', '', ...renderStageSummary(run), '');
-  lines.push(`Not checked: ${NOT_CHECKED.join(', ')}.`);
+  lines.push(`Not checked: ${notChecked(run).join(', ')}.`);
   lines.push(`Details: ${run.paths.reportJson} · screenshots: ${run.paths.screenshots} · logs: ${run.paths.logs}`);
   return `${lines.join('\n')}\n`;
 }
@@ -113,7 +121,7 @@ function renderStageSummary(run) {
       lines.push(`- rules: ${summary.ruleCount} text rules, ${summary.boundaryCount} import boundaries`);
     } else if (stage === 'web') {
       const fixtures = run.fixtures ? `fixtures recorded ${run.fixtures.recordedAt}` : 'no fixtures recorded';
-      lines.push(`- web: ${summary.built ? `${summary.pages} pages (${summary.shape})` : 'build failed, sweep skipped'} · ${fixtures}`);
+      lines.push(`- web: ${summary.built ? `${summary.pages} pages (${summary.shape})` : 'build failed, sweep skipped'} · ${fixtures}${summary.faultVisits ? ` · ${summary.faultVisits} fault visits` : ''}`);
     }
   }
   return lines;

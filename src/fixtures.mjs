@@ -33,7 +33,7 @@ export async function saveFixtures(fixturesDir, fixtures) {
  * were never recorded get a fast 404 (so client retries don't stall the page)
  * and are passed to `onUnrecorded`.
  */
-export async function replayFixtures(context, { fakeOrigin, appOrigin, fixtures, onUnrecorded }) {
+export async function replayFixtures(context, { fakeOrigin, appOrigin, fixtures, onUnrecorded, onRequest = () => {}, fault }) {
   await context.route(`${fakeOrigin}/**`, async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: corsHeaders(request, appOrigin) });
@@ -46,6 +46,18 @@ export async function replayFixtures(context, { fakeOrigin, appOrigin, fixtures,
         headers: { ...corsHeaders(request, appOrigin), 'content-type': 'application/json', 'x-spotter-unrecorded': '1' },
         body: JSON.stringify({ error: 'Not recorded by Spotter', request: key }),
       });
+    }
+    onRequest(key);
+    if (fault?.key === key) {
+      if (fault.kind === 'delay') {
+        const open = await new Promise((resolve) => {
+          const closed = () => { clearTimeout(timer); resolve(false); };
+          const timer = setTimeout(() => { context.off('close', closed); resolve(true); }, fault.delayMs);
+          context.once('close', closed);
+        });
+        if (!open) return;
+      }
+      else return route.fulfill({ status: 500, headers: { ...corsHeaders(request, appOrigin), 'content-type': 'application/json', 'x-spotter-injected': '1' }, body: '{"error":"Injected failure"}' });
     }
     return route.fulfill({
       status: recorded.status,

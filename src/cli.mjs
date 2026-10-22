@@ -158,7 +158,8 @@ async function recordProject(config, options) {
   const sha = await resolveCommit(config.repo, ref);
   const existing = options.merge ? await loadFixtures(directories.fixtures) : null;
   const entries = { ...(existing?.entries ?? {}) };
-  const knownBefore = Object.keys(entries).length;
+  const sessions = Object.fromEntries(Object.entries(existing?.sessions ?? {}).map(([name, responses]) => [name, { ...responses }]));
+  const knownBefore = Object.keys(entries).length + Object.values(sessions).reduce((sum, responses) => sum + Object.keys(responses).length, 0);
   // Freeze the page clock exactly as replay will, so date-based requests match.
   const recordedAt = existing?.recordedAt ?? new Date().toISOString();
 
@@ -173,16 +174,17 @@ async function recordProject(config, options) {
     const install = await runStaticStage({ config: { ...config, checks: [] }, workdir, logDir });
     if (!install.installed) throw new Error(`install failed; see ${toHostPath(logDir)}/install.log`);
     log(`recording from ${config.web.api.recordFrom}`);
-    const result = await runWebStage({ config, workdir, logDir, screenshotDir: logDir, fixtures: { recordedAt }, mode: 'record', recordedEntries: entries });
+    const result = await runWebStage({ config, workdir, logDir, screenshotDir: logDir, fixtures: { recordedAt }, mode: 'record', recordedEntries: { entries, sessions } });
     if (!result.summary.built) throw new Error(`build failed; see ${toHostPath(logDir)}/web-build.log`);
   } finally {
     await rm(exportDir, { recursive: true, force: true });
   }
 
-  await saveFixtures(directories.fixtures, { recordedAt, source: config.web.api.recordFrom, ref, sha, entries });
-  const errorCount = Object.values(entries).filter((entry) => entry.status >= 400).length;
+  await saveFixtures(directories.fixtures, { recordedAt, source: config.web.api.recordFrom, ref, sha, entries, sessions });
+  const responses = [...Object.values(entries), ...Object.values(sessions).flatMap(Object.values)];
+  const errorCount = responses.filter((entry) => entry.status >= 400).length;
   console.log(
-    `Recorded ${Object.keys(entries).length} API responses (${Object.keys(entries).length - knownBefore} new, ${errorCount} non-2xx) ` +
+    `Recorded ${responses.length} API responses (${responses.length - knownBefore} new, ${errorCount} non-2xx) ` +
       `to ${toHostPath(directories.fixtures)}/api.json; clock frozen at ${recordedAt}.`,
   );
   return EXIT_PASS;
