@@ -15,3 +15,10 @@ test('project specs accept repository-relative files and reject invalid paths', 
   }
   assert.doesNotThrow(() => config(undefined));
 });
+
+test('project spec workers must be positive integers', () => {
+  for (const workers of [1, 2, 4]) assert.equal(config({ files: ['qa/test.mjs'], workers }).web.specs.workers, workers);
+  for (const workers of [0, -1, 1.5, '2', null, true, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => config({ files: ['qa/test.mjs'], workers }), /workers/);
+  }
+});

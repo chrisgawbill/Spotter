@@ -50,3 +50,38 @@ test('project specs share replay, clock, sessions and theme; failures use normal
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('two workers run same-file specs concurrently with isolated browser state', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'spotter-parallel-specs-'));
+  let server;
+  try {
+    await mkdir(path.join(root, 'dist'));
+    await writeFile(path.join(root, 'dist/index.html'), '<h1>Parallel app</h1>');
+    await writeFile(path.join(root, 'parallel.spec.mjs'), `
+      import { writeFile, access } from 'node:fs/promises';
+      const { test, expect } = await import(process.env.SPOTTER_TEST_MODULE);
+      for (const id of [0, 1]) test('parallel ' + id, async ({ page }) => {
+        await page.goto('./');
+        expect(await page.evaluate(() => localStorage.getItem('owner'))).toBe(null);
+        await page.evaluate((id) => localStorage.setItem('owner', String(id)), id);
+        await writeFile(${JSON.stringify(root)} + '/ready-' + id, 'ready');
+        // Both tests must be running before either can finish.
+        await expect.poll(async () => {
+          try { await access(${JSON.stringify(root)} + '/ready-' + (1 - id)); return true; }
+          catch { return false; }
+        }, { timeout: 10000 }).toBe(true);
+        expect(await page.evaluate(() => localStorage.getItem('owner'))).toBe(String(id));
+      });
+    `);
+    server = await startStaticServer(path.join(root, 'dist'), '/');
+    const result = await runSpecsStage({
+      config: { web: { base: '/', specs: { files: ['parallel.spec.mjs'], workers: 2 }, sessions: [{ name: 'anonymous', localStorage: {} }] } },
+      workdir: root, logDir: path.join(root, 'logs'), fixtures: { entries: {} }, appOrigin: server.origin,
+    });
+    assert.equal(result.summary.passed, 2, JSON.stringify(result));
+    assert.deepEqual(result.findings, []);
+  } finally {
+    await server?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

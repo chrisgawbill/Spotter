@@ -159,7 +159,13 @@ test('TICKET-12 Verify 1: standings are visible', async ({ page }) => {
 ```
 
 Enable them with `web.specs.files` in the project YAML. Optional `grep` selects
-test names using a regular expression. Spotter supplies the Playwright runner;
+test names using a regular expression. Set `web.specs.workers: 2` to run
+independent tests in parallel, including tests in the same file. The default
+is 1; live authentication always uses 1 worker. Explicit Playwright serial
+groups retain their ordering. Parallel tests must isolate shared files,
+accounts and other external state. This limit is separate from `web.concurrency`
+and applies to each branch/baseline side, which may run concurrently.
+Spotter supplies the Playwright runner;
 specs import its adapter as above. Each test gets isolated fixture replay and
 the recording's fixed clock. Use `test.use({ spotterSession: 'member',
 colorScheme: 'dark' })` for configured sessions and themes. Tests use the built

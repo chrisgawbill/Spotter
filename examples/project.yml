@@ -20,6 +20,7 @@ web:
   # Optional project-owned flow tests; these do not sign in the page sweep.
   # specs:
   #   files: [qa/sign-in.spec.mjs]
+  #   workers: 2 # Opt into independent parallel tests; default 1, live always 1.
   build:
     run: npm run build
     outDir: dist

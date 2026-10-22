@@ -56,6 +56,9 @@ export function normalizeConfig(config, { projectName, source = '' }) {
       || !validSpecFiles(specs.files) || (specs.grep !== undefined && typeof specs.grep !== 'string'))) {
       problems.push('`web.specs` needs nonempty project-relative `files` and optional string `grep`');
     }
+    if (specs?.workers !== undefined && (!Number.isSafeInteger(specs.workers) || specs.workers < 1)) {
+      problems.push('`web.specs.workers` must be a positive integer');
+    }
     if (specs?.live !== undefined) {
       const live = specs.live;
       if (!live || !validSpecFiles(live.files) || !isHttpUrl(live.baseURL)

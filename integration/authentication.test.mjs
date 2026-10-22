@@ -61,12 +61,13 @@ test('generic form and OAuth flows; private state isolation, live selection and 
     const redacted = await run('redacted');
     assert(!JSON.stringify(redacted).includes('private-session-value'));
     for (const file of ['run.log', 'results.json']) assert(!(await readFile(path.join(root, 'logs/redacted/specs', file), 'utf8')).includes('private-session-value'));
-    config.web.specs = { files: ['auth.spec.mjs'], mode: 'live', live: { files: ['live.spec.mjs'], env: ['SPOTTER_EXAMPLE_PASSWORD'], baseURL: server.origin + '/' } };
+    config.web.specs = { files: ['auth.spec.mjs'], mode: 'live', workers: 2, live: { files: ['live.spec.mjs'], env: ['SPOTTER_EXAMPLE_PASSWORD'], baseURL: server.origin + '/' } };
     await assert.rejects(run('missing-live'), /requires environment variable SPOTTER_EXAMPLE_PASSWORD/);
     process.env.SPOTTER_EXAMPLE_PASSWORD = 'private-live-password';
     await writeFile(path.join(root, 'live.spec.mjs'), `
       const { test, expect } = await import(process.env.SPOTTER_TEST_MODULE);
-      test('Live Verify: selected credentials and real clock', async ({ page, spotterLive, spotterCredentials }) => {
+      test('Live Verify: selected credentials and real clock', async ({ page, spotterLive, spotterCredentials }, testInfo) => {
+        expect(testInfo.config.workers).toBe(1);
         expect(spotterLive).toBe(true);
         expect(spotterCredentials.SPOTTER_EXAMPLE_PASSWORD).toBe('private-live-password');
         await page.goto('./');

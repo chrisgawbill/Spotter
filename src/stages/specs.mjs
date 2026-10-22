@@ -13,6 +13,7 @@ const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrigin }) {
   const specs = config.web.specs;
   const live = specs.mode === 'live';
+  const workers = live ? 1 : (specs.workers ?? 1);
   const required = specs.live?.env ?? [];
   if (live) for (const name of required) {
     if (!process.env[name]?.trim()) throw new Error(`Live authentication requires environment variable ${name}`);
@@ -35,7 +36,7 @@ export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrig
     await writeFile(settingsFile, JSON.stringify({ web: config.web, fixtures, appOrigin }));
     const testMatch = (live ? specs.live.files : specs.files).map((file) => path.resolve(workdir, file).replaceAll('\\', '/'));
     await writeFile(configFile, `const config = ${JSON.stringify({
-      testDir: workdir, testMatch, workers: 1, retries: 0, forbidOnly: true,
+      testDir: workdir, testMatch, workers, fullyParallel: workers > 1, retries: 0, forbidOnly: true,
       outputDir: path.join(privateDir, 'artifacts'), reporter: [['json', { outputFile: reportFile }]],
       use: { baseURL: live ? specs.live.baseURL : `${appOrigin}${config.web.base.replace(/\/?$/, '/')}`, trace: 'off', screenshot: 'off', video: 'off', serviceWorkers: 'block', reducedMotion: 'reduce' },
     })}; ${specs.grep ? `config.grep = new RegExp(${JSON.stringify(specs.grep)});` : ''} export default config;\n`);
