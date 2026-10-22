@@ -21,14 +21,15 @@ async function api(url, options) {
   return data;
 }
 function showError(error) { $('error').textContent = error?.message ?? ''; $('error').hidden = !error; }
-function updateBranches() {
+function updateBranches(previousBranch = '') {
   const project = projects.find((p) => p.name === $('project').value);
-  $('branch').innerHTML = (project?.branches ?? []).map((b) => `<option>${escape(b)}</option>`).join('');
-  if (project?.branches.includes(project.baseBranch)) $('branch').value = project.baseBranch;
+  html('branch', (project?.branches ?? []).map((b) => `<option>${escape(b)}</option>`).join(''));
+  if (project?.branches.includes(previousBranch)) $('branch').value = previousBranch;
+  else if (project?.branches.includes(project.baseBranch)) $('branch').value = project.baseBranch;
   $('project-info').textContent = project?.error ?? `Compare against ${project?.baseBranch ?? 'main'}. Runs use recorded API fixtures.`;
   $('submit').disabled = !$('branch').value;
 }
-$('project').addEventListener('change', updateBranches);
+$('project').addEventListener('change', () => updateBranches());
 $('start').addEventListener('submit', async (event) => {
   event.preventDefault();
   $('submit').disabled = true;
@@ -45,7 +46,13 @@ async function refresh() {
   if (refreshing) return;
   refreshing = true;
   try {
-    const runs = await api('/api/runs');
+    const previousProject = $('project').value;
+    const previousBranch = $('branch').value;
+    const [nextProjects, runs] = await Promise.all([api('/api/projects'), api('/api/runs')]);
+    projects = nextProjects;
+    html('project', projects.map((p) => `<option>${escape(p.name)}</option>`).join(''));
+    if (projects.some((p) => p.name === previousProject)) $('project').value = previousProject;
+    updateBranches($('project').value === previousProject ? previousBranch : '');
     html('runs', runs.map((run) => `<tr><td><strong>${escape(run.project)}</strong><br>${escape(run.branch)}</td><td>${badge(run.status)}</td><td>${escape(run.current.at(-1)?.activity ?? (run.report ? 'Report ready' : run.error ?? 'Preparing'))}</td><td><a href="${link(run)}">${run.status === 'running' ? 'Follow activity' : 'View run'} →</a><br><small>${escape(time(run.startedAt))}</small></td></tr>`).join(''));
     $('empty').hidden = runs.length > 0;
     html('projects', projects.map((project) => {
@@ -79,9 +86,6 @@ async function refresh() {
 }
 window.addEventListener('hashchange', refresh);
 try {
-  projects = await api('/api/projects');
-  $('project').innerHTML = projects.map((p) => `<option>${escape(p.name)}</option>`).join('');
-  updateBranches();
   await refresh();
   setInterval(refresh, 2000);
 } catch (error) { showError(error); }

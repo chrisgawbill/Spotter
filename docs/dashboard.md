@@ -59,9 +59,11 @@ short-lived runner containers and does not depend on the dashboard service.
 ## Run behavior
 
 Select a configured project and an existing local or remote branch. Starting a
-run opens its activity page, which remains addressable after a reload. No fetch
-or checkout mutation occurs: branches reflect the server's current repository
-refs. Dashboard runs execute the normal CLI inside the same container, using
+run opens its activity page, which remains addressable after a reload. Project and branch lists refresh automatically every two seconds, including
+branch additions and deletions; valid selections are preserved. No fetch or
+checkout mutation occurs: branches reflect the server's current repository
+refs. Remote additions/deletions appear after the server repository is fetched
+with pruning (`git fetch --all --prune`). Dashboard runs execute the normal CLI inside the same container, using
 the same mounted repositories, fixtures and output directory. Preparation and
 runner failures show an error and the final log tail even without a report.
 Only one dashboard-triggered run is allowed at a time; CLI/Jenkins runs remain
