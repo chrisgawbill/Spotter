@@ -15,6 +15,20 @@ ticket.
 | [QA-05](#qa-05--adopt-spotter-in-hockeystatswebapps-agent-workflow) | DONE | Consumer workflow |
 | [QA-06](#qa-06--spotter-dashboard) | ACTIVE | Dashboard |
 | [QA-07](#qa-07--generic-authentication-flow-testing) | DONE | Authentication |
+| [QA-08](#qa-08--configurable-low-medium-and-high-testing-levels) | IDEA | Testing levels |
+| [QA-09](#qa-09--coverage-and-run-completeness) | IDEA | Trustworthy pass results |
+| [QA-10](#qa-10--critical-interaction-journeys) | IDEA | Interaction testing |
+| [QA-11](#qa-11--fault-recovery-and-response-ordering) | IDEA | Recovery testing |
+| [QA-12](#qa-12--cross-browser-and-device-matrix) | IDEA | Browser compatibility |
+| [QA-13](#qa-13--data-edge-case-scenarios) | IDEA | Data robustness |
+| [QA-14](#qa-14--deployed-application-smoke-checks) | IDEA | Deployment verification |
+| [QA-15](#qa-15--performance-regression-budgets) | IDEA | Performance checks |
+| [QA-16](#qa-16--failure-traces-and-flaky-test-tracking) | IDEA | Failure diagnosis |
+| [QA-17](#qa-17--visual-comparison-controls) | IDEA | Visual review quality |
+| [QA-18](#qa-18--project-owned-backend-integration-mode) | IDEA | Server and API testing |
+| [QA-19](#qa-19--structured-security-scanner-findings) | IDEA | Security tool integration |
+| [QA-20](#qa-20--runner-lifecycle-and-artifact-retention) | IDEA | Runner reliability |
+| [QA-21](#qa-21--scheduled-deep-runs) | IDEA | Scheduled coverage |
 
 Statuses and acceptance below are recorded decisions. Historical test output is
 in [ticket evidence](ticket-evidence.md); usage instructions are in the [README](../README.md).
@@ -302,3 +316,410 @@ stay in project-owned specs and project configuration; none belong in `src/`.
 Depends on QA-02 and QA-04.
 
 Historical verification: [evidence](ticket-evidence.md#qa-07).
+
+
+---
+
+## Proposed robustness backlog
+
+QA-08 through QA-21 capture the requested feature proposals. All remain IDEA;
+writing these tickets does not start implementation or activate services.
+Suggested first delivery sequence: QA-08, QA-09, QA-10, then QA-11.
+
+For every ticket below, implementation verification includes `npm test`, the
+relevant browser/integration checks, and the main and seeded-defect runs required
+by [AGENTS.md](../AGENTS.md). Record artifact paths and failed/skipped checks in
+the handoff. Each ticket also requires Product Owner sample-report acceptance
+under the delivery contract above.
+
+QA-08 supplies shared level selection; each feature adds only its own configured
+coverage to those levels. QA-09 supplies shared completeness reporting. Tickets
+can deliver capabilities before these integrations, but must state any deferred
+level/completeness integration rather than claiming it is available.
+
+---
+
+## QA-08 — Configurable low, medium and high testing levels
+
+**Status:** IDEA
+
+**Goal:** Let users choose testing depth per run through project configuration, CLI
+and dashboard controls. Testing level is independent of finding severity.
+
+**Scope:**
+
+- Add `low`, `medium` and `high` profiles with documented defaults and project
+  overrides. Explicit per-run selection overrides the saved default.
+- Low runs required checks and a configured critical-route/journey smoke set;
+  medium runs the normal configured sweep and acceptance tests; high adds the
+  configured wider browser, data, recovery and performance scenarios.
+- Preserve existing behavior when no level is configured or selected; adopting
+  a level must not silently discard existing configured checks.
+- Show the effective execution plan before starting and the selected level,
+  executed coverage and intentional exclusions in activity and reports.
+- Required checks apply at every level. An explicit skip of a required check
+  makes the run incomplete. Higher levels include lower-level selections.
+- Use the same resolved plan on branch and baseline; include it in baseline
+  cache identity. Unsupported or unconfigured capabilities must be visible;
+  high must not imply live access or enable unconfigured checks.
+
+**Verify:**
+
+- Config, CLI and dashboard select the expected plan and reject invalid levels.
+- Each level executes its documented matrix; required checks cannot disappear.
+- Branch/base plans match, caches do not cross incompatible plans, and exclusions
+  are distinguishable from failed or unexpectedly missing work.
+- Existing configurations retain their execution behavior without migration.
+
+---
+
+## QA-09 — Coverage and run completeness
+
+**Status:** IDEA
+
+**Goal:** Make it clear what a passing run establishes and prevent missing required
+coverage from producing a successful result.
+
+**Scope:**
+
+- Report expected, executed, failed and skipped routes, scenarios and specs;
+  support required checks and minimum acceptance-test counts.
+- Detect configured specs selecting zero tests and unexplained missing work.
+- Allow project-owned session assertions to establish that named sessions
+  reached their intended account state rather than redirecting to sign-in.
+- Record fixture age/identity and baseline comparison success or failure.
+- Keep completeness separate from finding severity and baseline suppression:
+  missing required coverage produces an incomplete/error result, even if it
+  occurred on the baseline. Document exit-code behavior.
+- Integrate QA-08 levels; summarize completeness in Markdown and put details in
+  JSON/HTML without claiming unconfigured routes are covered.
+
+**Verify:**
+
+- Seed zero selected tests, a login redirect, a missing required check and a
+  failed baseline; each prevents a misleading pass.
+- Intentional optional exclusions are explained and healthy complete runs pass.
+- Fixture metadata and counts agree across CLI, dashboard and reports.
+
+---
+
+## QA-10 — Critical interaction journeys
+
+**Status:** IDEA
+
+**Goal:** Extend adoption of the existing project-spec adapter to test behavior after
+initial page rendering, without building a separate journey language.
+
+**Scope:**
+
+- Provide generic examples for invalid input followed by correction and save,
+  duplicate-submit prevention, edits and persistence, filters/pagination,
+  URL restoration, back/forward navigation and role-restricted routes.
+- Include dialog keyboard operation and focus restoration assertions.
+- Keep selectors, expected write payloads, role rules and persistence semantics
+  in project-owned specs. Use explicit routing for response sequences.
+- Let projects select critical journeys for low level and broader sets for
+  medium/high through QA-08; retain isolated contexts and deterministic replay.
+
+**Verify:**
+
+- Healthy examples pass; seeded broken save, duplicate write, lost state,
+  focus restoration and unauthorized-route behavior fail named tests.
+- Failures compare correctly with the baseline and parallel journeys remain
+  isolated. Adopt representative journeys in the first consumer repository.
+
+---
+
+## QA-11 — Fault recovery and response ordering
+
+**Status:** IDEA
+
+**Goal:** Test recovery after failure as well as the initial failure state.
+
+**Scope:**
+
+- Add opt-in examples/scenarios for disconnected requests, 401/403, 429,
+  malformed responses and stale responses arriving after newer requests.
+- Assert failure, useful error state, retry/reconnect and successful recovery;
+  include controls recovering from disabled/loading states.
+- Keep endpoint-specific recovery and write-retry expectations in project specs;
+  reuse Playwright routing before adding shared fixture machinery.
+- Select bounded scenario sets by QA-08 level, preserve healthy replay elsewhere
+  and distinguish deliberately injected failures from unexpected failures.
+
+**Verify:**
+
+- Healthy retry, reconnection and latest-response behavior pass.
+- Seed permanently disabled controls, ineffective Retry and stale overwrites;
+  each appears as a new named failure without injected-error noise.
+- Scenario budgets allow documented retry windows and do not leak across tests.
+
+---
+
+## QA-12 — Cross-browser and device matrix
+
+**Status:** IDEA
+
+**Goal:** Extend the Chromium-only coverage with configurable Firefox and WebKit runs.
+
+**Scope:**
+
+- Support explicit browser/device selections for sweeps and project specs,
+  including browser installation in the Docker image.
+- Use QA-08 to select a small critical matrix for routine runs and a broader
+  configured matrix for high runs; bound concurrency and report visit counts.
+- Include browser/device identity in artifacts, findings and baseline cache
+  inputs; compare each case with its matching baseline.
+- Document mobile emulation limits and retain existing Chromium defaults.
+
+**Verify:**
+
+- The same generic journey runs in Chromium, Firefox and WebKit.
+- A seeded browser-specific defect is new only in affected cases; artifacts do
+  not collide and baseline comparisons never mix browsers.
+- Missing browser installations fail actionably; legacy configs still run.
+
+---
+
+## QA-13 — Data edge-case scenarios
+
+**Status:** IDEA
+
+**Goal:** Exercise realistic response variants beyond the recorded happy-path data.
+
+**Scope:**
+
+- Provide project-owned variants for empty results, long text, missing optional
+  fields, large lists, Unicode, zero values and unexpected response shapes.
+- Reuse spec routing and fixture overrides; keep business validity and expected
+  rendering in project specs rather than inventing universal response mutations.
+- Run normal error/layout checks in applicable scenarios; select bounded sets
+  by QA-08 level and label artifacts with scenario identity.
+
+**Verify:**
+
+- Healthy examples handle each documented variant as specified.
+- Seed empty-list crashes, long-text overflow and missing-field crashes; each
+  is new against a healthy baseline with stable scenario fingerprints.
+- Variants remain deterministic and never alter original recordings.
+
+---
+
+## QA-14 — Deployed application smoke checks
+
+**Status:** IDEA
+
+**Goal:** Check a configured deployed application where local build replay cannot
+establish hosting and runtime integration behavior.
+
+**Scope:**
+
+- Add an explicit deployed-target mode for project-owned smoke specs covering
+  asset paths, deep-link refresh, redirects and API connectivity.
+- Report deployed URL, execution mode and available deployment revision;
+  do not compare two exported refs when only one deployment was tested.
+- Reuse applicable live-auth credential/privacy protections. Require explicit
+  target selection; testing level alone never enables external actions.
+- Keep assertions and any permitted writes in project-owned specs; document
+  staging setup and distinguish replay results from real integration evidence.
+
+**Verify:**
+
+- A local deployment example passes; broken asset bases, deep links and API
+  configuration produce actionable failures.
+- Routine replay runs never contact deployed targets; deployed reports do not
+  imply a branch/baseline comparison or leak configured credentials.
+
+---
+
+## QA-15 — Performance regression budgets
+
+**Status:** IDEA
+
+**Goal:** Detect measurable resource and responsiveness regressions with repeatable
+measurements and configurable project budgets.
+
+**Scope:**
+
+- Start with bundle/asset bytes, request counts and image sizes; add selected
+  page/interaction timings with defined measurement boundaries.
+- Use repeated samples and a documented aggregation for noisy timings; record
+  browser, resource conditions and whether API responses were replayed.
+- Compare equivalent branch/base cases and support absolute/relative budgets.
+  Default to advisory until projects explicitly enable blocking thresholds.
+- Integrate QA-08 so expensive sampling can be reserved for high runs; keep
+  detailed measurements in JSON/HTML and stable findings in Markdown.
+
+**Verify:**
+
+- Seed bundle growth, request multiplication and a controlled slow interaction;
+  configured budgets detect each without treating measurement noise as a defect.
+- Healthy repeated runs establish reproducibility; unlike environments are not
+  presented as equivalent and replay timing is not called backend performance.
+
+---
+
+## QA-16 — Failure traces and flaky-test tracking
+
+**Status:** IDEA
+
+**Goal:** Make eligible failures easier to reproduce while preserving evidence of
+intermittent failures and existing authentication privacy guarantees.
+
+**Scope:**
+
+- Attach optional Playwright traces for eligible non-sensitive failures, linked
+  from HTML; retain concise named failures in Markdown.
+- Add bounded diagnostic retries and classify first-fail/retry-pass results as
+  flaky, retaining original attempts and evidence rather than silently passing.
+- Define configurable flaky-result gating and show attempt history and trends
+  for stable test identities. Avoid retries for specs not declared retry-safe.
+- Keep private storage/live-auth artifact restrictions; treat traces as sensitive
+  artifacts and apply retention/access rules. Level controls may change capture
+  or diagnostic depth, not erase an observed failure.
+
+**Verify:**
+
+- A deterministic failure has usable trace evidence; an intermittent example is
+  visibly flaky and retains its initial failure.
+- Retry limits and non-retry-safe exclusions work; private authentication cases
+  produce no newly exposed tokens, session state or raw traces.
+
+---
+
+## QA-17 — Visual comparison controls
+
+**Status:** IDEA
+
+**Goal:** Reduce irrelevant visual noise while making selected visual regressions
+reviewable through explicit project settings.
+
+**Scope:**
+
+- Add project-owned dynamic-region masks, targeted component snapshots and
+  configurable comparison tolerances with documented defaults.
+- Apply identical settings to both comparison sides; record settings in cache
+  identity and display masks/tolerances with before/after/diff evidence.
+- Keep visual results advisory by default; any blocking policy must be explicit.
+  Masked or missing coverage must not imply visual equivalence.
+- Integrate selected snapshot sets with QA-08 levels and preserve the portable
+  report directory and short Markdown report.
+
+**Verify:**
+
+- A masked dynamic region stops producing noise while an unmasked seeded
+  regression remains visible; tolerance boundaries behave as documented.
+- Added/removed/resized snapshots remain visible, settings invalidate affected
+  cache entries and legacy configurations retain exact-pixel review behavior.
+
+---
+
+## QA-18 — Project-owned backend integration mode
+
+**Status:** IDEA
+
+**Goal:** Support applications requiring a running server and project-owned API tests,
+expanding beyond static-build serving.
+
+**Scope:**
+
+- Configure project-owned server startup, readiness, environment, tests and
+  teardown commands; support branch/base isolation and noncolliding ports.
+- Run API/browser specs against the correct side and report named failures
+  through existing findings and baseline comparison.
+- Keep database provisioning, seed/reset procedures and backend security
+  assertions project-owned; document disposable integration environments.
+- Bound startup/test/shutdown time and clean up child processes on failure or
+  cancellation. QA-08 selects configured tests without implicitly starting live
+  services or using production data.
+
+**Verify:**
+
+- A generic server example starts, becomes ready, runs API/browser tests and
+  shuts down on success, startup failure, test failure and cancellation.
+- Seed an API regression and detect it as new; branch/base state and ports stay
+  isolated and existing static projects continue to work.
+
+---
+
+## QA-19 — Structured security scanner findings
+
+**Status:** IDEA
+
+**Goal:** Make configured security-tool output actionable using the existing check
+runner rather than introducing a separate scanning platform.
+
+**Scope:**
+
+- Document dependency and secret scanning through configured project checks;
+  choose a small explicit set of structured output formats to parse.
+- Normalize supported results into stable findings, severities, locations and
+  reproduction hints; retain the generic fallback for unsupported tools.
+- Define baseline and exit behavior for scanner errors versus detected issues;
+  avoid credentials or matched secret values in persisted output.
+- Let projects select scanner commands and QA-08 frequency; document that these
+  checks do not establish comprehensive application security coverage.
+
+**Verify:**
+
+- Sanitized dependency and synthetic-secret fixtures produce stable actionable
+  findings; an existing issue is separated from a newly introduced issue.
+- Tool crashes/malformed output cannot look like a clean scan, and synthetic
+  secret values never appear in persisted reports or log excerpts.
+
+---
+
+## QA-20 — Runner lifecycle and artifact retention
+
+**Status:** IDEA
+
+**Goal:** Make cancellation, concurrency and disk usage predictable across dashboard,
+CLI and pipeline runs.
+
+**Scope:**
+
+- Add cancellation with process-tree cleanup and explicit final run state;
+  configure stage deadlines separately from page/scenario budgets.
+- Lock baseline-cache writes across processes and publish cache entries
+  atomically; interrupted writes must never become reusable valid baselines.
+- Add configurable artifact retention with dry-run visibility; protect active
+  runs, referenced baselines and the valid latest-run pointer.
+- Report timeout/cancellation distinctly from product findings and preserve
+  useful partial evidence. Keep dashboard access restrictions unchanged.
+
+**Verify:**
+
+- Cancel and time out runs during install, server startup and browser work;
+  no child processes remain and activity reaches the correct terminal state.
+- Concurrent CLI/dashboard-style runs cannot corrupt shared caches.
+- Interrupted cache publication is rejected; retention dry runs and actual
+  cleanup preserve active artifacts and valid latest links.
+
+---
+
+## QA-21 — Scheduled deep runs
+
+**Status:** IDEA
+
+**Goal:** Keep routine branch checks bounded while automatically running broader
+configured coverage on a schedule.
+
+**Scope:**
+
+- Provide a Jenkins scheduling template using QA-08 levels: routine branch
+  runs use the configured normal level and scheduled runs select high.
+- Record exact ref, level and trigger in activity/reports; define comparison
+  behavior for scheduled default-branch runs so existing baseline findings
+  remain visible without being mislabeled as new regressions.
+- Serialize or queue competing runs consistently with runner locking; expose
+  schedule failures through pipeline status and existing reports.
+- Document opt-in configuration, time zone, credential requirements, artifact
+  retention and how to disable schedules. Do not activate external services as
+  part of template delivery or automatically include live checks.
+
+**Verify:**
+
+- Validate trigger/ref/level selection and execute a representative scheduled
+  high run; verify its matrix and report metadata.
+- Overlapping triggers follow the documented queue policy and failures retain
+  artifacts. Document any unavailable live scheduler verification explicitly.
