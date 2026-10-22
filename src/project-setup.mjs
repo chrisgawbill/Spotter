@@ -113,5 +113,12 @@ export async function detectProject(root, requested) {
   if (!config.checks.length) notes.push('No supported check scripts found; add checks manually.');
   const name = path.basename(repo).toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'my-app';
   normalizeConfig(config, { projectName: name });
-  return { name, source: YAML.stringify(config), notes };
+  const document = new YAML.Document(config);
+  // Match the dictionary's compact route objects and simple lists.
+  for (const route of document.getIn(['web', 'routes'])?.items ?? []) route.flow = true;
+  for (const key of ['viewports', 'colorSchemes']) {
+    const list = document.getIn(['web', key]);
+    if (list) list.flow = true;
+  }
+  return { name, source: document.toString({ lineWidth: 0 }), notes };
 }

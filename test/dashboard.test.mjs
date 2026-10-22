@@ -196,6 +196,9 @@ test('folder setup drafts nested apps without executing scripts and confines bro
     assert.equal((await setup(path.join(root, 'escape'))).status, 400);
     assert.equal((await setup(app, { Origin: 'http://outside.example' })).status, 403);
     const draft = await (await setup(app)).json();
+    assert.match(draft.source, /- \{ name: home, path: \/ \}/);
+    assert.match(draft.source, /viewports: \[ 375, 1280 \]/);
+    assert.match(draft.source, /colorSchemes: \[ light, dark \]/);
     const config = YAML.parse(draft.source);
     assert.equal(config.repo, repo);
     assert.equal(config.workdir, 'frontend');
