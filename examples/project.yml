@@ -11,6 +11,15 @@ checks:
 
 # Optional browser sweep; adjust build output and routes to match the app.
 web:
+  # Optional signed-in sweep, in addition to anonymous visits. Replace the key
+  # and value with an app-accepted test session; keep real credentials private.
+  # With API replay, record responses for this named session too.
+  # sessions:
+  #   - name: member
+  #     localStorage: { app-session-token: test-session-token }
+  # Optional project-owned flow tests; these do not sign in the page sweep.
+  # specs:
+  #   files: [qa/sign-in.spec.mjs]
   build:
     run: npm run build
     outDir: dist

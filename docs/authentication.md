@@ -19,6 +19,31 @@ screen-reader pass remains separate.
 
 ## Saved sessions
 
+Project specs and the page sweep have separate authentication setup. A spec can
+perform login or supply its own browser storage without signing in the sweep.
+To sweep signed-in pages as well as anonymous pages, configure `web.sessions`:
+
+```yaml
+web:
+  sessions:
+    - name: member
+      localStorage: { app-session-token: test-session-token }
+  specs:
+    files: [qa/sign-in.spec.mjs]
+```
+
+Replace the storage key and value with a session your app accepts. Each configured
+route, viewport and colour scheme then runs anonymously and as `member`. The
+report's “signed-in sweep (no sessions configured)” message refers to this sweep,
+even when authentication specs pass. A configured session must actually restore
+successfully in the app; its name alone does not prove authentication.
+
+When replaying an API, each named session needs its own fixture map. Record with
+an accepted test session, or supply controlled responses for a synthetic session,
+including session restoration and signed-in endpoints. A made-up token sent to a
+live API will normally be rejected. Synthetic responses establish frontend
+behavior only; preserve or recreate them if you replace the fixtures.
+
 Existing `localStorage` session configuration still works. For cookies and
 localStorage together, export a Playwright storage-state JSON file to a private
 directory, then configure:
