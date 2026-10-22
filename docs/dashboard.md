@@ -31,7 +31,8 @@ at port 8089. Both listeners must stay on the Tailscale interface. Run controls
 require same-origin JSON and a recognized Host; reports are sandboxed and
 cannot execute scripts. Fixtures and baseline/work directories are not served.
 
-A sample systemd unit is in `deploy/spotter-dashboard.service`. Adjust its user,
+Copy `examples/deploy/` into the ignored local `deploy/` directory first.
+A sample systemd unit is in `examples/deploy/spotter-dashboard.service`. Adjust its user,
 paths, Tailscale IP and environment to match the server, then install it under
 `/etc/systemd/system/` and enable it with `systemctl enable --now
 spotter-dashboard`. It uses the existing Docker image and runs as the repository
@@ -48,7 +49,7 @@ bash deploy/start-dashboard
 Docker's `unless-stopped` policy restarts the named `spotter-dashboard`
 container after failures and server reboots (Docker must start at boot).
 It retries if the Tailscale address is not yet available. It stays idle between requests. Open
-`http://100.87.100.20:8089`; no terminal command is needed after installation.
+`http://<tailscale-ip>:8089`; no terminal command is needed after installation.
 Use `docker logs spotter-dashboard` for logs and `docker restart spotter-dashboard`
 to restart it. An intentional `docker stop spotter-dashboard` keeps it stopped
 across reboots until `docker start spotter-dashboard`. Use either this container

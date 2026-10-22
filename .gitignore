@@ -1,2 +1,7 @@
 node_modules/
 *.log
+
+# Machine/project configuration stays local; templates live in examples/.
+/projects/
+/deploy/
+/Jenkinsfile

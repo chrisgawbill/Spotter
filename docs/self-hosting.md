@@ -12,10 +12,18 @@ to the container and npm registries and your projects' dependency sources.
 
 1. Clone this repository, preferably into `~/projects/Spotter`.
 2. Clone projects you want to check under `~/projects`.
-3. Replace the bundled `projects/*.yml` with configs for your own checkouts.
-   Each `repo` must be the absolute path on your server; set the actual base
-   branch, install/check/build commands and routes. The bundled configs are
-   examples, not repositories that Spotter downloads automatically.
+3. Create local configuration from the public examples:
+
+   ```bash
+   mkdir -p projects deploy
+   cp examples/project.yml projects/my-app.yml
+   cp examples/deploy/* deploy/
+   ```
+
+   Edit `projects/my-app.yml`: `repo` must be an absolute path on your server;
+   set the actual base branch, install/check/build commands and routes.
+   `projects/` and `deploy/` are ignored by Git. Keep real configs, deployment
+   settings and credentials there; only generic examples belong in GitHub.
 4. Build the image and start the dashboard:
 
    ```bash
@@ -71,15 +79,16 @@ Jenkins results in the dashboard.
 
 ## Publish your copy to GitHub
 
-Create an empty GitHub repository, commit the Spotter source and deployment
-files, then add its URL as `origin` and push your branch. This checkout has no
-remote configured. For example, after making your commit:
+Create an empty GitHub repository and commit the Spotter source and generic
+examples. Keep your local `projects/`, `deploy/` and root `Jenkinsfile` out of
+commits. Check `git diff --cached --name-only` before pushing. Add your own
+repository URL as `origin` if needed; for example:
 
 ```bash
 git remote add origin git@github.com:YOUR-ACCOUNT/Spotter.git
 git push -u origin HEAD
 ```
 
-Your cousin can clone that repository and follow the installation steps above.
+Other users can clone that repository and follow the installation steps above.
 The `private` field in `package.json` prevents accidental npm publication; it
 does not prevent sharing the repository or building the Docker image.

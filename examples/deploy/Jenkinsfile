@@ -1,0 +1,60 @@
+pipeline {
+  agent { label 'spotter' }
+  options { disableConcurrentBuilds(); timestamps() }
+  parameters {
+    string(name: 'PROJECT', defaultValue: params.PROJECT ?: '', description: 'Spotter project config name')
+    string(name: 'PROJECT_GIT_URL', defaultValue: params.PROJECT_GIT_URL ?: '', description: 'Project Git clone URL')
+    string(name: 'REF', defaultValue: '', description: 'Manual run branch; webhook supplies WEBHOOK_REF')
+    string(name: 'DEFAULT_BRANCH', defaultValue: params.DEFAULT_BRANCH ?: 'main', description: 'Branch excluded from push runs')
+  }
+  triggers {
+    GenericTrigger(
+      genericVariables: [[key: 'WEBHOOK_REF', value: '$.ref'], [key: 'WEBHOOK_DELETED', value: '$.deleted']],
+      tokenCredentialId: "spotter-${params.PROJECT}-webhook-token",
+      printContributedVariables: false,
+      printPostContent: false,
+      regexpFilterText: '$WEBHOOK_REF',
+      regexpFilterExpression: '^refs/heads/.+'
+    )
+  }
+  stages {
+    stage('Check branch') {
+      steps {
+        script {
+          env.TARGET_REF = (params.REF ?: env.WEBHOOK_REF ?: '').replaceFirst('^refs/heads/', '')
+          if (!env.TARGET_REF || env.TARGET_REF == params.DEFAULT_BRANCH || env.WEBHOOK_DELETED == 'true') {
+            currentBuild.result = 'NOT_BUILT'
+            error('Only non-default branch pushes are checked')
+          }
+          if (!params.PROJECT_GIT_URL) error('Set PROJECT_GIT_URL in this job')
+          env.SPOTTER_CHECKOUT = pwd()
+        }
+      }
+    }
+    stage('Checkout project') {
+      steps {
+        dir('target-project') {
+          checkout([$class: 'GitSCM', branches: [[name: "refs/remotes/origin/${env.TARGET_REF}"]],
+            userRemoteConfigs: [[url: params.PROJECT_GIT_URL, refspec: '+refs/heads/*:refs/remotes/origin/*']],
+            extensions: [[$class: 'CloneOption', shallow: false, noTags: false]]])
+          sh 'git branch -f "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"'
+        }
+      }
+    }
+    stage('Spotter') {
+      steps {
+        script {
+          def status = sh(returnStatus: true, script: '"$SPOTTER_CHECKOUT/bin/spotter" run "$PROJECT" --repo "$SPOTTER_CHECKOUT/target-project" --ref HEAD')
+          if (status > 1) error('Spotter could not finish; see console log')
+          dir('spotter-report') { deleteDir() }
+          sh '''
+            mkdir -p spotter-report
+            cp -R "${SPOTTER_HOME:-$HOME/spotter}/$PROJECT/runs/latest/." spotter-report/
+          '''
+          archiveArtifacts artifacts: 'spotter-report/**', fingerprint: true
+          if (status == 1) error('Spotter found new blocking issues; see report.md in artifacts')
+        }
+      }
+    }
+  }
+}

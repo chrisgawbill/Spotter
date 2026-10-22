@@ -4,8 +4,11 @@ Use one Jenkins Pipeline job per configured project on this server. The agent
 needs label `spotter`, Git, Bash and access to the Docker daemon, the project's
 Git repository, and the Spotter data directory. Build the Spotter image first
 (`bin/spotter build-image`) and record fixtures before enabling pushes.
+Provision `projects/<project>.yml` in the job’s Spotter workspace from your
+private server configuration; project configs are ignored and never supplied
+by the Git checkout. Use `examples/project.yml` as the starting template.
 
-Load `Jenkinsfile` from this Spotter repository using Pipeline script from SCM.
+Load `examples/deploy/Jenkinsfile` from this Spotter repository using Pipeline script from SCM.
 Install the Jenkins Git, Pipeline and Generic Webhook Trigger plugins. Configure
 PROJECT, PROJECT_GIT_URL and DEFAULT_BRANCH with Build with Parameters;
 these values are retained as defaults for subsequent webhook builds. REF stays
@@ -36,9 +39,10 @@ Dynamic content can still require human review.
 
 ## Caddy on Tailscale port 8088
 
-Run Caddy on the same server with `deploy/Caddyfile`. Set SPOTTER_TAILSCALE_IP
+Copy `examples/deploy/` into the ignored local `deploy/` directory and
+customize those local files. Run Caddy with `deploy/Caddyfile`. Set SPOTTER_TAILSCALE_IP
 to the server's Tailscale IPv4 address and SPOTTER_HOME to the absolute directory
-holding project runs (normally `/home/chris_dev/spotter`). Grant its service
+holding project runs (normally `~/spotter`, expanded to an absolute path). Grant its service
 user read/traverse permission for that directory. Validate before reloading:
 
 ```bash

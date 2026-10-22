@@ -1,0 +1,20 @@
+# Copy to projects/my-app.yml and replace these values for your checkout.
+repo: /absolute/path/to/my-app
+baseBranch: main
+workdir: .
+install: npm ci
+
+checks:
+  - name: tests
+    run: npm test
+    parser: generic
+
+# Optional browser sweep; adjust build output and routes to match the app.
+web:
+  build:
+    run: npm run build
+    outDir: dist
+  routes:
+    - { name: home, path: / }
+  viewports: [375, 1280]
+  colorSchemes: [light, dark]

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Persistent dashboard; Docker restarts it after a failure or server reboot.
+set -euo pipefail
+spotter_dir=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+mkdir -p "${SPOTTER_HOME:-$HOME/spotter}"
+docker run --detach --name spotter-dashboard --restart unless-stopped \
+  --init --network host --ipc host \
+  --user "$(id -u):$(id -g)" \
+  -e SPOTTER_HOME=/data \
+  -e SPOTTER_HOST_HOME="${SPOTTER_HOME:-$HOME/spotter}" \
+  -e SPOTTER_TAILSCALE_IP="${SPOTTER_TAILSCALE_IP:-$(tailscale ip -4)}" \
+  -v "$spotter_dir/src:/opt/spotter/src:ro" \
+  -v "$spotter_dir/projects:/opt/spotter/projects:ro" \
+  -v "${SPOTTER_HOME:-$HOME/spotter}:/data" \
+  -v "${SPOTTER_PROJECTS_ROOT:-$HOME/projects}:${SPOTTER_PROJECTS_ROOT:-$HOME/projects}:ro" \
+  "${SPOTTER_IMAGE:-spotter:latest}" dashboard

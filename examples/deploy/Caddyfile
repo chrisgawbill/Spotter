@@ -1,0 +1,12 @@
+# Set SPOTTER_TAILSCALE_IP to this server's Tailscale IPv4 address.
+http://{$SPOTTER_TAILSCALE_IP}:8088 {
+	bind {$SPOTTER_TAILSCALE_IP}
+	root * {$SPOTTER_HOME}
+	@reports path_regexp reports ^/[A-Za-z0-9_-]+/runs/
+	handle @reports {
+		file_server browse
+	}
+	handle {
+		reverse_proxy {$SPOTTER_TAILSCALE_IP}:8089
+	}
+}

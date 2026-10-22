@@ -173,7 +173,15 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
           remaining.splice(index, 1);
           return false;
         });
-        if (addedLoading.length) report({ check: 'fault-loading', severity: 'medium', title: `page still loading after ${fault.timeoutMs}ms during ${fault.kind} response`, detail: addedLoading.slice(0, 3).join('\n') });
+        if (addedLoading.length) report({
+          check: 'fault-loading',
+          severity: fault.kind === 'delay' ? 'low' : 'medium',
+          title: `page still loading after ${fault.timeoutMs}ms during ${fault.kind} response`,
+          detail: [fault.kind === 'delay'
+            ? 'Advisory: deliberately delayed requests can legitimately keep a page loading.'
+            : 'Observation deadline reached; verify the app retry budget before treating this as stuck.',
+          ...addedLoading.slice(0, 3)].join('\n'),
+        });
       } else {
         await probeRenderedPage(page, { web, report });
         if (web.accessibility) await runAccessibility(page, axePath, report);

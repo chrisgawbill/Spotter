@@ -25,10 +25,7 @@ export function findHorizontalOverflow() {
     }
     return false;
   };
-  const isShown = (element) => {
-    const style = getComputedStyle(element);
-    return style.visibility !== 'hidden' && style.opacity !== '0';
-  };
+  const isShown = (element) => element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
   const stickingOut = [...document.body.querySelectorAll('*')].filter((element) => {
     const box = element.getBoundingClientRect();
     if (box.width === 0 || box.height === 0 || box.right <= viewportWidth + 1) return false;

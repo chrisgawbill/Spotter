@@ -53,10 +53,34 @@ test('browser depth detects seeded defects as new, preserves session replay, and
     config.web.faultInjection = { delayMs: 500, timeoutMs: 80, loadingSelector: '[aria-busy=true]' };
     await writeFile(path.join(dir, 'dist/index.html'), shell(`<h1 aria-busy="true">Loading</h1><script>window.onFailure=()=>document.querySelector('h1').removeAttribute('aria-busy')</script>${script.replace("document.querySelector('main')", "document.querySelector('h1')")}`));
     const delayed = await run();
-    assert(delayed.findings.some((f) => f.check === 'fault-loading' && /delay/.test(f.title)));
+    assert(delayed.findings.some((f) => f.check === 'fault-loading' && /delay/.test(f.title) && f.severity === 'low'));
+    assert(!delayed.findings.some((f) => f.severity !== 'low'), JSON.stringify(delayed.findings));
     assert(!delayed.findings.some((f) => f.check === 'fault-loading' && /during 500/.test(f.title)));
   } finally {
     await new Promise((resolve) => api.close(resolve));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('healthy layout controls do not become overflow or blank-page findings', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'spotter-controls-'));
+  try {
+    await mkdir(path.join(dir, 'dist'));
+    await mkdir(path.join(dir, 'logs'));
+    const config = normalizeConfig({ repo: dir, web: {
+      build: { run: 'true' }, routes: ['/'], viewports: [375], colorSchemes: ['light'],
+      settleMs: 0, accessibility: false, keyboard: false, faultInjection: false,
+      errorText: ['Something went wrong'],
+    } }, { projectName: 'controls' });
+    await writeFile(path.join(dir, 'dist/index.html'), shell(`<h1>Healthy</h1>
+      <div style="overflow:auto;width:200px"><div style="width:800px">Carousel content</div></div>
+      <div style="opacity:0"><div style="width:900px;position:fixed">Invisible content</div></div>
+      <div hidden>Something went wrong</div>`));
+    const run = () => runWebStage({ config, workdir: dir, logDir: path.join(dir, 'logs'), screenshotDir: path.join(dir, 'screenshots') });
+    assert.deepEqual((await run()).findings, []);
+    await writeFile(path.join(dir, 'dist/index.html'), shell('<h1>Healthy</h1><div style="width:900px">Actual overflow</div>'));
+    assert((await run()).findings.some((finding) => finding.check === 'horizontal-overflow'));
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });

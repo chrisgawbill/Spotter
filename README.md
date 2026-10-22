@@ -6,9 +6,9 @@ so coding agents read one report instead of rebuilding test setups,
 screenshot loops and API mocks for every ticket.
 
 ```bash
-bin/spotter run hockeystats-webapp --ref feature/my-change      # prints report.md; exit 1 = new high/medium findings
-bin/spotter run hockeystats-webapp --repo ~/worktrees/x --working-tree   # another clone, uncommitted changes included
-bin/spotter record hockeystats-webapp                           # (re)record API fixtures from the live API
+bin/spotter run my-app --ref feature/my-change      # prints report.md; exit 1 = new high/medium findings
+bin/spotter run my-app --repo ~/worktrees/x --working-tree   # another clone, uncommitted changes included
+bin/spotter record my-app                           # (re)record API fixtures from the live API
 bin/spotter list
 SPOTTER_TAILSCALE_IP="$(tailscale ip -4)" bin/spotter dashboard # Tailscale-only dashboard
 ```
@@ -31,8 +31,9 @@ itself on first use). Results go to `~/spotter/<project>/runs/<run>/`
 For installation on another server and automatic dashboard startup, see
 [self-hosting](docs/self-hosting.md).
 
-Create `projects/<name>.yml`; `projects/hockeystats-webapp.yml` is the
-annotated reference. Fields:
+Copy `examples/project.yml` to `projects/<name>.yml` and customize it.
+The `projects/` and `deploy/` directories and root `Jenkinsfile` stay local
+and are ignored by Git; share only the templates in `examples/`. Fields:
 
 | Field | Meaning |
 | --- | --- |
@@ -125,6 +126,9 @@ visit delaying that endpoint. Other endpoints replay normally. After
 `timeoutMs` (independent of the healthy-page settling delay), Spotter reports crashes, blank pages and visible loading indicators
 (customize `loadingSelector` for the app). Expected injected HTTP errors are
 suppressed; loading indicators already present on the healthy visit are excluded.
+Loading during a delayed response is advisory: an intentionally pending request
+does not prove a stuck page. A 500 loading finding records the configured
+observation deadline, not proof that loading never ends.
 `delayMs` controls the response delay; use a value above `timeoutMs`
 to observe pending requests. Choose settling and fault budgets that allow the
 app's retry window to finish. Set `web.faultInjection: false` to skip this sweep.

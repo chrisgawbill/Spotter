@@ -7,10 +7,10 @@ WORKDIR /opt/spotter
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
 
-# src/ and projects/ are bind-mounted by bin/spotter so code and config
-# changes apply without rebuilding; the copies here make the image usable alone.
+# Source and local project configs are bind-mounted by bin/spotter.
+# Private project configs must never be baked into the image.
 COPY src ./src
-COPY projects ./projects
+RUN mkdir -p projects
 
 ENV SPOTTER_HOME=/data HOME=/tmp/home
 ENTRYPOINT ["node", "/opt/spotter/src/cli.mjs"]

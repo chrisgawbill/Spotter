@@ -52,3 +52,15 @@ test('generic: nothing on success, log tail on failure', () => {
   assert.equal(failure.title, 'exited with code 2');
   assert.equal(failure.detail, 'a\nb\nboom');
 });
+
+test('prettier: successful checks and configuration warnings are not formatting defects', () => {
+  assert.deepEqual(parsePrettierOutput({ exitCode: 0, output: '[warn] Ignored unknown option { obsolete: true }.' }), []);
+  assert.deepEqual(parsePrettierOutput({ exitCode: 2, output: '[warn] Ignored unknown option { obsolete: true }.' }), []);
+});
+
+test('prettier: option warnings mixed with real formatting failures are not filenames', () => {
+  const cwd = mkdtempSync(path.join(tmpdir(), 'spotter-prettier-'));
+  writeFileSync(path.join(cwd, 'a.js'), 'const a=1');
+  const output = '[warn] Ignored unknown option { obsolete: true }.\n[warn] a.js\n[warn] Code style issues found in the above file.';
+  assert.deepEqual(parsePrettierOutput({ cwd, exitCode: 1, output }).map((item) => item.file), ['a.js']);
+});

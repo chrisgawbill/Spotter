@@ -1,0 +1,19 @@
+# Example only: replace the user, paths and Tailscale address before installing.
+[Unit]
+Description=Spotter Tailscale dashboard
+After=docker.service tailscaled.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=spotter
+WorkingDirectory=/home/spotter/projects/Spotter
+Environment=SPOTTER_TAILSCALE_IP=100.64.0.1
+Environment=SPOTTER_HOME=/home/spotter/spotter
+ExecStart=/home/spotter/projects/Spotter/bin/spotter dashboard
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
