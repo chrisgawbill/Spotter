@@ -100,9 +100,9 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
           body += chunk;
           if (Buffer.byteLength(body) > 4096) return send(413, { error: 'Request too large' });
         }
-        const { folder } = JSON.parse(body);
+        const { folder, existingName } = JSON.parse(body);
         if (typeof folder !== 'string') return send(400, { error: 'Select a server folder' });
-        return send(200, await detectProject(projectsRoot, folder));
+        return send(200, await detectProject(projectsRoot, folder, { configsDir, existingName }));
       }
       if (url.pathname === '/api/config-draft' && req.method === 'POST') {
         if (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON required' });

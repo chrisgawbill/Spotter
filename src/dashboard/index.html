@@ -43,6 +43,10 @@
 <h3 id="editor-title">New configuration</h3>
 <label class="ds-field">Project name<input id="config-name" class="ds-input" required pattern="[A-Za-z0-9_-]+" aria-describedby="name-help"></label>
 <p id="name-help" class="muted">Use letters, numbers, underscores or hyphens. Example: my-app.</p>
+<details id="setup-details" hidden><summary>Detected settings and options to review</summary>
+<div id="setup-existing" class="ds-cluster"></div>
+<div class="ds-table-wrap"><table class="ds-table"><thead><tr><th>Option</th><th>Source</th><th>Evidence / next step</th></tr></thead><tbody id="setup-coverage"></tbody></table></div>
+</details>
 <div class="config-layout"><div class="ds-stack"><div id="config-fields" class="ds-grid"></div>
 <button id="apply-fields" type="button" class="ds-button">Apply fields to YAML</button>
 <label class="ds-field">Full configuration (YAML)<textarea id="config-source" class="ds-input" rows="22" spellcheck="false" required aria-describedby="yaml-help"></textarea></label>

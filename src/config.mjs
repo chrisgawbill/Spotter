@@ -7,7 +7,7 @@ import { readSessionState } from './sessions.mjs';
 
 const projectsDir = path.join(spotterRoot, 'projects');
 
-const WEB_DEFAULTS = {
+export const WEB_DEFAULTS = {
   viewports: [375, 1280],
   colorSchemes: ['light'],
   errorText: [],

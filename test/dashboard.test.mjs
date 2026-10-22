@@ -204,7 +204,8 @@ test('folder setup drafts nested apps without executing scripts and confines bro
     assert.equal(config.workdir, 'frontend');
     assert.equal(config.baseBranch, 'main');
     assert.equal(config.install, 'pnpm install');
-    assert.equal(config.checks.find((check) => check.name === 'test').run, 'pnpm run test --run');
+    assert.equal(config.checks.find((check) => check.name === 'test').run, 'pnpm run test --run --reporter=json --outputFile={output}');
+    assert.equal(config.checks.find((check) => check.name === 'test').parser, 'vitest');
     assert.ok(!config.checks.some((check) => check.name === 'format:check'));
     assert.equal(config.web.build.outDir, 'dist');
     assert.deepEqual(config.web.routes, [{ name: 'home', path: '/' }]);

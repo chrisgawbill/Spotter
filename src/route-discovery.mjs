@@ -17,6 +17,15 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
   const routes = new Set();
   const pending = new Set();
   const notes = [];
+  const evidence = { api: [], themeKeys: [], errorText: [], retryDelays: [], routeSamples: [], loadingSelectors: [], playwright: { viewports: [], colorSchemes: [] } };
+  const cleanUrl = (value) => {
+    try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash ? url.href.replace(/\/$/, '') : null; } catch { return null; }
+  };
+  const memberPath = (node) => node?.type === 'Identifier' ? node.name : node?.type === 'MetaProperty' ? `${node.meta.name}.${node.property.name}` : node?.type === 'MemberExpression' ? `${memberPath(node.object)}.${node.computed ? node.property.value : node.property.name}` : '';
+  const apiEnv = (node) => {
+    const match = /^(?:import\.meta\.env|process\.env)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(memberPath(node));
+    return match && /(?:API|BACKEND).*(?:URL|ORIGIN|HOST)/i.test(match[1]) ? match[1] : null;
+  };
   let hash = false;
   let browser = false;
   let base = '/';
@@ -77,11 +86,13 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
       ast = parse(source, { sourceType: 'unambiguous', plugins: ['jsx', 'typescript', 'decorators-legacy'] });
     }
     catch { notes.push(`Could not read route syntax in ${file}; review it manually.`); continue; }
+    const strings = new Set();
+    walk(ast, (node) => { if (node.type === 'StringLiteral') strings.add(node.value); });
     const bindings = new Map();
     const imports = new Map();
     const imported = new Map();
     const exported = new Map();
-    const module = { ast, bindings, imports, imported, exported, file };
+    const module = { ast, bindings, imports, imported, exported, file, strings };
     modules.set(file, module);
     walk(ast, (node) => {
       owners.set(node, module);
@@ -103,7 +114,7 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
     const relative = path.posix.normalize(path.posix.join(path.posix.dirname(file), from));
     return [relative, ...['.ts', '.tsx', '.js', '.jsx', '.mjs', '/index.ts', '/index.js'].map((ext) => relative + ext)].map((candidate) => modules.get(candidate)).find(Boolean);
   }
-  for (const { ast, imports, file } of modules.values()) {
+  for (const { ast, imports, file, strings } of modules.values()) {
     function resolve(node, seen = new Set()) {
       if (node?.type === 'Identifier' && !seen.has(node)) {
         const owner = owners.get(node);
@@ -161,7 +172,59 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
     }
     jsx(ast);
     walk(ast, (node) => {
+      if (/^playwright\.config\.[cm]?[jt]s$/.test(file) && node.type === 'ObjectProperty') {
+        const key = node.key.name ?? node.key.value;
+        const value = resolve(node.value);
+        if (key === 'viewport') {
+          const width = resolve(prop(value, 'width'))?.value;
+          const height = resolve(prop(value, 'height'))?.value;
+          if (Number.isInteger(width) && width > 0 && Number.isInteger(height) && height > 0) evidence.playwright.viewports.push({ width, height });
+        }
+        if (key === 'colorScheme' && ['light', 'dark'].includes(literal(value))) evidence.playwright.colorSchemes.push(literal(value));
+        if (key === 'navigationTimeout' && value?.type === 'NumericLiteral' && value.value > 0) evidence.playwright.pageTimeoutMs = value.value;
+      }
+      if (apiEnv(node) && !evidence.api.some((item) => item.envVar === apiEnv(node))) evidence.api.push({ envVar: apiEnv(node), urls: [], file });
+      if (node.type === 'VariableDeclarator' && !['ArrowFunctionExpression', 'FunctionExpression', 'ObjectExpression', 'ArrayExpression'].includes(node.init?.type)) {
+        const envs = new Set();
+        const urls = new Set();
+        walk(node.init, (child) => {
+          if (apiEnv(child)) envs.add(apiEnv(child));
+          if (child.type === 'StringLiteral' && cleanUrl(child.value)) urls.add(cleanUrl(child.value));
+        });
+        for (const envVar of envs) {
+          let item = evidence.api.find((candidate) => candidate.envVar === envVar);
+          if (!item) { item = { envVar, urls: [], file }; evidence.api.push(item); }
+          item.urls = [...new Set([...item.urls, ...urls])];
+        }
+      }
+      if (node.type === 'VariableDeclarator') {
+        const delays = resolve(node.init);
+        if (/retry.*delay|backoff.*delay/i.test(node.id.name ?? '') && delays?.type === 'ArrayExpression'
+          && delays.elements.length && delays.elements.every((item) => item?.type === 'NumericLiteral' && item.value >= 0 && item.value <= 60_000)) {
+          evidence.retryDelays.push({ values: delays.elements.map((item) => item.value), file });
+        }
+      }
+      if (node.type === 'CallExpression' && /^(?:window\.)?localStorage\.(?:getItem|setItem)$/.test(memberPath(node.callee))) {
+        const key = literal(node.arguments[0]);
+        if (key && /theme|color.?scheme/i.test(key) && strings.has('light') && strings.has('dark')) evidence.themeKeys.push({ key, file });
+      }
       if (node.type === 'JSXElement') {
+        for (const key of ['to', 'href']) {
+          const value = literal(attr(node, key)?.value);
+          if (value && /^(?:\/|#\/)/.test(value) && !value.startsWith('//')) evidence.routeSamples.push({ path: value, file });
+        }
+        if (/loading|spinner|progress/i.test(file)) {
+          const classes = literal(attr(node, 'className')?.value) ?? literal(attr(node, 'class')?.value);
+          for (const name of classes?.split(/\s+/) ?? []) if (/^[a-zA-Z_-][\w-]*$/.test(name) && /loading|spinner|progress/i.test(name)) evidence.loadingSelectors.push({ value: `[class~="${name}"]`, file });
+        }
+        const component = node.openingElement.name.name ?? '';
+        if (/Error|Fallback|Alert/.test(component) || literal(attr(node, 'role')?.value) === 'alert') {
+          for (const key of ['title', 'message']) {
+            const value = literal(attr(node, key)?.value);
+            if (value && value.length <= 200 && /couldn.t|unable|failed|error|something went wrong|unavailable/i.test(value)) evidence.errorText.push({ value, file });
+          }
+          for (const child of node.children) if (child.type === 'JSXText' && child.value.trim() && child.value.trim().length <= 200 && /couldn.t|unable|failed|error|something went wrong|unavailable/i.test(child.value)) evidence.errorText.push({ value: child.value.trim(), file });
+        }
         const name = imports.get(node.openingElement.name.name);
         if (name === 'HashRouter') { hash = true; frameworks.push('React Router'); }
         if (['HashRouter', 'BrowserRouter'].includes(name)) {
@@ -228,5 +291,5 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
   if (pending.size) notes.push(`Routes needing concrete sample URLs: ${[...pending].join(', ')}. Replace parameters/wildcards and add these routes manually.`);
   if (!routes.size) { routes.add('/'); notes.push('No literal routes detected; using home only. Add routes manually for unsupported routers.'); }
   else notes.push(`Detected ${routes.size} literal routes. Review query parameters and routes assembled across files.`);
-  return { base, outDir, staticExport, serverBuild, routes: [...routes].map((route) => ({ name: route === '/' ? 'home' : route.slice(1).replace(/[^\w-]+/g, '-'), path: `${prefix}${prefix ? hashBasename : ''}${route}` })), notes };
+  return { base, outDir, staticExport, serverBuild, evidence, patterns: [...routes, ...pending].filter((route) => route.startsWith('/')), routes: [...routes].map((route) => ({ name: route === '/' ? 'home' : route.slice(1).replace(/[^\w-]+/g, '-'), path: `${prefix}${prefix ? hashBasename : ''}${route}` })), notes };
 }

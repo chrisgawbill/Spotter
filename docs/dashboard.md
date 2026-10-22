@@ -129,14 +129,36 @@ unparseable source. It does not promise all runtime-generated routes.
 The generated YAML opens in the existing editor; review it and click **Save
 configuration**. Existing configurations are never overwritten by generation.
 
-Detection reads Git metadata and `package.json`; it does not install dependencies
-or execute app scripts. Watch/fix/write check scripts are skipped. Other stacks
-receive a minimal draft with guidance. Review custom build output and base path,
-review detected routes and supply project rules, API fixture settings,
-private sessions and project-owned specs as needed. Monorepos may require
-adjusting install commands. Folder browsing follows the configured server root,
-not folders on the device running your browser. Custom roots must be mounted
-and passed as `SPOTTER_PROJECTS_ROOT`; the launchers do both automatically.
+Detection reads Git metadata, package scripts/lockfiles, TypeScript config,
+router/build source, public environment examples, CSS breakpoints, Playwright
+settings and Spotter adapter specs. It selects known check parsers, adds Vitest
+JSON reports, discovers API URL variables/fallbacks, plain theme-storage keys,
+literal failure UI text, loading classes and retry-aware observation budgets.
+Inferred values need review: source syntax cannot establish every runtime state.
+Private `.env` and session-state files are not scanned, and generation never runs
+project code, installs dependencies or records API requests.
+
+Every dictionary option appears in the draft's coverage table as **preserved**,
+**detected**, **inferred**, **default** or **review**, with evidence or next steps.
+Runtime defaults are shown explicitly in new browser configs. Generation follows
+the dictionary's own YAML examples for routes, arrays and compact mappings;
+block and flow YAML remain equivalent input formats.
+
+Portable explicit settings can live in `spotter.yml`, `.spotter.yml` or
+`.spotter/config.yml` in the app folder, or the repository root with a matching
+`workdir`. These settings override inference. Matching saved dashboard configs
+have highest priority: one match is reused automatically; with several matches,
+choose **Reuse <name>**. Existing commands, routes, policies, sessions, tuned
+budgets and comments survive; generation fills missing settings and still waits
+for **Save configuration**. Saving uses the existing stale-edit protection.
+
+Projects without explicit policy/session settings show those fields for review;
+the wizard does not invent policy exceptions, credentials or account IDs. Literal
+navigation links can supply route/query samples; unresolved dynamic URLs remain
+listed for review. Monorepos and unknown/server-only builds may need adjustments.
+Folder browsing uses the mounted server root, not the browser device's folders.
+Custom roots must be passed as `SPOTTER_PROJECTS_ROOT`; the launchers mount and
+forward that path.
 
 Open **Configurations** to create, edit or delete `projects/<name>.yml`.
 The basic form covers repository, base branch, working directory and install

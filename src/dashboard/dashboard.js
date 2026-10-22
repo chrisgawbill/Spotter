@@ -135,17 +135,24 @@ async function openEditor(name = '', generated = null) {
   if (dirty && !confirm('Discard unsaved configuration changes?')) return;
   try {
     const result = generated ?? (name ? await api(`/api/configs/${encodeURIComponent(name)}`) : { source: 'repo: /absolute/path/to/my-app\nbaseBranch: main\nworkdir: .\ninstall: npm ci\n\nchecks:\n  - name: tests\n    run: npm test\n    parser: generic\n' });
-    editorName = name;
-    originalSource = name ? result.source : null;
+    const targetName = name || generated?.existingName || '';
+    editorName = targetName;
+    originalSource = generated?.previous ?? (name ? result.source : null);
     $('config-source').value = result.source;
     $('config-name').value = name || generated?.name || '';
-    $('config-name').readOnly = !!name;
-    $('editor-title').textContent = name ? `Edit ${name}` : 'New configuration';
-    $('delete-config').hidden = !name;
+    $('config-name').readOnly = !!targetName;
+    $('editor-title').textContent = targetName ? `Edit ${targetName}` : 'New configuration';
+    $('delete-config').hidden = !targetName;
     $('config-editor').hidden = false;
     dirty = false;
     basicDirty = false;
     message(generated?.notes.join(' ') ?? '');
+    $('setup-details').hidden = !generated;
+    if (generated) {
+      $('setup-details').open = true;
+      html('setup-coverage', (generated.coverage ?? []).map((item) => `<tr><td>${escape(item.field)}</td><td>${escape(item.status)}</td><td>${escape(item.evidence)}</td></tr>`).join(''));
+      html('setup-existing', (generated.existingConfigs ?? []).map((existing) => `<button class="ds-button" type="button" data-existing="${escape(existing)}" ${existing === generated.existingName ? 'disabled' : ''}>Reuse ${escape(existing)}</button>`).join(''));
+    }
     for (const [key] of guided) $(`field-${key}`).value = '';
     try { await draft(); } catch (error) { message(`Repair the YAML below: ${error.message}`); }
     if (generated) dirty = true;
@@ -170,6 +177,14 @@ $('setup-project').addEventListener('click', async () => {
   await browseFolders();
 });
 $('folder-list').addEventListener('click', (event) => { const next = event.target.closest('[data-folder]')?.dataset.folder; if (next) void browseFolders(next); });
+$('setup-existing').addEventListener('click', async (event) => {
+  const existingName = event.target.closest('[data-existing]')?.dataset.existing;
+  if (!existingName) return;
+  try {
+    const generated = await configRequest('/api/project-setup', 'POST', { folder, existingName });
+    await openEditor('', generated);
+  } catch (error) { message(error.message); }
+});
 $('close-folders').addEventListener('click', () => { $('folder-picker').hidden = true; });
 $('detect-project').addEventListener('click', async () => {
   $('detect-project').disabled = true;

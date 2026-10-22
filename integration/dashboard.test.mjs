@@ -63,6 +63,7 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     await writeFile(path.join(repo, 'package.json'), JSON.stringify({ scripts: { test: 'node --test', build: 'vite build' }, devDependencies: { vite: '*' } }));
     await writeFile(path.join(repo, 'routes.tsx'), `import { HashRouter, Route } from 'react-router-dom'; export const Routes = () => <HashRouter><Route path="/" /><Route path="reports" /><Route path="team/:id" /></HashRouter>`);
     await writeFile(path.join(repo, 'vite.config.ts'), `export default { base: '/demo/' };`);
+    await writeFile(path.join(spotterRoot, 'projects/dashboard-alternative.yml'), JSON.stringify({ repo, checks: [] }));
     await page.click('#setup-project');
     await page.locator('[data-folder]').filter({ hasText: 'repo →' }).click();
     await page.waitForFunction((folder) => document.querySelector('#folder-path').textContent === folder, repo);
@@ -73,6 +74,13 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     assert.match(await page.inputValue('#config-source'), /base: \/demo\//);
     assert.match(await page.textContent('#config-message'), /team\/:id/);
     assert.match(await page.textContent('#config-message'), /Review generated commands/);
+    await page.locator('[data-existing="dashboard-demo"]').waitFor();
+    assert.match(await page.textContent('#setup-coverage'), /web.api/);
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.locator('[data-existing="dashboard-demo"]').click();
+    await page.waitForFunction(() => document.querySelector('#config-name').value === 'dashboard-demo' && document.activeElement.id === 'config-name');
+    assert.match(await page.inputValue('#config-source'), /slow-check/);
+    assert.match(await page.textContent('#setup-coverage'), /preserved/);
     page.once('dialog', (dialog) => dialog.accept());
     await page.click('#close-config');
     await page.click('#new-config');
@@ -127,6 +135,7 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     await rm(configFile, { force: true });
+    await rm(path.join(spotterRoot, 'projects/dashboard-alternative.yml'), { force: true });
     await rm(path.join(spotterRoot, 'projects/dashboard-created.yml'), { force: true });
     await rm(root, { recursive: true, force: true });
   }
