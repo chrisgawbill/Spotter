@@ -4,6 +4,21 @@ Ticket states: IDEA, READY, ACTIVE, BLOCKED, DONE. Tickets stay IDEA until the
 Product Owner promotes or starts one. `Start <ticket>` authorizes only that
 ticket.
 
+## Tickets at a glance
+
+| Ticket | Status | Scope |
+| --- | --- | --- |
+| [QA-01](#qa-01--spotter-mvp-static-checks-rendered-sweep-short-report) | DONE | Core runner and short report |
+| [QA-02](#qa-02--depth-accessibility-fault-injection-signed-in-state) | DONE | Browser depth |
+| [QA-03](#qa-03--pipeline-jenkins-hosted-report-visual-diff) | ACTIVE | Pipeline and hosted reports |
+| [QA-04](#qa-04--project-specs-and-api-contracts) | DONE | Project specs and API contracts |
+| [QA-05](#qa-05--adopt-spotter-in-hockeystatswebapps-agent-workflow) | DONE | Consumer workflow |
+| [QA-06](#qa-06--spotter-dashboard) | ACTIVE | Dashboard |
+| [QA-07](#qa-07--generic-authentication-flow-testing) | DONE | Authentication |
+
+Statuses and acceptance below are recorded decisions. Historical test output is
+in [ticket evidence](ticket-evidence.md); usage instructions are in the [README](../README.md).
+
 ## Product decisions (Product Owner, 2026-10-22)
 
 - **Purpose:** an independent, automatic QA runner that spits out what it
@@ -28,11 +43,11 @@ PM owns scope and evidence review. Each ticket is DONE when its Verify list
 passes and the Product Owner accepts a sample report. Reports must stay short:
 an agent should be able to act on `report.md` without opening anything else.
 
-| Ticket | Human decision or review checkpoint |
+| Ticket | Decision or review checkpoint (recorded 2026-10-22) |
 | --- | --- |
 | QA-01 | Sample report accepted 2026-10-22. |
 | QA-02 | Approved 2026-10-22: localStorage sessions; serious/critical axe violations block, others advisory. Sample report accepted 2026-10-22. |
-| QA-03 | Jenkins job shape, the Tailscale port for the HTML report, and whether to post PR comments (needs a GitHub token on the server). |
+| QA-03 | ACTIVE: Jenkins push webhook and Caddy port 8088 approved; PR comments disabled. Live activation pending. |
 | QA-04 | Accepted 2026-10-22: project-repo specs with named tests mapping Verify items; sample report accepted. |
 | QA-05 | Workflow documentation accepted by Product Owner 2026-10-22. |
 | QA-06 | Dashboard implementation and hosting checks ready for review; sample acceptance and persistent service activation pending. |
@@ -51,23 +66,7 @@ QA-02, QA-04 -> QA-07
 ## QA-01 — Spotter MVP: static checks, rendered sweep, short report
 
 **Status:** DONE — sample report accepted by Product Owner 2026-10-22.
-Verify results: 14 unit tests pass; `main`
-against itself gives 6 issues, all confirmed real (see "Found on main");
-the seeded branch reported each of its 5 defects as new and nothing else
-besides Prettier on the edited file (~45s per run; base results cached).
-
-**Found on main (2026-10-22):**
-
-- Matchup page at 768px: Team DNA "Shot Suppression" value runs past the card
-  and 18px off screen (cut off by `body { overflow-x: clip }`).
-- Live API: `GET /player/goalie/statLeaders/shutouts` answers 500.
-- Cross-feature imports missing from architecture.md's list:
-  draft-lottery → standings, favorite-players → teams, standings → schedule,
-  teams → standings; `* → season` is allowlisted pending confirmation.
-
-**Learned while building:** the app clips sideways overflow on `body`, so the
-check reports content cut off at the right edge rather than page scroll; its
-theme follows time of day, so the config seeds the saved theme per scheme.
+Historical verification: [evidence](ticket-evidence.md#qa-01).
 
 **Goal:** `spotter run <project> --ref <branch>` checks out the branch, runs
 the project's checks and a browser sweep, compares with the merge base, and
@@ -137,23 +136,8 @@ seeding; serious/critical axe violations block, others are advisory.
   import, overflow, accessibility and keyboard defects.
 - Product Owner accepts the sample report.
 
-**Evidence (2026-10-22):**
+Historical verification: [evidence](ticket-evidence.md#qa-02).
 
-- `npm test` passes; 17 unit/browser tests pass in the Docker image. The browser
-  regression covers isolated session recording/replay and seeded accessibility,
-  keyboard, crash, blank-page and loading failures against a healthy baseline.
-- Full main run: 66 page variants and 308 endpoint-fault visits. Existing API,
-  layout, boundary and accessibility findings remain; keyboard focus checks are
-  advisory. Signed-in HockeyStats visits need a configured test session.
-- Seeded branch: all six intended defects are new (type, test, import, overflow,
-  unnamed button, unreachable button), plus the seeded content's landmark
-  violation: seven groups total, zero fixed, no unrelated new findings.
-  Sample: `~/spotter/hockeystats-webapp/runs/20261022-053311-verify-browser-depth-defects/report.md`.
-- Real-run timing/status false positives led to project config corrections:
-  wait for retries, including four delayed attempts; match actual spinners,
-  excluding valid empty-state status regions. Focused recheck: three affected
-  routes, 78 endpoint-fault visits, zero unexpected fault/navigation findings.
-  Evidence: `/tmp/spotter-depth-recheck/output/result.json`.
 
 ---
 
@@ -193,21 +177,8 @@ drift remains advisory and is saved alongside fixture snapshots.
 - HockeyStatsWebApp main and seeded-defect runs; a project-owned spec failure is new against a healthy baseline.
 - Product Owner accepts a sample report.
 
-**QA-04 evidence (2026-10-22):**
+Historical verification: [evidence](ticket-evidence.md#qa-04).
 
-- `npm test` passes all eight test files. Docker integrations for specs and
-  contract recording pass. Three real CLI recordings establish the initial
-  snapshot, detect anonymous/member shape drift, and ignore value-only changes.
-- Isolated HockeyStatsWebApp clone: healthy named spec passes with recorded
-  response/status and fixed browser time; its seeded failure is the only new
-  issue against the healthy baseline (three existing API findings remain).
-- Full main: 66 page variants and 308 fault visits; existing app findings plus
-  four transient external-image network failures. Full seeded comparison:
-  all six intended defects are new, plus their content's landmark violation;
-  seven groups, 17 existing, zero fixed, no unrelated new findings. Sample
-  report accepted by Product Owner 2026-10-22.
-- Full regression: `~/spotter/hockeystats-webapp/runs/20261022-150821-HEAD/report.md`.
-- Named-spec sample: `/tmp/spotter-qa04-data/hockeystats-webapp/runs/20261022-151134-verify-project-spec-defect/report.md`.
 
 ---
 
@@ -269,31 +240,8 @@ Depends on QA-03. Live hosting and Jenkins activation can be coordinated with
 this ticket.
 
 
-**QA-06 implementation (2026-10-22):**
+Historical verification: [evidence](ticket-evidence.md#qa-06).
 
-- `spotter dashboard` serves the project/branch launcher, recent runs, live
-  activity and embedded reports using the shared Aero stylesheet. Activity
-  events cover head/base work, static checks, builds, browser variants and
-  endpoint fault scenarios; a five-second heartbeat identifies interrupted runs.
-- Unit/HTTP checks pass (24 tests): branch/project validation, same-origin and
-  Host checks, run transitions, interrupted runs, artifact confinement, JSON/log
-  browsing, and rejection of non-Tailscale listener addresses.
-- Docker browser regression passes with real healthy/seeded CLI runs, live
-  activity, pass/fail reports, screenshots/diffs, reload persistence and mobile
-  layout. Preview evidence: `/tmp/spotter-dashboard-desktop.png`,
-  `/tmp/spotter-dashboard-mobile.png`.
-- Main regression: 66 page variants and 308 fault visits; the same 17 known
-  finding groups, no unexpected findings. Report:
-  `~/spotter/hockeystats-webapp/runs/20261022-155312-main-587ba74b/report.md`.
-- Full seeded regression: all six intended defects plus the seeded content’s
-  landmark finding are new (seven groups); 17 existing, zero fixed, no unrelated
-  new findings. All 374 screenshots are available for visual review. Report:
-  `~/spotter/hockeystats-webapp/runs/20261022-155314-verify-browser-depth-defects-ed54b828/report.md`.
-- Caddy configuration and systemd unit validate. Temporary hosting verified
-  project/branch discovery and a real report through Tailscale ports 8088/8089;
-  both listeners bound only `100.87.100.20`, and loopback access was refused.
-  Temporary servers were stopped. Persistent service installation and sample
-  acceptance remain pending; setup is in `docs/dashboard.md`.
 
 ---
 
@@ -353,29 +301,4 @@ stay in project-owned specs and project configuration; none belong in `src/`.
 
 Depends on QA-02 and QA-04.
 
-**QA-07 evidence (2026-10-22):**
-
-- `npm test`: 30 tests pass. Five Docker browser integrations pass, including
-  generic form/cookie and OAuth flows, a seeded state-validation defect reported
-  as new, session isolation, one-time state seeding, private-output redaction,
-  live-mode selection and missing-credential errors.
-- Real Docker-wrapper checks: a private state file mounted read-only yields
-  two passing session specs; explicit live mode forwards a synthetic credential
-  and passes its selection smoke check without requiring the private state
-  mount. This does not establish real-provider sign-in.
-- Full HockeyStats main: the same 17 known finding groups. Full seeded branch:
-  seven new groups (six intended defects plus their landmark violation), 17
-  existing, zero fixed, no unrelated additions. Reports:
-  `~/spotter/hockeystats-webapp/runs/20261022-181645-main-31189b8b/report.md` and
-  `~/spotter/hockeystats-webapp/runs/20261022-181905-verify-browser-depth-defects-f03b10f1/report.md`.
-- HockeyStats owns `react/qa/sign-in.spec.mjs`: 24 passing dialog/Discord specs
-  at 375/1280 in light/dark. Its separate local `hockeystats-auth` config selects
-  the spec and a controlled Discord build; standard project sweeps keep their
-  existing configuration. Use `--working-tree --no-baseline` until the new spec
-  is committed and available for comparison. Auth fixtures have been recorded.
-  Final CLI report: `~/spotter/hockeystats-auth/runs/20261022-183619-working-tree-b5badd20/report.md`;
-  typecheck, unit tests, format and all 24 specs pass. The overall run exits 1
-  for nine other finding groups, each also present in the main report.
-- Usage and evidence boundaries: [authentication testing](authentication.md).
-  Product Owner accepted the sample report 2026-10-22. No real provider credentials
-  were used; backend security and a human screen-reader pass are not claimed.
+Historical verification: [evidence](ticket-evidence.md#qa-07).

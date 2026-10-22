@@ -1,12 +1,12 @@
 # Spotter
 
-Independent, automatic QA for web projects. One command checks a branch and
-prints a short report of what is **new** on it compared with its merge base,
-so coding agents read one report instead of rebuilding test setups,
-screenshot loops and API mocks for every ticket.
+Spotter checks a web project against its merge base and reports **new findings**.
+It runs configured checks, rules, browser sweeps and project-owned Playwright
+specs against recorded API responses. Start with `report.md`; use `report.html`
+for screenshots and visual review.
 
 ```bash
-bin/spotter run my-app --ref feature/my-change      # prints report.md; exit 1 = new high/medium findings
+bin/spotter run my-app --ref feature/my-change      # writes report.md; exit 1 = new high/medium findings
 bin/spotter run my-app --repo ~/worktrees/x --working-tree   # another clone, uncommitted changes included
 bin/spotter record my-app                           # (re)record API fixtures from the live API
 bin/spotter list
@@ -17,6 +17,9 @@ Runs in Docker (`bin/spotter build-image` after dependency changes; it builds
 itself on first use). Results go to `~/spotter/<project>/runs/<run>/`
 (`runs/latest` points at the newest): `report.md`, `report.html`, `report.json`,
 `screenshots/`, `logs/`.
+
+Prerequisites: Git, Bash and Docker. The dashboard also requires Tailscale.
+Before the first run, create a project config and record fixtures if it uses an API.
 
 ## What a run does
 
@@ -49,7 +52,7 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `web.routes[]` | `{ name, path }` (hash routes include `#/`) |
 | `web.viewports`, `web.colorSchemes` | Widths (or `{ width, height }`) and `light`/`dark` |
 | `web.sessions` | Additional `{ name, localStorage }` or `{ name, storageState, storageOrigin }` sessions; anonymous visits always run |
-| `web.specs` | Optional `{ files: ['qa/ticket.spec.mjs'], grep: 'Verify' }`; project-owned Playwright tests run against the same build and recorded fixtures |
+| `web.specs` | See [spec options](docs/project-specs.md); optional `{ files: ['qa/ticket.spec.mjs'], grep: 'Verify' }`; project-owned Playwright tests run against the same build and recorded fixtures |
 | `web.settleMs`, `web.pageTimeoutMs`, `web.concurrency` | Healthy-page settling delay, navigation timeout and parallel visits |
 | `web.accessibility`, `web.keyboard` | Enable axe and advisory Tab/focus checks (both default true) |
 | `web.faultInjection` | `{ delayMs, timeoutMs, loadingSelector }`, or false to skip endpoint fault visits |
@@ -63,8 +66,9 @@ Projects under `~/projects` are mounted automatically; `--repo` paths elsewhere 
 `high` (build/type/test failures, uncaught errors, blank pages) and `medium`
 (console errors, layout overflow, rule violations, API 5xx, unrecorded
 requests) fail the run (exit 1). `low` (formatting, external asset failures,
-recorded API 4xx) is reported but does not fail. Exit 2 means Spotter itself
-failed.
+recorded API 4xx) is reported but does not fail. Existing findings do not fail
+a baseline comparison. Exit 0 means no new blocking findings; exit 2 means
+Spotter itself failed.
 
 ## Development
 
@@ -78,8 +82,8 @@ docker run --rm --init --ipc host \
   --entrypoint node spotter:latest --test integration/browser-depth.test.mjs
 ```
 
-Design and tickets:
-[docs/ticket-index.md](docs/ticket-index.md).
+Read [AGENTS.md](AGENTS.md) before changing Spotter. Ticket scope and approval
+states live in [the ticket index](docs/ticket-index.md).
 
 ## Pipeline and visual review
 
@@ -92,100 +96,14 @@ review them in the HTML report. Keep the whole run directory when copying it.
 build artifacts, and serving reports on Tailscale port 8088. Deployment files
 are provided; services are not installed automatically.
 
-## Browser depth
+## Further reading
 
-The sweep runs axe on every route × viewport × scheme × session. New serious
-or critical violations are medium severity; minor/moderate violations and
-keyboard smoke findings are advisory. Keyboard smoke presses Tab and checks
-reachability and outline/box-shadow focus styles; review other focus styles
-manually. Composite widgets with roving tabindex are excluded from unreachable
-warnings. Set `web.accessibility: false` or `web.keyboard: false` to skip them.
-
-`web.sessions` adds isolated signed-in visits alongside anonymous visits:
-
-```yaml
-web:
-  sessions:
-    - name: signed-in
-      localStorage: { session: '{"userId":"fixture-user","token":"test-token"}' }
-  faultInjection:
-    delayMs: 2000
-    timeoutMs: 5000
-    loadingSelector: '[aria-busy="true"], [role="progressbar"]'
-```
-
-Use test sessions accepted by the app's frontend; this does not bypass server
-authentication. `spotter record` records each session into its own fixture map;
-re-record after adding a session. Fixtures and storage values may contain
-sensitive test data; keep them private. Session names must be unique letters,
-numbers, underscores or hyphens, excluding `anonymous` and object prototype
-property names (such as `constructor`).
-
-Fault injection revisits each route/session at the first viewport and scheme.
-Each API request observed there gets its own fresh visit returning 500, then a
-visit delaying that endpoint. Other endpoints replay normally. After
-`timeoutMs` (independent of the healthy-page settling delay), Spotter reports crashes, blank pages and visible loading indicators
-(customize `loadingSelector` for the app). Expected injected HTTP errors are
-suppressed; loading indicators already present on the healthy visit are excluded.
-Loading during a delayed response is advisory: an intentionally pending request
-does not prove a stuck page. A 500 loading finding records the configured
-observation deadline, not proof that loading never ends.
-`delayMs` controls the response delay; use a value above `timeoutMs`
-to observe pending requests. Choose settling and fault budgets that allow the
-app's retry window to finish. Set `web.faultInjection: false` to skip this sweep.
-Screenshots include session and fault identity. Visual comparisons and manual
-keyboard/accessibility judgment remain outside this ticket.
-
-## Authentication flows
-
-[Authentication testing](docs/authentication.md) covers cookie/localStorage
-sessions, project-owned form and OAuth specs, and optional live checks selected
-with `--live-auth`. Provider behavior stays in project specs. Private state is
-mounted with `SPOTTER_AUTH_DIR`; live credential variable names are forwarded
-with `SPOTTER_AUTH_ENV`. See the generic runnable examples in
-[`examples/authentication/`](examples/authentication/).
-
-## Project specs and API contracts
-
-Keep specs in the project repository, relative to `workdir`. Name tests after
-the ticket and its Verify item so failures map directly to acceptance criteria:
-
-```js
-const { test, expect } = await import(process.env.SPOTTER_TEST_MODULE);
-
-test('TICKET-12 Verify 1: standings are visible', async ({ page }) => {
-  await page.goto('./');
-  await expect(page.getByRole('heading', { name: 'Standings' })).toBeVisible();
-});
-```
-
-Enable them with `web.specs.files` in the project YAML. Optional `grep` selects
-test names using a regular expression. Set `web.specs.workers: 2` to run
-independent tests in parallel, including tests in the same file. The default
-is 1; live authentication always uses 1 worker. Explicit Playwright serial
-groups retain their ordering. Parallel tests must isolate shared files,
-accounts and other external state. This limit is separate from `web.concurrency`
-and applies to each branch/baseline side, which may run concurrently.
-Spotter supplies the Playwright runner;
-specs import its adapter as above. Each test gets isolated fixture replay and
-the recording's fixed clock. Use `test.use({ spotterSession: 'member',
-colorScheme: 'dark' })` for configured sessions and themes. Tests use the built
-app's base URL. Failures are high-severity findings compared with the merge
-base; `--skip web` also skips specs. Spec discovery or runner failures block.
-
-Every successful `record` writes `fixtures/contracts.json` and
-`fixtures/contract-drift.json`. The first recording establishes a baseline;
-later recordings compare endpoint/session additions, removals, status codes,
-content types and JSON field/type shapes. Values, object key order and array
-length/order are ignored. Empty arrays describe no observed item shape, so
-later nonempty arrays can show drift. These are observed snapshots, not a
-complete API schema. Drift is advisory and does not change the record exit
-code. `--merge` retains existing responses, so use a full re-record to detect
-changes to existing endpoints.
-
-## Dashboard
-
-[Dashboard setup](docs/dashboard.md): create, edit and delete project configurations
-with contextual field suggestions and examples; start runs by project and branch, follow live
-text activity, and read reports with visual evidence inside the dashboard. Uses
-the shared Aero styling library; serves only on the configured Tailscale address.
+| Task | Guide |
+| --- | --- |
+| Configure accessibility, keyboard, sessions and endpoint faults | [Browser checks](docs/browser-checks.md) |
+| Run project-owned acceptance tests; inspect API shape drift | [Project specs and API contracts](docs/project-specs.md) |
+| Test sign-in, saved sessions or live authentication | [Authentication](docs/authentication.md) |
+| Start runs, edit configurations or generate a draft from a folder | [Dashboard](docs/dashboard.md) |
+| Install and maintain a server | [Self-hosting](docs/self-hosting.md) |
+| Set up Jenkins and hosted visual reports | [Pipeline](docs/pipeline.md) |
+| Find scope, approval state and verification requirements | [Tickets](docs/ticket-index.md) |

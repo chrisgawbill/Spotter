@@ -1,4 +1,4 @@
-# Pipeline and hosted reports (QA-03)
+# Pipeline and hosted reports
 
 Use one Jenkins Pipeline job per configured project on this server. The agent
 needs label `spotter`, Git, Bash and access to the Docker daemon, the project's
@@ -7,6 +7,8 @@ Git repository, and the Spotter data directory. Build the Spotter image first
 Provision `projects/<project>.yml` in the job’s Spotter workspace from your
 private server configuration; project configs are ignored and never supplied
 by the Git checkout. Use `examples/project.yml` as the starting template.
+
+## Configure Jenkins
 
 Load `examples/deploy/Jenkinsfile` from this Spotter repository using Pipeline script from SCM.
 Install the Jenkins Git, Pipeline and Generic Webhook Trigger plugins. Configure
@@ -27,6 +29,8 @@ branch pushes, tags and deletion payloads (`deleted: true`) do not produce QA ru
 branch merge base. REF overrides the payload for manual runs. The project
 config's `baseBranch` must agree with DEFAULT_BRANCH. Credentials and optional
 PR comments are not configured by Spotter; PR comments remain disabled.
+
+## Read build artifacts
 
 Each completed run archives the whole `spotter-report/` directory, even when
 findings fail the build. Open `report.md` for action and `report.html` for visual
