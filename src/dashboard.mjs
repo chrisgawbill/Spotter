@@ -4,11 +4,15 @@ import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { mkdir, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, realpath, stat, writeFile, lstat, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
-import { listProjectNames, loadProjectConfig } from './config.mjs';
+import YAML from 'yaml';
+import { listProjectNames, loadProjectConfig, normalizeConfig } from './config.mjs';
 import { spotterHome, spotterRoot } from './paths.mjs';
 import { hasFailingFinding } from './findings.mjs';
+import { configFields } from './config-fields.mjs';
+
+const guidedKeys = Object.keys(configFields).filter((key) => configFields[key].guided);
 
 const exec = promisify(execFile);
 const require = createRequire(import.meta.url);
@@ -46,8 +50,9 @@ async function readRun(home, project, id) {
 }
 
 /** No shell is involved in run control. Only configured projects and listed branches are accepted. */
-export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn } = {}) {
+export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn, configsDir = path.join(spotterRoot, 'projects') } = {}) {
   let starting = false;
+  let editing = false;
   const children = new Set();
   const server = createServer(async (req, res) => {
     const send = (status, data, type = 'application/json') => {
@@ -59,6 +64,65 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
       const proxyHost = process.env.SPOTTER_TAILSCALE_IP ? `${process.env.SPOTTER_TAILSCALE_IP}:8088` : null;
       if (req.headers.host !== localHost && req.headers.host !== proxyHost) return send(403, { error: 'Unrecognized dashboard host' });
       const url = new URL(req.url, 'http://dashboard');
+      if (url.pathname === '/api/config-draft' && req.method === 'POST') {
+        if (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON required' });
+        let body = '';
+        for await (const chunk of req) {
+          body += chunk;
+          if (Buffer.byteLength(body) > 262144) return send(413, { error: 'Request too large' });
+        }
+        const { source, fields } = JSON.parse(body);
+        if (typeof source !== 'string') return send(400, { error: 'YAML source is required' });
+        const document = YAML.parseDocument(source);
+        if (document.errors.length) throw document.errors[0];
+        if (!YAML.isMap(document.contents)) return send(400, { error: 'Config must be a YAML mapping' });
+        if (fields) for (const key of guidedKeys) {
+          if (typeof fields[key] !== 'string') return send(400, { error: `Invalid ${key}` });
+          if (fields[key]) document.set(key, fields[key]);
+          else document.delete(key);
+        }
+        return send(200, { source: document.toString(), fields: Object.fromEntries(guidedKeys.map((key) => [key, document.get(key) ?? ''])) });
+      }
+      const configRoute = /^\/api\/configs\/([^/]+)$/.exec(url.pathname);
+      if (configRoute) {
+        const name = decodeURIComponent(configRoute[1]);
+        if (!safeName(name)) return send(400, { error: 'Use letters, numbers, underscores or hyphens for the project name' });
+        const file = path.join(configsDir, `${name}.yml`);
+        if (!['GET', 'PUT', 'DELETE'].includes(req.method)) return send(405, { error: 'Method not allowed' });
+        if (req.method !== 'GET' && (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json')) return send(403, { error: 'Same-origin JSON required' });
+        // Never follow config symlinks, including a dangling link on creation.
+        const info = await lstat(file).catch((error) => { if (error.code !== 'ENOENT') throw error; return null; });
+        if (info && !info.isFile()) return send(400, { error: 'Config must be a regular file' });
+        if (req.method === 'GET') return send(200, { source: await readFile(file, 'utf8') });
+        let body = '';
+        for await (const chunk of req) {
+          body += chunk;
+          if (Buffer.byteLength(body) > 262144) return send(413, { error: 'Config is too large (maximum 256 KB)' });
+        }
+        const input = JSON.parse(body);
+        if (editing || starting || children.size) return send(409, { error: 'Wait for the active run or config change to finish' });
+        editing = true;
+        try {
+          const current = await readFile(file, 'utf8').catch((error) => { if (error.code !== 'ENOENT') throw error; return null; });
+          if (input.previous !== current) return send(409, { error: 'Config changed or already exists. Reopen it before saving or deleting.' });
+          if (req.method === 'DELETE') {
+            if (current === null) return send(404, { error: 'Config not found' });
+            await unlink(file);
+            return send(200, { deleted: name });
+          }
+          if (typeof input.source !== 'string') return send(400, { error: 'YAML source is required' });
+          const parsed = YAML.parse(input.source);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return send(400, { error: 'Config must be a YAML mapping' });
+          normalizeConfig(parsed, { projectName: name, source: input.source });
+          await mkdir(configsDir, { recursive: true });
+          const temporary = path.join(configsDir, `.${name}-${randomUUID()}.tmp`);
+          try {
+            await writeFile(temporary, input.source, { flag: 'wx', mode: 0o600 });
+            await rename(temporary, file);
+          } finally { await unlink(temporary).catch(() => {}); }
+          return send(200, { source: input.source });
+        } finally { editing = false; }
+      }
       if (req.method === 'POST' && url.pathname === '/api/runs') {
         // Same-origin JSON prevents a website outside the tailnet from triggering runs through a reviewer's browser.
         if (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON required' });
@@ -73,7 +137,7 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
         const config = await loadConfig(project);
         if (typeof branch !== 'string' || !(await branches(config)).includes(branch)) return send(400, { error: 'Select a listed branch' });
         // Serialize dashboard runs; add a queue only if concurrent runs are needed.
-        if (starting || children.size) return send(409, { error: 'A dashboard run is already active' });
+        if (editing || starting || children.size) return send(409, { error: 'A dashboard run is already active' });
         starting = true;
         try {
           const id = `${new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}-${randomUUID()}`;
@@ -157,10 +221,10 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
         return send(200, data, types[ext]);
       }
       if (url.pathname === '/core.css') return send(200, await readFile(require.resolve('@chrisgawbill/aero-md3-core/core.css')), 'text/css');
-      const assets = { '/': 'index.html', '/dashboard.js': 'dashboard.js', '/dashboard.css': 'dashboard.css' };
+      const assets = { '/': 'index.html', '/dashboard.js': 'dashboard.js', '/dashboard.css': 'dashboard.css', '/config-fields.mjs': '../config-fields.mjs' };
       if (assets[url.pathname]) {
         res.setHeader('Content-Security-Policy', "default-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'");
-        return send(200, await readFile(path.join(spotterRoot, 'src/dashboard', assets[url.pathname])), url.pathname === '/' ? 'text/html' : url.pathname.endsWith('.js') ? 'text/javascript' : 'text/css');
+        return send(200, await readFile(path.join(spotterRoot, 'src/dashboard', assets[url.pathname])), url.pathname === '/' ? 'text/html' : (/\.(js|mjs)$/.test(url.pathname)) ? 'text/javascript' : 'text/css');
       }
       send(404, { error: 'Not found' });
     } catch (error) {

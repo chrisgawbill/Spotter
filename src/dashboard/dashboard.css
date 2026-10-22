@@ -37,3 +37,15 @@ form .ds-button{width:100%}
 .ds-cluster{gap:.65rem}
 }
 
+.config-layout{display:grid;grid-template-columns:minmax(0,2fr) minmax(240px,1fr);gap:1.5rem;align-items:start}
+#config-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+#config-editor input,#config-editor textarea,#config-editor select{width:100%;min-width:0}
+#config-editor label{min-width:0}
+#config-source{font: .9rem/1.6 ui-monospace,monospace;resize:vertical;white-space:pre;tab-size:2}
+.suggestions{position:sticky;top:1rem;background:var(--ds-color-surface-container)}
+.suggestions pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85rem}
+#config-message{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:800px){.config-layout{grid-template-columns:1fr}.suggestions{position:static}#config-fields{grid-template-columns:1fr}}
+
+#config-editor{align-items:stretch}
+#config-list{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}

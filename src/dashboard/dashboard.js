@@ -1,3 +1,4 @@
+import { configFields } from '/config-fields.mjs';
 const $ = (id) => document.getElementById(id);
 const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const badge = (status) => `<span class="ds-chip ds-chip-${status === 'pass' ? 'success' : status === 'running' ? 'primary' : 'danger'}">${escape(status.toUpperCase())}</span>`;
@@ -46,10 +47,15 @@ async function refresh() {
   if (refreshing) return;
   refreshing = true;
   try {
+    $('page-title').textContent = location.hash === '#configs' ? 'Configure your checks.' : 'See what changed.';
+    $('page-description').textContent = location.hash === '#configs' ? 'Build a project configuration with field guidance and examples.' : 'Start a check, follow the work, and review what Spotter found.';
+    $('config-page').hidden = location.hash !== '#configs';
+    $('run-page').hidden = location.hash === '#configs';
     const previousProject = $('project').value;
     const previousBranch = $('branch').value;
     const [nextProjects, runs] = await Promise.all([api('/api/projects'), api('/api/runs')]);
     projects = nextProjects;
+    html('config-list', projects.map((p) => `<article class="ds-card ds-aero-surface"><h3>${escape(p.name)}</h3><button class="ds-button" type="button" data-config="${escape(p.name)}">Edit configuration</button></article>`).join('') || '<p>No configurations yet. Create one to get started.</p>');
     html('project', projects.map((p) => `<option>${escape(p.name)}</option>`).join(''));
     if (projects.some((p) => p.name === previousProject)) $('project').value = previousProject;
     updateBranches($('project').value === previousProject ? previousBranch : '');
@@ -84,6 +90,99 @@ async function refresh() {
   } catch (error) { $('synced').textContent = `Updates paused: ${error.message}`; }
   finally { refreshing = false; }
 }
+let originalSource = null;
+let editorName = '';
+let dirty = false;
+let basicDirty = false;
+const guided = Object.entries(configFields).filter(([, field]) => field.guided);
+html('config-fields', guided.map(([key, field]) => `<label class="ds-field">${escape(field.label)}<input id="field-${key}" class="ds-input" placeholder="${escape(field.example)}" data-field="${key}"></label>`).join(''));
+html('field-reference', Object.entries(configFields).map(([key, field]) => `<option value="${escape(key)}">${escape(key)} · ${escape(field.label)}</option>`).join(''));
+function suggest(key) {
+  const field = configFields[key];
+  $('field-reference').value = key;
+  html('field-suggestion', `<p><strong>${escape(field.label)}</strong> · ${escape(field.type)}</p><p>${escape(field.help)}</p><p>Example</p><pre>${escape(field.example)}</pre>`);
+}
+suggest('repo');
+$('field-reference').addEventListener('change', () => suggest($('field-reference').value));
+$('config-fields').addEventListener('focusin', (event) => { if (event.target.dataset.field) suggest(event.target.dataset.field); });
+function suggestYAML() {
+  const parents = [];
+  for (const line of $('config-source').value.slice(0, $('config-source').selectionStart).split('\n')) {
+    const match = /^( *)([A-Za-z][A-Za-z0-9]*):/.exec(line);
+    if (!match) continue;
+    while (parents.length && parents.at(-1).indent >= match[1].length) parents.pop();
+    parents.push({ indent: match[1].length, key: match[2] });
+  }
+  while (parents.length) {
+    const key = parents.map((item) => item.key).join('.');
+    if (configFields[key]) { suggest(key); break; }
+    parents.pop();
+  }
+}
+for (const event of ['focus', 'click', 'keyup']) $('config-source').addEventListener(event, suggestYAML);
+$('config-editor').addEventListener('input', (event) => { dirty = true; if (event.target.dataset.field) basicDirty = true; });
+window.addEventListener('beforeunload', (event) => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
+const configRequest = (url, method, data) => api(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+function message(text) { $('config-message').textContent = text; }
+async function draft(apply = false) {
+  const result = await configRequest('/api/config-draft', 'POST', { source: $('config-source').value,
+    ...(apply ? { fields: Object.fromEntries(guided.map(([key]) => [key, $(`field-${key}`).value])) } : {}) });
+  if (apply) { $('config-source').value = result.source; dirty = true; }
+  for (const [key, value] of Object.entries(result.fields)) $(`field-${key}`).value = value;
+  basicDirty = false;
+}
+async function openEditor(name = '') {
+  if (dirty && !confirm('Discard unsaved configuration changes?')) return;
+  try {
+    const result = name ? await api(`/api/configs/${encodeURIComponent(name)}`) : { source: 'repo: /absolute/path/to/my-app\nbaseBranch: main\nworkdir: .\ninstall: npm ci\n\nchecks:\n  - name: tests\n    run: npm test\n    parser: generic\n' };
+    editorName = name;
+    originalSource = name ? result.source : null;
+    $('config-source').value = result.source;
+    $('config-name').value = name;
+    $('config-name').readOnly = !!name;
+    $('editor-title').textContent = name ? `Edit ${name}` : 'New configuration';
+    $('delete-config').hidden = !name;
+    $('config-editor').hidden = false;
+    dirty = false;
+    basicDirty = false;
+    message('');
+    for (const [key] of guided) $(`field-${key}`).value = '';
+    try { await draft(); } catch (error) { message(`Repair the YAML below: ${error.message}`); }
+    $('config-name').focus();
+  } catch (error) { showError(error); }
+}
+$('new-config').addEventListener('click', () => openEditor());
+$('config-list').addEventListener('click', (event) => { const name = event.target.closest('[data-config]')?.dataset.config; if (name) void openEditor(name); });
+$('apply-fields').addEventListener('click', async () => { try { await draft(true); message('Basic fields applied. Review the YAML, then save.'); } catch (error) { message(error.message); } });
+$('read-fields').addEventListener('click', async () => { try { await draft(); message('Basic fields updated from YAML.'); } catch (error) { message(error.message); } });
+$('config-editor').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('save-config').disabled = true;
+  try {
+    if (basicDirty) await draft(true);
+    const name = editorName || $('config-name').value;
+    const result = await configRequest(`/api/configs/${encodeURIComponent(name)}`, 'PUT', { source: $('config-source').value, previous: originalSource });
+    originalSource = result.source;
+    editorName = name;
+    $('config-name').readOnly = true;
+    $('delete-config').hidden = false;
+    $('editor-title').textContent = `Edit ${name}`;
+    dirty = false;
+    message('Configuration saved.');
+    await refresh();
+  } catch (error) { message(error.message); }
+  finally { $('save-config').disabled = false; }
+});
+$('delete-config').addEventListener('click', async () => {
+  if (!confirm(`Delete configuration “${editorName}”? Existing reports and fixtures stay on disk.`)) return;
+  try {
+    await configRequest(`/api/configs/${encodeURIComponent(editorName)}`, 'DELETE', { previous: originalSource });
+    dirty = false;
+    $('config-editor').hidden = true;
+    await refresh();
+  } catch (error) { message(error.message); }
+});
+$('close-config').addEventListener('click', () => { if (!dirty || confirm('Discard unsaved configuration changes?')) { dirty = false; $('config-editor').hidden = true; } });
 window.addEventListener('hashchange', refresh);
 try {
   await refresh();

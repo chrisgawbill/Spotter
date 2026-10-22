@@ -34,7 +34,8 @@ to the container and npm registries and your projects' dependency sources.
 Open `http://<server-tailscale-ip>:8089`. The launcher gets the address from
 `tailscale ip -4`; set `SPOTTER_TAILSCALE_IP` explicitly if needed. Dashboard
 access is Tailscale-only; allow port 8089 in your tailnet ACLs. Anyone allowed
-to access it can start configured QA runs.
+to access it can start QA runs and edit project configurations, including their
+shell commands. Grant access to trusted project maintainers.
 
 Projects outside `~/projects` need `SPOTTER_PROJECTS_ROOT` set to a common
 parent directory when starting the dashboard. Use `SPOTTER_HOME` to change

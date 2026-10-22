@@ -41,6 +41,12 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   fi
 done
 
+config_mode=ro
+if [[ ${args[0]:-} == dashboard ]]; then
+  config_mode=rw
+  mkdir -p "$spotter_dir/projects"
+fi
+
 tty_flag=()
 [[ -t 1 ]] && tty_flag=(-t)
 
@@ -51,7 +57,7 @@ exec docker run --rm "${tty_flag[@]}" --init --network host --ipc host \
   -e SPOTTER_HOME=/data -e SPOTTER_HOST_HOME="$spotter_home" \
   -e SPOTTER_TAILSCALE_IP="${SPOTTER_TAILSCALE_IP:-}" \
   -v "$spotter_dir/src:/opt/spotter/src:ro" \
-  -v "$spotter_dir/projects:/opt/spotter/projects:ro" \
+  -v "$spotter_dir/projects:/opt/spotter/projects:$config_mode" \
   -v "$spotter_home:/data" \
   -v "$projects_root:$projects_root:ro" \
   "${extra_mounts[@]}" \

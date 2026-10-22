@@ -184,6 +184,7 @@ changes to existing endpoints.
 
 ## Dashboard
 
-[Dashboard setup](docs/dashboard.md): start runs by project and branch, follow live
+[Dashboard setup](docs/dashboard.md): create, edit and delete project configurations
+with contextual field suggestions and examples; start runs by project and branch, follow live
 text activity, and read reports with visual evidence inside the dashboard. Uses
 the shared Aero styling library; serves only on the configured Tailscale address.

@@ -93,3 +93,36 @@ browser events, waits for pass/fail status, reloads a run, opens screenshots and
 diffs inside the report, and checks the mobile layout. It creates an isolated
 project config inside the disposable container; do not mount production configs
 for this test. Preview screenshots are written under `/tmp` in the container.
+
+## Project configurations
+
+Open **Configurations** to create, edit or delete `projects/<name>.yml`.
+The basic form covers repository, base branch, working directory and install
+command; its values can be applied to the full YAML editor. Saving automatically
+applies changed basic fields. The YAML editor supports all other options and
+preserves comments. A shared dictionary in `src/config-fields.mjs` supplies field
+labels, types, contextual suggestions and examples for the documented options.
+Guidance follows the YAML cursor for recognized fields; select any dictionary
+entry to browse its examples.
+
+Saves use the CLI's config validation and reject stale edits; reopen a config
+if another writer changed it. Config changes wait until dashboard-triggered runs
+finish. Delete requires confirmation and removes only the configuration, leaving
+reports and fixtures on disk. Deleted projects disappear from the dashboard;
+recreate their config to browse their old reports again. Unsaved edits survive
+background refreshes and warn before closing the editor or browser tab.
+
+The dashboard needs a writable projects mount. The CLI wrapper enables it for
+`dashboard` only, and the persistent startup template uses `:rw`. Recreate an
+existing dashboard container using the updated startup template to change its
+mount permissions. Users with dashboard access can now edit shell commands that
+future runs execute, so grant access only to trusted project maintainers.
+
+Configuration editor verification (2026-10-22): all 32 unit/HTTP tests pass.
+The Docker browser regression covers create/edit/delete, contextual field and
+YAML-cursor suggestions, desktop/mobile layouts and the existing run/report flow.
+The real main run retains exactly the accepted 17 finding groups; the seeded
+branch retains seven new groups, 17 existing and zero fixed, with identical
+finding IDs to the accepted reports. Evidence:
+`~/spotter/hockeystats-webapp/runs/20261022-211425-main-aa4e17d8/report.md` and
+`~/spotter/hockeystats-webapp/runs/20261022-211426-verify-browser-depth-defects-3d99e273/report.md`.

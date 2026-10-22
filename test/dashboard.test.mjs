@@ -99,3 +99,36 @@ test('dashboard requires an explicit Tailscale address', async () => {
     else process.env.SPOTTER_TAILSCALE_IP = before;
   }
 });
+
+test('config editor validates YAML, preserves comments, detects stale edits and confines writes', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'spotter-config-editor-'));
+  const server = createDashboardServer({ configsDir: directory });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const request = (name, method = 'GET', data, headers = {}) => fetch(`${origin}/api/${name}`, { method,
+    headers: { Origin: origin, 'Content-Type': 'application/json', ...headers }, ...(data ? { body: JSON.stringify(data) } : {}) });
+  const source = '# Keep this comment\nrepo: /tmp/example\nbaseBranch: main\n';
+  try {
+    assert.equal((await request('configs/demo', 'PUT', { source, previous: null }, { Origin: 'http://outside.example' })).status, 403);
+    assert.equal((await request('configs/%2e%2e%2fescape', 'PUT', { source, previous: null })).status, 400);
+    assert.equal((await request('configs/demo', 'PUT', { source: 'repo: relative', previous: null })).status, 400);
+    assert.equal((await request('configs/demo', 'PUT', { source: 'web: [', previous: null })).status, 400);
+    assert.equal((await request('configs/demo', 'PUT', { source, previous: null })).status, 200);
+    assert.equal((await (await request('configs/demo')).json()).source, source);
+    assert.equal((await request('configs/demo', 'PUT', { source, previous: null })).status, 409);
+    const draft = await (await request('config-draft', 'POST', { source, fields: { repo: '/tmp/new', baseBranch: 'develop', workdir: '.', install: '' } })).json();
+    assert.match(draft.source, /# Keep this comment/);
+    assert.equal(draft.fields.repo, '/tmp/new');
+    assert.equal((await request('configs/demo', 'PUT', { source: draft.source, previous: source })).status, 200);
+    assert.equal((await request('configs/demo', 'DELETE', { previous: source })).status, 409);
+    assert.equal((await request('configs/demo', 'DELETE', { previous: draft.source })).status, 200);
+    assert.equal((await request('configs/demo')).status, 404);
+    await symlink(path.join(directory, 'missing'), path.join(directory, 'linked.yml'));
+    assert.equal((await request('configs/linked', 'PUT', { source, previous: null })).status, 400);
+    assert.equal((await request('configs/big', 'PUT', { source: 'x'.repeat(262145), previous: null })).status, 413);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
