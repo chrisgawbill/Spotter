@@ -33,7 +33,7 @@ an agent should be able to act on `report.md` without opening anything else.
 | QA-01 | Sample report accepted 2026-10-22. |
 | QA-02 | Approved 2026-10-22: localStorage sessions; serious/critical axe violations block, others advisory. Sample report accepted 2026-10-22. |
 | QA-03 | Jenkins job shape, the Tailscale port for the HTML report, and whether to post PR comments (needs a GitHub token on the server). |
-| QA-04 | Where project specs live (project repo vs Spotter) and how a ticket's Verify list maps to a spec. |
+| QA-04 | Accepted 2026-10-22: project-repo specs with named tests mapping Verify items; sample report accepted. |
 | QA-05 | Changes to HockeyStatsWebApp's agent workflow docs. |
 
 ## Dependency outline
@@ -171,12 +171,40 @@ PR comments disabled. Preparing deployment files; live services remain unconfigu
 
 ## QA-04 — Project specs and API contracts
 
-**Status:** IDEA
+**Status:** DONE — implemented, verified and sample report accepted by Product Owner 2026-10-22.
+
+Implementation defaults: specs live in the project repository; named Playwright
+tests identify ticket Verify items. Optional `web.specs` runs them through a
+Spotter fixture/clock adapter. Full re-records compare observed response shapes;
+drift remains advisory and is saved alongside fixture snapshots.
 
 - Spotter runs a project's own Playwright specs (e.g. a ticket's Verify list)
   with the same fixtures, clock, and report format.
 - Response-shape snapshots from fixtures; re-recording reports contract drift
   between API versions.
+
+**Verify:**
+
+- Unit checks for shape drift, sessions, spec configuration and stable spec fingerprints.
+- Browser checks for named spec failures, fixture replay, fixed clock and isolated sessions.
+- HockeyStatsWebApp main and seeded-defect runs; a project-owned spec failure is new against a healthy baseline.
+- Product Owner accepts a sample report.
+
+**QA-04 evidence (2026-10-22):**
+
+- `npm test` passes all eight test files. Docker integrations for specs and
+  contract recording pass. Three real CLI recordings establish the initial
+  snapshot, detect anonymous/member shape drift, and ignore value-only changes.
+- Isolated HockeyStatsWebApp clone: healthy named spec passes with recorded
+  response/status and fixed browser time; its seeded failure is the only new
+  issue against the healthy baseline (three existing API findings remain).
+- Full main: 66 page variants and 308 fault visits; existing app findings plus
+  four transient external-image network failures. Full seeded comparison:
+  all six intended defects are new, plus their content's landmark violation;
+  seven groups, 17 existing, zero fixed, no unrelated new findings. Sample
+  report accepted by Product Owner 2026-10-22.
+- Full regression: `~/spotter/hockeystats-webapp/runs/20261022-150821-HEAD/report.md`.
+- Named-spec sample: `/tmp/spotter-qa04-data/hockeystats-webapp/runs/20261022-151134-verify-project-spec-defect/report.md`.
 
 ---
 

@@ -43,6 +43,8 @@ export function normalizeConfig(config, { projectName, source = '' }) {
     if (!check.name || !check.run) problems.push(`checks[${index}] needs \`name\` and \`run\``);
   }
   if (config.web) {
+    const specs = config.web.specs;
+    if (specs !== undefined && (!specs || typeof specs !== 'object' || Array.isArray(specs) || !Array.isArray(specs.files) || !specs.files.length || specs.files.some((file) => typeof file !== 'string' || !file.trim() || path.isAbsolute(file) || file.split(/[\\/]/).includes('..')) || (specs.grep !== undefined && typeof specs.grep !== 'string'))) problems.push('`web.specs` needs nonempty project-relative `files` and optional string `grep`');
     if (!config.web.build?.run) problems.push('`web.build.run` is required when `web` is set');
     const sessions = config.web.sessions ?? [];
     if (!Array.isArray(sessions) || sessions.some((s) => !s || typeof s.name !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(s.name) || s.name === 'anonymous' || Object.hasOwn(Object.prototype, s.name) || !s.localStorage || typeof s.localStorage !== 'object' || Array.isArray(s.localStorage) || Object.values(s.localStorage).some((v) => typeof v !== 'string'))) problems.push('`web.sessions` needs unique names and string localStorage entries');

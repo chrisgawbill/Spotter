@@ -9,6 +9,7 @@ import { createFinding } from '../findings.mjs';
 import { recordFixtures, replayFixtures } from '../fixtures.mjs';
 import { startStaticServer } from '../staticServer.mjs';
 import { findHorizontalOverflow, measureVisibleContent } from './pageProbes.mjs';
+import { runSpecsStage } from './specs.mjs';
 
 const require = createRequire(import.meta.url);
 const axePath = require.resolve('axe-core/axe.min.js');
@@ -49,7 +50,8 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
       visitPage({ browser, job, config, fixtures, mode, appOrigin: server.origin, screenshotDir, fault, healthy }),
     );
     const shape = `${web.routes.length} routes × ${web.viewports.length} viewports × ${mode === 'record' ? 1 : web.colorSchemes.length} schemes × ${web.sessions.length} sessions`;
-    return { findings: [...results, ...faultResults].flatMap((result) => result.findings), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length } };
+    const specs = mode === 'sweep' && web.specs ? await runSpecsStage({ config, workdir, logDir, fixtures, appOrigin: server.origin }) : null;
+    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
   } finally {
     await browser?.close();
     await server.close();

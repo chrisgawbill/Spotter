@@ -124,6 +124,7 @@ function renderStageSummary(run) {
     } else if (stage === 'web') {
       const fixtures = run.fixtures ? `fixtures recorded ${run.fixtures.recordedAt}` : 'no fixtures recorded';
       lines.push(`- web: ${summary.built ? `${summary.pages} pages (${summary.shape})` : 'build failed, sweep skipped'} · ${fixtures}${summary.faultVisits ? ` · ${summary.faultVisits} fault visits` : ''}`);
+      if (summary.specs) lines.push(`- project specs: ${summary.specs.passed} passed, ${summary.specs.failed} failed, ${summary.specs.skipped} skipped`);
     }
   }
   return lines;

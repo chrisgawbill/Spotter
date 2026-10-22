@@ -4,6 +4,7 @@ import path from 'node:path';
 import { listProjectNames, loadProjectConfig } from './config.mjs';
 import { compareWithBaseline, hasFailingFinding, sortFindings } from './findings.mjs';
 import { loadFixtures, saveFixtures } from './fixtures.mjs';
+import { compareContracts, snapshotContracts } from './contracts.mjs';
 import { exportCommit, findMergeBase, listAddedLines, listCommitMessages, resolveCommit } from './git.mjs';
 import { projectDirs, spotterCodeHash, toHostPath } from './paths.mjs';
 import { renderMarkdownReport } from './report.mjs';
@@ -161,7 +162,8 @@ async function recordProject(config, options) {
   const directories = projectDirs(config.name);
   const ref = options.ref ?? config.baseBranch;
   const sha = await resolveCommit(config.repo, ref);
-  const existing = options.merge ? await loadFixtures(directories.fixtures) : null;
+  const previous = await loadFixtures(directories.fixtures);
+  const existing = options.merge ? previous : null;
   const entries = { ...(existing?.entries ?? {}) };
   const sessions = Object.fromEntries(Object.entries(existing?.sessions ?? {}).map(([name, responses]) => [name, { ...responses }]));
   const knownBefore = Object.keys(entries).length + Object.values(sessions).reduce((sum, responses) => sum + Object.keys(responses).length, 0);
@@ -185,13 +187,20 @@ async function recordProject(config, options) {
     await rm(exportDir, { recursive: true, force: true });
   }
 
-  await saveFixtures(directories.fixtures, { recordedAt, source: config.web.api.recordFrom, ref, sha, entries, sessions });
+  const recorded = { recordedAt, source: config.web.api.recordFrom, ref, sha, entries, sessions };
+  const drift = compareContracts(previous, recorded);
+  await writeFile(path.join(directories.fixtures, 'contracts.json'), JSON.stringify(snapshotContracts(recorded), null, 2));
+  await writeFile(path.join(directories.fixtures, 'contract-drift.json'), JSON.stringify(drift, null, 2));
+  await saveFixtures(directories.fixtures, recorded);
   const responses = [...Object.values(entries), ...Object.values(sessions).flatMap(Object.values)];
   const errorCount = responses.filter((entry) => entry.status >= 400).length;
   console.log(
     `Recorded ${responses.length} API responses (${responses.length - knownBefore} new, ${errorCount} non-2xx) ` +
       `to ${toHostPath(directories.fixtures)}/api.json; clock frozen at ${recordedAt}.`,
   );
+  console.log(previous
+    ? `API contracts: ${drift.length} changed endpoint/session contracts; see ${toHostPath(directories.fixtures)}/contract-drift.json.`
+    : 'API contracts: initial shape snapshot created.');
   return EXIT_PASS;
 }
 
