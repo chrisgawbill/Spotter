@@ -14,7 +14,7 @@ bin/spotter list
 
 Runs in Docker (`bin/spotter build-image` after dependency changes; it builds
 itself on first use). Results go to `~/spotter/<project>/runs/<run>/`
-(`runs/latest` points at the newest): `report.md`, `report.json`,
+(`runs/latest` points at the newest): `report.md`, `report.html`, `report.json`,
 `screenshots/`, `logs/`.
 
 ## What a run does
@@ -73,6 +73,17 @@ docker run --rm --init --ipc host \
 
 Design and tickets:
 [docs/ticket-index.md](docs/ticket-index.md).
+
+## Pipeline and visual review
+
+Each run includes a portable `report.html`. It lists screenshot changes against
+its merge base with before/after/diff images. Visual changes are advisory;
+review them in the HTML report. Keep the whole run directory when copying it.
+`report.md` stays short and links to the visual review.
+
+[Jenkins and Caddy setup](docs/pipeline.md) describes push-triggered runs,
+build artifacts, and serving reports on Tailscale port 8088. Deployment files
+are provided; services are not installed automatically.
 
 ## Browser depth
 

@@ -7,6 +7,8 @@ import { loadFixtures, saveFixtures } from './fixtures.mjs';
 import { exportCommit, findMergeBase, listAddedLines, listCommitMessages, resolveCommit } from './git.mjs';
 import { projectDirs, spotterCodeHash, toHostPath } from './paths.mjs';
 import { renderMarkdownReport } from './report.mjs';
+import { renderHtmlReport } from './htmlReport.mjs';
+import { compareScreenshots } from './visual.mjs';
 import { readCachedSide, runSide, STAGES, writeCachedSide } from './runner.mjs';
 import { runStaticStage } from './stages/static.mjs';
 import { runWebStage } from './stages/web.mjs';
@@ -95,7 +97,7 @@ async function runProject(config, options) {
     changes,
     log: (step) => log(`head: ${step}`),
   });
-  const basePromise = baseSha && baseSha !== headSha ? loadOrRunBase({ ...sideArguments, baseSha, directories }) : null;
+  const basePromise = baseSha && (baseSha !== headSha || options.workingTree) ? loadOrRunBase({ ...sideArguments, baseSha, directories }) : null;
   const [head, base] = await Promise.all([headPromise, basePromise]);
   await rm(workRoot, { recursive: true, force: true });
 
@@ -112,8 +114,10 @@ async function runProject(config, options) {
     base: baseSha ? { label: `${config.baseBranch} merge base`, sha: baseSha, shortSha: baseSha.slice(0, 7) } : null,
     fixtures: fixtures ? { recordedAt: fixtures.recordedAt, hash: fixtures.hash } : null,
     comparison,
+    visual: await compareScreenshots(path.join(runDir, 'screenshots'), base?.screenshotDir ?? (baseSha === headSha && !options.workingTree ? path.join(runDir, 'screenshots') : null), runDir),
     durationMs: Date.now() - startedAt,
     paths: {
+      reportHtml: toHostPath(path.join(runDir, 'report.html')),
       reportJson: toHostPath(path.join(runDir, 'report.json')),
       screenshots: toHostPath(path.join(runDir, 'screenshots')),
       logs: toHostPath(path.join(runDir, 'logs')),
@@ -122,6 +126,7 @@ async function runProject(config, options) {
   const markdown = renderMarkdownReport(run);
   await writeFile(path.join(runDir, 'report.json'), JSON.stringify(run, null, 2));
   await writeFile(path.join(runDir, 'report.md'), markdown);
+  await writeFile(path.join(runDir, 'report.html'), renderHtmlReport(run, markdown));
   await pointLatestAt(directories.runs, runDir);
   process.stdout.write(markdown);
   return hasFailingFinding(comparison.newFindings) ? EXIT_FINDINGS : EXIT_PASS;

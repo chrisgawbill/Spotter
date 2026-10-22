@@ -35,3 +35,15 @@ test('report leads with the result and lists new findings with place and repro',
   assert.match(markdown, /2\. \[medium\] web\/horizontal-overflow — page scrolls sideways\n {3}2× #\/compare @ 375 light, 375 dark/);
   assert.match(markdown, /- rules: skipped/);
 });
+
+test('HTML escapes report content and keeps image URLs relative', async () => {
+  const { renderHtmlReport } = await import('../src/htmlReport.mjs');
+  const html = renderHtmlReport({
+    project: '<script>bad</script>', comparison: { newFindings: [] },
+    visual: { status: 'compared', unchanged: 1, changes: [{ name: 'a & b.png', status: 'added', after: 'screenshots/a & b.png' }] },
+  }, '<img src=x onerror=bad>');
+  assert.ok(!html.includes('<script>'));
+  assert.ok(!html.includes('<img src=x'));
+  assert.match(html, /screenshots\/a%20%26%20b.png/);
+  assert.match(html, /1 unchanged/);
+});

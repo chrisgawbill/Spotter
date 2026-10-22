@@ -156,7 +156,9 @@ seeding; serious/critical axe violations block, others are advisory.
 
 ## QA-03 — Pipeline: Jenkins, hosted report, visual diff
 
-**Status:** IDEA
+**Status:** ACTIVE — started by Product Owner 2026-10-22.
+Approved: Jenkins Pipeline with a push webhook, Caddy on Tailscale port 8088,
+PR comments disabled. Preparing deployment files; live services remain unconfigured.
 
 - Jenkins job runs Spotter on every non-default-branch push of a configured
   project; stores the report as a build artifact.
@@ -185,3 +187,17 @@ seeding; serious/critical axe violations block, others are advisory.
 - `docs/agent-development.md`: coder runs Spotter before handing off; QA
   worker starts from `report.md` and only checks ticket-specific criteria and
   rendered judgment calls.
+
+
+---
+
+## QA-06 — Spotter dashboard
+
+**Status:** IDEA — proposed by Product Owner 2026-10-22.
+
+- Project overview and recent runs, with pass/fail status.
+- Links to actionable findings and before/after/diff review.
+- Read existing `report.json` artifacts; decide dashboard scope before starting.
+
+Depends on QA-03. Live hosting and Jenkins activation can be coordinated with
+this ticket.

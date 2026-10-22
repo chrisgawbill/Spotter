@@ -8,7 +8,8 @@ const MAX_PLACES_SHOWN = 6;
 /** Known gaps, listed in every report so agents don't assume coverage that isn't there. */
 function notChecked(run) {
   const web = run.head.stages.web;
-  const gaps = ['visual changes vs base'];
+  const gaps = [];
+  if (run.visual?.status !== 'compared') gaps.push('visual changes vs base');
   if (!web?.sessions?.some((name) => name !== 'anonymous')) gaps.unshift('signed-in states (no sessions configured)');
   if (!web?.accessibility) gaps.unshift('accessibility (axe)');
   if (!web?.keyboard) gaps.unshift('keyboard smoke');
@@ -51,8 +52,9 @@ export function renderMarkdownReport(run) {
     lines.push('');
   }
 
+  if (run.visual?.status === 'compared') lines.push(`Visual review (advisory): ${run.visual.changes.length} changed pages · ${run.paths.reportHtml}`, '');
   lines.push('## Checks', '', ...renderStageSummary(run), '');
-  lines.push(`Not checked: ${notChecked(run).join(', ')}.`);
+  if (notChecked(run).length) lines.push(`Not checked: ${notChecked(run).join(', ')}.`);
   lines.push(`Details: ${run.paths.reportJson} · screenshots: ${run.paths.screenshots} · logs: ${run.paths.logs}`);
   return `${lines.join('\n')}\n`;
 }

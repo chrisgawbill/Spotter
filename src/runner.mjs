@@ -49,7 +49,7 @@ export async function runSide({ config, sha, sideDir, workRoot, fixtures, change
   } finally {
     await rm(exportDir, { recursive: true, force: true });
   }
-  return { findings: dedupeFindings(findings), stages };
+  return { findings: dedupeFindings(findings), stages, screenshotDir: path.join(sideDir, 'screenshots') };
 }
 
 /** Reads a cached base-side result, or null. */
