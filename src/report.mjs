@@ -1,0 +1,141 @@
+import { SEVERITIES } from './findings.mjs';
+
+const STAGE_ORDER = ['static', 'rules', 'web'];
+const MAX_GROUPS_SHOWN = 25;
+const MAX_DETAIL_LINES = 3;
+const MAX_PLACES_SHOWN = 6;
+
+/** Known gaps, listed in every report so agents don't assume coverage that isn't there. */
+const NOT_CHECKED = ['signed-in states', 'accessibility (axe)', 'slow or failing endpoints', 'visual changes vs base'];
+
+/**
+ * Renders the agent-facing markdown report. `run` holds head/base labels,
+ * the comparison split, stage summaries, timings and artifact paths.
+ */
+export function renderMarkdownReport(run) {
+  const { comparison } = run;
+  const blocking = comparison.newFindings.filter((finding) => finding.severity !== 'low');
+  const lines = [
+    `# Spotter: ${run.project}`,
+    '',
+    `head: ${run.head.label} @ ${run.head.shortSha} · base: ${describeBase(run)} · ${formatDuration(run.durationMs)}`,
+    `RESULT: ${blocking.length ? 'FAIL' : 'PASS'} — ${describeCounts(comparison)}`,
+    '',
+  ];
+
+  const groups = groupFindings(comparison.newFindings);
+  if (groups.length) {
+    lines.push(`## New on this branch (${groups.length})`, '');
+    const variantCount = run.head.stages.web?.variantCount;
+    groups.slice(0, MAX_GROUPS_SHOWN).forEach((group, index) => lines.push(...renderGroup(group, index + 1, variantCount), ''));
+    if (groups.length > MAX_GROUPS_SHOWN) {
+      lines.push(`…and ${groups.length - MAX_GROUPS_SHOWN} more groups in report.json.`, '');
+    }
+  } else {
+    lines.push('## New on this branch', '', 'Nothing new.', '');
+  }
+
+  if (comparison.fixedFindings.length) {
+    lines.push(`## Fixed vs base (${comparison.fixedFindings.length})`, '');
+    groupFindings(comparison.fixedFindings)
+      .slice(0, 10)
+      .forEach((group) => lines.push(`- ${group.first.stage}/${group.first.check}: ${group.first.title} — ${renderPlace(group)}`));
+    lines.push('');
+  }
+
+  lines.push('## Checks', '', ...renderStageSummary(run), '');
+  lines.push(`Not checked: ${NOT_CHECKED.join(', ')}.`);
+  lines.push(`Details: ${run.paths.reportJson} · screenshots: ${run.paths.screenshots} · logs: ${run.paths.logs}`);
+  return `${lines.join('\n')}\n`;
+}
+
+/** Collapses one problem seen in several files, routes, viewports or schemes into one entry. */
+export function groupFindings(findings) {
+  const groups = new Map();
+  for (const finding of findings) {
+    const groupKey = [finding.stage, finding.check, finding.title].join('|');
+    if (!groups.has(groupKey)) groups.set(groupKey, { first: finding, members: [] });
+    groups.get(groupKey).members.push(finding);
+  }
+  return [...groups.values()].sort(
+    (left, right) =>
+      SEVERITIES.indexOf(left.first.severity) - SEVERITIES.indexOf(right.first.severity) ||
+      STAGE_ORDER.indexOf(left.first.stage) - STAGE_ORDER.indexOf(right.first.stage),
+  );
+}
+
+function renderGroup(group, number, variantCount) {
+  const { first } = group;
+  const lines = [`${number}. [${first.severity}] ${first.stage}/${first.check} — ${first.title}`];
+  const place = renderPlace(group, variantCount);
+  if (place) lines.push(`   ${group.members.length > 1 ? `${group.members.length}× ` : ''}${place}`);
+  if (first.detail) {
+    first.detail
+      .split('\n')
+      .slice(0, MAX_DETAIL_LINES)
+      .forEach((detailLine) => lines.push(`   > ${detailLine}`));
+  }
+  if (first.repro) lines.push(`   repro: ${first.repro}`);
+  if (first.artifacts.length) lines.push(`   screenshot: ${first.artifacts[0]}`);
+  return lines;
+}
+
+/**
+ * Where a group occurs: `file:lines` for code, `route @ variants` for pages
+ * ("all" when every viewport × scheme is affected). Long lists are cut short.
+ */
+function renderPlace(group, variantCount) {
+  const places = new Map();
+  for (const member of group.members) {
+    const [place, detail] = member.file ? [member.file, member.line] : (member.where ?? '').split(' @');
+    if (!place) continue;
+    if (!places.has(place)) places.set(place, []);
+    if (detail) places.get(place).push(detail);
+  }
+  const rendered = [...places].map(([place, details]) => {
+    const unique = [...new Set(details)];
+    if (!unique.length) return place;
+    if (group.first.file) return `${place}:${unique.slice(0, 5).join(',')}`;
+    return `${place} @ ${unique.length === variantCount ? 'all' : unique.join(', ')}`;
+  });
+  const shown = rendered.slice(0, MAX_PLACES_SHOWN).join(' · ');
+  return rendered.length > MAX_PLACES_SHOWN ? `${shown} · +${rendered.length - MAX_PLACES_SHOWN} more` : shown;
+}
+
+function renderStageSummary(run) {
+  const lines = [];
+  for (const [stage, summary] of Object.entries(run.head.stages)) {
+    if (summary === 'skipped') {
+      lines.push(`- ${stage}: skipped`);
+    } else if (stage === 'static') {
+      lines.push(`- static: ${summary.map((check) => `${check.name} ${check.status}${check.count ? ` (${check.count})` : ''}`).join(' · ') || 'no checks'}`);
+    } else if (stage === 'rules') {
+      lines.push(`- rules: ${summary.ruleCount} text rules, ${summary.boundaryCount} import boundaries`);
+    } else if (stage === 'web') {
+      const fixtures = run.fixtures ? `fixtures recorded ${run.fixtures.recordedAt}` : 'no fixtures recorded';
+      lines.push(`- web: ${summary.built ? `${summary.pages} pages (${summary.shape})` : 'build failed, sweep skipped'} · ${fixtures}`);
+    }
+  }
+  return lines;
+}
+
+/** "3 new issues (1 high, 2 medium) · …" — counted per issue (group), not per occurrence. */
+function describeCounts({ newFindings, existingFindings, fixedFindings }) {
+  const newGroups = groupFindings(newFindings);
+  const bySeverity = SEVERITIES.map((severity) => [severity, newGroups.filter((group) => group.first.severity === severity).length])
+    .filter(([, count]) => count)
+    .map(([severity, count]) => `${count} ${severity}`);
+  const newPart = newGroups.length ? `${newGroups.length} new issues (${bySeverity.join(', ')})` : 'nothing new';
+  return `${newPart} · ${groupFindings(fixedFindings).length} fixed · ${groupFindings(existingFindings).length} already on base (not shown)`;
+}
+
+function describeBase(run) {
+  if (!run.base) return 'none (every finding shown)';
+  if (run.base.sha === run.head.sha) return 'same commit (every finding shown)';
+  return `${run.base.label} @ ${run.base.shortSha}`;
+}
+
+function formatDuration(milliseconds) {
+  const seconds = Math.round(milliseconds / 1000);
+  return seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
+}

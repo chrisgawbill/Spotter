@@ -1,0 +1,157 @@
+# Spotter Ticket Index
+
+Ticket states: IDEA, READY, ACTIVE, BLOCKED, DONE. Tickets stay IDEA until the
+Product Owner promotes or starts one. `Start <ticket>` authorizes only that
+ticket.
+
+## Product decisions (Product Owner, 2026-10-22)
+
+- **Purpose:** an independent, automatic QA runner that spits out what it
+  spots, so AI coding agents spend fewer tokens on QA. Agents read one short
+  report instead of rebuilding Playwright setups, mocks and screenshot loops
+  per ticket.
+- **Generic, not project-specific:** Spotter knows nothing about any one app.
+  Everything project-specific lives in a project config
+  (`projects/<name>.yml`). HockeyStatsWebApp is the first project and the
+  reference for "a typical project" (Vite + React SPA, separate JSON API,
+  pnpm, Vitest, agent-driven tickets).
+- **Data:** browser checks run against **recorded API fixtures**, replayed
+  deterministically (with the clock frozen at record time). Re-record on
+  demand.
+- **Triggers:** CLI first (QA-01); Jenkins on every non-default-branch push
+  later (QA-03).
+- **Runs on this server** in Docker (host Node is 18; the projects need 20+).
+
+## Delivery contract
+
+PM owns scope and evidence review. Each ticket is DONE when its Verify list
+passes and the Product Owner accepts a sample report. Reports must stay short:
+an agent should be able to act on `report.md` without opening anything else.
+
+| Ticket | Human decision or review checkpoint |
+| --- | --- |
+| QA-01 | Approved 2026-10-22 (decisions above). Product Owner reviews a sample report against HockeyStatsWebApp. |
+| QA-02 | How signed-in state is faked; which accessibility rules are blocking vs advisory. |
+| QA-03 | Jenkins job shape, the Tailscale port for the HTML report, and whether to post PR comments (needs a GitHub token on the server). |
+| QA-04 | Where project specs live (project repo vs Spotter) and how a ticket's Verify list maps to a spec. |
+| QA-05 | Changes to HockeyStatsWebApp's agent workflow docs. |
+
+## Dependency outline
+
+```text
+QA-01 -> QA-02, QA-03, QA-04
+QA-01 -> QA-05
+```
+
+---
+
+## QA-01 — Spotter MVP: static checks, rendered sweep, short report
+
+**Status:** ACTIVE — implemented and verified 2026-10-22; pending Product
+Owner review of a sample report. Verify results: 14 unit tests pass; `main`
+against itself gives 6 issues, all confirmed real (see "Found on main");
+the seeded branch reported each of its 5 defects as new and nothing else
+besides Prettier on the edited file (~45s per run; base results cached).
+
+**Found on main (2026-10-22):**
+
+- Matchup page at 768px: Team DNA "Shot Suppression" value runs past the card
+  and 18px off screen (cut off by `body { overflow-x: clip }`).
+- Live API: `GET /player/goalie/statLeaders/shutouts` answers 500.
+- Cross-feature imports missing from architecture.md's list:
+  draft-lottery → standings, favorite-players → teams, standings → schedule,
+  teams → standings; `* → season` is allowlisted pending confirmation.
+
+**Learned while building:** the app clips sideways overflow on `body`, so the
+check reports content cut off at the right edge rather than page scroll; its
+theme follows time of day, so the config seeds the saved theme per scheme.
+
+**Goal:** `spotter run <project> --ref <branch>` checks out the branch, runs
+the project's checks and a browser sweep, compares with the merge base, and
+writes a compact report of what is **new** on the branch.
+
+**Scope:**
+
+- Docker image (Playwright base) and a host wrapper `bin/spotter`.
+- Project config (`projects/<name>.yml`): repo path, base branch, working
+  directory, install command, checks, text rules, import boundaries, web
+  build/routes/viewports/colour schemes, API origin and record source.
+- Checkout via `git archive` into a temp dir (never touches the project's
+  checkout); `--working-tree` includes uncommitted changes instead.
+- **Static stage:** configured commands with parsers for `tsc`, Vitest JSON,
+  Prettier, and a generic fallback (exit code + log tail).
+- **Rules stage:** forbidden text (in added diff lines, commit messages, or
+  files matching a glob) and import boundaries between slices with an
+  allowlist.
+- **Fixtures:** `spotter record <project>` visits every route against a live
+  API and stores responses; `run` replays them. Unrecorded requests get a fast
+  404 and a finding telling the agent to re-record.
+- **Web stage:** static build served by Spotter at the app's base path; each
+  route × viewport × colour scheme is checked for uncaught errors, console
+  errors, failed requests, horizontal page overflow (naming the elements that
+  stick out), configured error text, and saves a screenshot.
+- **Baseline:** the same run on the merge base (cached by commit SHA);
+  findings are fingerprinted and split into new / existing / fixed.
+- **Report:** `report.md` (short, agent-facing, repro hint per finding),
+  `report.json`, screenshots, logs; exit code 1 when anything new is high or
+  medium.
+- HockeyStatsWebApp project config.
+
+**Out of scope:** signed-in states, accessibility, fault injection (QA-02);
+Jenkins, HTML report hosting, visual diff (QA-03); project specs, API contract
+checks (QA-04).
+
+**Verify:**
+
+- Unit tests for parsers, fingerprints/baseline split, rules, and the report.
+- Run against HockeyStatsWebApp `main` (no new findings against itself).
+- Run against a throwaway branch with seeded defects (type error, failing
+  test, forbidden import, wide element on one page, AI mention in a commit):
+  each shows up as new, nothing else does.
+
+---
+
+## QA-02 — Depth: accessibility, fault injection, signed-in state
+
+**Status:** IDEA
+
+- axe-core on every swept page; serious/critical new violations reported.
+- Fault injection: each recorded endpoint returns 500, then is delayed, one at
+  a time per route; report pages that blank, crash, or never leave loading.
+- Signed-in sweep: config hook to seed a session (e.g. localStorage token)
+  with recorded authenticated fixtures.
+- Keyboard smoke: tab order reaches every interactive element; focus visible.
+
+---
+
+## QA-03 — Pipeline: Jenkins, hosted report, visual diff
+
+**Status:** IDEA
+
+- Jenkins job runs Spotter on every non-default-branch push of a configured
+  project; stores the report as a build artifact.
+- HTML report with screenshots served via Caddy on a Tailscale port.
+- Visual diff of each page against the base run; changed pages listed with
+  before/after/diff images (also serves Product Owner screenshot review).
+- Optional PR comment with `report.md` (needs `gh` and a token).
+
+---
+
+## QA-04 — Project specs and API contracts
+
+**Status:** IDEA
+
+- Spotter runs a project's own Playwright specs (e.g. a ticket's Verify list)
+  with the same fixtures, clock, and report format.
+- Response-shape snapshots from fixtures; re-recording reports contract drift
+  between API versions.
+
+---
+
+## QA-05 — Adopt Spotter in HockeyStatsWebApp's agent workflow
+
+**Status:** IDEA
+
+- `docs/agent-development.md`: coder runs Spotter before handing off; QA
+  worker starts from `report.md` and only checks ticket-specific criteria and
+  rendered judgment calls.

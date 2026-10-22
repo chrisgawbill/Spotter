@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Runs Spotter in its Docker image. Usage: spotter <command> [args]
+#   spotter build-image          (re)build the image after dependency changes
+#   spotter run <project> ...    see `spotter help`
+set -euo pipefail
+
+spotter_dir=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
+spotter_home=${SPOTTER_HOME:-$HOME/spotter}
+projects_root=${SPOTTER_PROJECTS_ROOT:-$HOME/projects}
+image=${SPOTTER_IMAGE:-spotter:latest}
+mkdir -p "$spotter_home"
+
+if [[ ${1:-} == build-image ]]; then
+  exec docker build -t "$image" "$spotter_dir"
+fi
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+  echo "Building $image (first run)..." >&2
+  docker build -q -t "$image" "$spotter_dir" >/dev/null
+fi
+
+# A --repo outside the projects root (another clone or worktree) is mounted too.
+extra_mounts=()
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  if [[ ${args[i]} == --repo && -n ${args[i + 1]:-} ]]; then
+    repo_path=$(readlink -f "${args[i + 1]}")
+    args[i + 1]=$repo_path
+    [[ $repo_path == "$projects_root"/* ]] || extra_mounts+=(-v "$repo_path:$repo_path:ro")
+  fi
+done
+
+tty_flag=()
+[[ -t 1 ]] && tty_flag=(-t)
+
+# Projects are mounted read-only at their real paths so configs can use host
+# paths; results land in $SPOTTER_HOME, reported with host paths.
+exec docker run --rm "${tty_flag[@]}" --init --network host --ipc host \
+  --user "$(id -u):$(id -g)" \
+  -e SPOTTER_HOME=/data -e SPOTTER_HOST_HOME="$spotter_home" \
+  -v "$spotter_dir/src:/opt/spotter/src:ro" \
+  -v "$spotter_dir/projects:/opt/spotter/projects:ro" \
+  -v "$spotter_home:/data" \
+  -v "$projects_root:$projects_root:ro" \
+  "${extra_mounts[@]}" \
+  "$image" "${args[@]}"
