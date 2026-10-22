@@ -32,19 +32,22 @@ const log = (message) => process.stderr.write(`[spotter] ${message}\n`);
 
 /** Parses `<command> <project> --flag value --switch` into a plain object. */
 export function parseArguments(argv) {
-  const [command, project, ...rest] = argv;
+  const [command, project, ...flags] = argv;
   const options = { command, project, skip: new Set() };
-  for (let index = 0; index < rest.length; index += 1) {
-    const flag = rest[index];
-    if (flag === '--ref') options.ref = rest[++index];
-    else if (flag === '--repo') options.repo = path.resolve(rest[++index]);
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index];
+    if (flag === '--ref') options.ref = flags[++index];
+    else if (flag === '--repo') options.repo = path.resolve(flags[++index]);
     else if (flag === '--working-tree') options.workingTree = true;
     else if (flag === '--no-baseline') options.noBaseline = true;
     else if (flag === '--merge') options.merge = true;
-    else if (flag === '--skip') rest[++index].split(',').forEach((stage) => options.skip.add(stage.trim()));
-    else throw new Error(`Unknown option ${flag}`);
+    else if (flag === '--skip') {
+      for (const stage of flags[++index].split(',')) options.skip.add(stage.trim());
+    } else throw new Error(`Unknown option ${flag}`);
   }
-  for (const stage of options.skip) if (!STAGES.includes(stage)) throw new Error(`Unknown stage "${stage}" in --skip`);
+  for (const stage of options.skip) {
+    if (!STAGES.includes(stage)) throw new Error(`Unknown stage "${stage}" in --skip`);
+  }
   return options;
 }
 
@@ -58,23 +61,23 @@ async function runCommandLine(argv) {
     console.log(USAGE);
     return options.command && options.command !== 'help' ? EXIT_ERROR : EXIT_PASS;
   }
-  const loaded = await loadProjectConfig(options.project);
-  const config = options.repo ? { ...loaded, repo: options.repo } : loaded;
+  const projectConfig = await loadProjectConfig(options.project);
+  const config = options.repo ? { ...projectConfig, repo: options.repo } : projectConfig;
   return options.command === 'run' ? runProject(config, options) : recordProject(config, options);
 }
 
 /** `spotter run`: head vs merge base, report written and printed. */
 async function runProject(config, options) {
   const startedAt = Date.now();
-  const dirs = projectDirs(config.name);
+  const directories = projectDirs(config.name);
   const headRef = options.ref ?? 'HEAD';
   const headSha = await resolveCommit(config.repo, headRef);
   const baseSha = options.noBaseline ? null : await findMergeBase(config.repo, config.baseBranch, headSha);
-  const fixtures = config.web?.api ? await loadFixtures(dirs.fixtures) : null;
+  const fixtures = config.web?.api ? await loadFixtures(directories.fixtures) : null;
   if (config.web?.api && !fixtures) log(`no fixtures yet — run: spotter record ${config.name}`);
 
-  const runDir = path.join(dirs.runs, `${timestampForPath()}-${slugify(options.workingTree ? 'working-tree' : headRef)}`);
-  const workRoot = path.join(dirs.work, path.basename(runDir));
+  const runDir = path.join(directories.runs, `${timestampForPath()}-${slugify(options.workingTree ? 'working-tree' : headRef)}`);
+  const workRoot = path.join(directories.work, path.basename(runDir));
   await mkdir(runDir, { recursive: true });
 
   const changes = baseSha
@@ -92,14 +95,16 @@ async function runProject(config, options) {
     changes,
     log: (step) => log(`head: ${step}`),
   });
-  const basePromise = baseSha && baseSha !== headSha ? loadOrRunBase({ ...sideArguments, baseSha, dirs, options }) : null;
+  const basePromise = baseSha && baseSha !== headSha ? loadOrRunBase({ ...sideArguments, baseSha, directories }) : null;
   const [head, base] = await Promise.all([headPromise, basePromise]);
   await rm(workRoot, { recursive: true, force: true });
 
   const comparison = base
     ? compareWithBaseline(head.findings, base.findings)
     : { newFindings: head.findings, existingFindings: [], fixedFindings: [] };
-  for (const list of Object.keys(comparison)) comparison[list] = sortFindings(comparison[list], STAGES).map(withHostPaths);
+  for (const category of Object.keys(comparison)) {
+    comparison[category] = sortFindings(comparison[category], STAGES).map(withHostPaths);
+  }
 
   const run = {
     project: config.name,
@@ -117,15 +122,15 @@ async function runProject(config, options) {
   const markdown = renderMarkdownReport(run);
   await writeFile(path.join(runDir, 'report.json'), JSON.stringify(run, null, 2));
   await writeFile(path.join(runDir, 'report.md'), markdown);
-  await pointLatestAt(dirs.runs, runDir);
+  await pointLatestAt(directories.runs, runDir);
   process.stdout.write(markdown);
   return hasFailingFinding(comparison.newFindings) ? EXIT_FINDINGS : EXIT_PASS;
 }
 
 /** The merge base's findings, from cache when the same commit, config and fixtures ran before. */
-async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, dirs }) {
+async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, directories }) {
   const cacheKey = `${baseSha.slice(0, 12)}-${spotterCodeHash()}-${config.configHash}-${fixtures?.hash ?? 'none'}-${[...skip].sort().join('_') || 'all'}`;
-  const cacheFile = path.join(dirs.baselines, cacheKey, 'side.json');
+  const cacheFile = path.join(directories.baselines, cacheKey, 'side.json');
   const cached = await readCachedSide(cacheFile);
   if (cached) {
     log('base: reusing cached results');
@@ -148,17 +153,17 @@ async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, dirs }
 /** `spotter record`: build <ref>, visit every route against the live API, save responses. */
 async function recordProject(config, options) {
   if (!config.web?.api?.recordFrom) throw new Error('`web.api.recordFrom` is not configured for this project');
-  const dirs = projectDirs(config.name);
+  const directories = projectDirs(config.name);
   const ref = options.ref ?? config.baseBranch;
   const sha = await resolveCommit(config.repo, ref);
-  const existing = options.merge ? await loadFixtures(dirs.fixtures) : null;
+  const existing = options.merge ? await loadFixtures(directories.fixtures) : null;
   const entries = { ...(existing?.entries ?? {}) };
   const knownBefore = Object.keys(entries).length;
   // Freeze the page clock exactly as replay will, so date-based requests match.
   const recordedAt = existing?.recordedAt ?? new Date().toISOString();
 
-  const exportDir = path.join(dirs.work, `record-${sha.slice(0, 12)}`);
-  const logDir = path.join(dirs.fixtures, 'logs');
+  const exportDir = path.join(directories.work, `record-${sha.slice(0, 12)}`);
+  const logDir = path.join(directories.fixtures, 'logs');
   await mkdir(logDir, { recursive: true });
   await rm(exportDir, { recursive: true, force: true });
   try {
@@ -174,11 +179,11 @@ async function recordProject(config, options) {
     await rm(exportDir, { recursive: true, force: true });
   }
 
-  await saveFixtures(dirs.fixtures, { recordedAt, source: config.web.api.recordFrom, ref, sha, entries });
+  await saveFixtures(directories.fixtures, { recordedAt, source: config.web.api.recordFrom, ref, sha, entries });
   const errorCount = Object.values(entries).filter((entry) => entry.status >= 400).length;
   console.log(
     `Recorded ${Object.keys(entries).length} API responses (${Object.keys(entries).length - knownBefore} new, ${errorCount} non-2xx) ` +
-      `to ${toHostPath(dirs.fixtures)}/api.json; clock frozen at ${recordedAt}.`,
+      `to ${toHostPath(directories.fixtures)}/api.json; clock frozen at ${recordedAt}.`,
   );
   return EXIT_PASS;
 }

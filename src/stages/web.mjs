@@ -64,28 +64,29 @@ function listPageJobs(web, mode) {
 
 function toViewport(viewport) {
   if (typeof viewport === 'object') return viewport;
-  const height = viewport < 600 ? 812 : viewport < 1000 ? 1024 : 800;
-  return { width: viewport, height };
+  if (viewport < 600) return { width: viewport, height: 812 };
+  if (viewport < 1000) return { width: viewport, height: 1024 };
+  return { width: viewport, height: 800 };
 }
 
 /** Runs `worker` over `items` with at most `limit` in flight, preserving order. */
 async function runPool(items, limit, worker) {
   const results = new Array(items.length);
   let nextIndex = 0;
-  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (nextIndex < items.length) {
       const index = nextIndex++;
       results[index] = await worker(items[index]);
     }
   });
-  await Promise.all(lanes);
+  await Promise.all(workers);
   return results;
 }
 
 async function visitPage({ browser, job, config, fixtures, mode, recordedEntries, appOrigin, screenshotDir }) {
   const web = config.web;
   const { route, viewport, colorScheme } = job;
-  const variant = `${route.name}-${viewport.width}-${colorScheme}`;
+  const screenshotName = `${route.name}-${viewport.width}-${colorScheme}`;
   const where = `${route.path} @${viewport.width} ${colorScheme}`;
   const problems = [];
   const report = (problem) => problems.push(problem);
@@ -120,7 +121,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
     await page.waitForTimeout(web.settleMs);
     if (mode === 'sweep') {
       await probeRenderedPage(page, { web, report });
-      const screenshotFile = path.join(screenshotDir, `${variant}.png`);
+      const screenshotFile = path.join(screenshotDir, `${screenshotName}.png`);
       await page.screenshot({ path: screenshotFile, fullPage: true, animations: 'disabled' });
       problems.forEach((problem) => (problem.artifacts = [screenshotFile]));
     }
@@ -150,23 +151,23 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
 
 /** Counts in-flight requests so a visit can wait until the page stops fetching. */
 function trackNetwork(page) {
-  let inFlight = 0;
+  let pendingRequestCount = 0;
   let lastActivity = Date.now();
-  const settle = () => {
-    inFlight = Math.max(0, inFlight - 1);
+  const onRequestSettled = () => {
+    pendingRequestCount = Math.max(0, pendingRequestCount - 1);
     lastActivity = Date.now();
   };
   page.on('request', () => {
-    inFlight += 1;
+    pendingRequestCount += 1;
     lastActivity = Date.now();
   });
-  page.on('requestfinished', settle);
-  page.on('requestfailed', settle);
+  page.on('requestfinished', onRequestSettled);
+  page.on('requestfailed', onRequestSettled);
   return {
     async waitForQuiet() {
       const startedAt = Date.now();
       while (Date.now() - startedAt < MAX_NETWORK_WAIT_MS) {
-        if (inFlight === 0 && Date.now() - lastActivity >= QUIET_NETWORK_MS) return;
+        if (pendingRequestCount === 0 && Date.now() - lastActivity >= QUIET_NETWORK_MS) return;
         await page.waitForTimeout(100);
       }
     },

@@ -63,7 +63,7 @@ async function applyImportBoundary({ boundary, config, workdir, sourceFiles }) {
   const root = boundary.root.replace(/\/$/, '');
   const findings = [];
   for (const file of sourceFiles.filter((candidate) => candidate.startsWith(`${root}/`))) {
-    const ownSlice = file.slice(root.length + 1).split('/')[0];
+    const sourceSlice = file.slice(root.length + 1).split('/')[0];
     const lines = (await readFile(path.join(workdir, file), 'utf8')).split('\n');
     lines.forEach((text, index) => {
       for (const specifier of findImportSpecifiers(text)) {
@@ -71,13 +71,13 @@ async function applyImportBoundary({ boundary, config, workdir, sourceFiles }) {
         if (!target?.startsWith(`${root}/`)) continue;
         const targetPath = target.slice(root.length + 1);
         const targetSlice = targetPath.split('/')[0];
-        if (targetSlice === ownSlice || isAllowed(boundary.allow ?? [], ownSlice, targetPath)) continue;
+        if (targetSlice === sourceSlice || isImportAllowed(boundary.allow ?? [], sourceSlice, targetPath)) continue;
         findings.push(
           createFinding({
             stage: 'rules',
             check: boundary.id,
             severity: boundary.severity ?? 'medium',
-            title: `${boundary.message ?? 'cross-slice import'}: ${ownSlice} → ${targetSlice}`,
+            title: `${boundary.message ?? 'cross-slice import'}: ${sourceSlice} → ${targetSlice}`,
             file: toRepoPath(file, config),
             line: index + 1,
             detail: `import '${specifier}'`,
@@ -94,7 +94,9 @@ async function applyImportBoundary({ boundary, config, workdir, sourceFiles }) {
 export function findImportSpecifiers(line) {
   const specifiers = [];
   const patterns = [/\bfrom\s*['"]([^'"]+)['"]/g, /^\s*import\s*['"]([^'"]+)['"]/g, /\bimport\(\s*['"]([^'"]+)['"]\s*\)/g];
-  for (const pattern of patterns) for (const match of line.matchAll(pattern)) specifiers.push(match[1]);
+  for (const pattern of patterns) {
+    for (const match of line.matchAll(pattern)) specifiers.push(match[1]);
+  }
   return specifiers;
 }
 
@@ -107,7 +109,7 @@ export function resolveSpecifier(specifier, fromFile, aliases) {
   return null;
 }
 
-function isAllowed(allowList, fromSlice, targetPath) {
+function isImportAllowed(allowList, fromSlice, targetPath) {
   const target = targetPath.replace(/\.[jt]sx?$/, '').replace(/\/index$/, '');
   return allowList.some(
     ({ from, to }) =>
@@ -127,5 +129,9 @@ async function listFiles(workdir, directory = '') {
 }
 
 const toRepoPath = (file, config) => path.posix.join(config.workdir, file).replace(/^\.\//, '');
-const toWorkdirPath = (file, config) =>
-  config.workdir === '.' ? file : file.startsWith(`${config.workdir}/`) ? file.slice(config.workdir.length + 1) : `../${file}`;
+function toWorkdirPath(file, config) {
+  if (config.workdir === '.') return file;
+  const workdirPrefix = `${config.workdir}/`;
+  if (file.startsWith(workdirPrefix)) return file.slice(workdirPrefix.length);
+  return `../${file}`;
+}

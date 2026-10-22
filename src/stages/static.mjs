@@ -48,21 +48,21 @@ async function runCheck({ check, config, workdir, logDir }) {
     timeoutMs: check.timeoutMs,
     logFile: path.join(logDir, `${check.name}.log`),
   });
-  const parse = parsers[check.parser] ?? parsers.generic;
-  let parsed = parse({ ...result, reportFile, cwd: workdir });
+  const parseOutput = parsers[check.parser] ?? parsers.generic;
+  let parsedFindings = parseOutput({ ...result, reportFile, cwd: workdir });
   // A parser that understands nothing in a failed run must not hide the failure.
-  if (result.exitCode !== 0 && parsed.length === 0) parsed = parsers.generic(result);
+  if (result.exitCode !== 0 && parsedFindings.length === 0) parsedFindings = parsers.generic(result);
 
   const repro = `cd ${config.workdir} && ${check.repro ?? check.run}`;
-  return parsed.map((item) =>
+  return parsedFindings.map((parsedFinding) =>
     createFinding({
       stage: 'static',
       check: check.name,
       severity: check.severity,
-      title: item.title,
-      file: item.file ? path.posix.join(config.workdir, item.file).replace(/^\.\//, '') : null,
-      line: item.line,
-      detail: item.detail,
+      title: parsedFinding.title,
+      file: parsedFinding.file ? path.posix.join(config.workdir, parsedFinding.file).replace(/^\.\//, '') : null,
+      line: parsedFinding.line,
+      detail: parsedFinding.detail,
       repro,
     }),
   );
