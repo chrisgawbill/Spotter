@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spotter · QA dashboard</title>
+<link rel="stylesheet" href="/core.css"><link rel="stylesheet" href="/dashboard.css">
+<script type="module" src="/dashboard.js"></script>
+</head>
+<body class="ds-page-shell ds-scrollbar">
+<header class="ds-container ds-cluster"><a class="brand ds-focus-outline" href="#">◉ Spotter</a><span>Independent QA</span><span class="ds-chip ds-chip-primary">Tailscale</span></header>
+<main class="ds-container ds-stack">
+<div><p class="eyebrow">PROJECT CONTROL</p><h1>See what changed.</h1><p class="muted">Start a check, follow the work, and review what Spotter found.</p></div>
+<p id="error" role="alert" hidden></p>
+<section class="ds-card ds-aero-surface"><h2>Start a run</h2>
+<form id="start" class="ds-cluster">
+<label class="ds-field">Project<select id="project" class="ds-input" required></select></label>
+<label class="ds-field">Branch<select id="branch" class="ds-input" required></select></label>
+<button id="submit" class="ds-button" type="submit">Run checks →</button>
+</form><p id="project-info" class="muted"></p></section>
+<section id="detail" class="ds-stack" hidden aria-labelledby="detail-title">
+<div class="ds-cluster"><h2 id="detail-title" tabindex="-1">Run activity</h2><span id="status" class="ds-chip"></span><a href="#">Close run</a></div>
+<p id="identity"></p><p id="updated" class="muted"></p>
+<div class="ds-card ds-aero-surface"><h3>Current activity</h3><ul id="current" aria-live="polite"></ul><p id="run-error" role="status"></p></div>
+<details class="ds-card ds-aero-surface" open><summary>Activity history</summary><ol id="events"></ol></details>
+<section id="report-section" hidden><h3>Report & visual review</h3><p><a id="report-link" target="_blank" rel="noopener">Open report in a new tab ↗</a></p><iframe id="report" title="Spotter report and visual evidence" sandbox="allow-same-origin"></iframe></section>
+</section>
+<section><div class="ds-cluster"><h2>Projects</h2><span class="muted">Latest result per project</span></div><div id="projects" class="ds-grid"></div></section>
+<section><div class="ds-cluster"><h2>Recent runs</h2><span id="synced" class="muted" role="status"></span></div><div class="ds-table-wrap"><table class="ds-table"><thead><tr><th>Project / branch</th><th>Result</th><th>Activity</th><th>Run</th></tr></thead><tbody id="runs"></tbody></table></div><p id="empty" hidden>No runs yet. Select a project and branch to start.</p></section>
+</main>
+</body></html>

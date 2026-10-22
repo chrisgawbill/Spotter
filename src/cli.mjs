@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
 import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { listProjectNames, loadProjectConfig } from './config.mjs';
@@ -7,6 +8,8 @@ import { loadFixtures, saveFixtures } from './fixtures.mjs';
 import { compareContracts, snapshotContracts } from './contracts.mjs';
 import { exportCommit, findMergeBase, listAddedLines, listCommitMessages, resolveCommit } from './git.mjs';
 import { projectDirs, spotterCodeHash, toHostPath } from './paths.mjs';
+import { createActivity } from './activity.mjs';
+import { startDashboard } from './dashboard.mjs';
 import { renderMarkdownReport } from './report.mjs';
 import { renderHtmlReport } from './htmlReport.mjs';
 import { compareScreenshots } from './visual.mjs';
@@ -24,6 +27,8 @@ const USAGE = `Spotter — automatic QA that reports what is new on a branch.
   spotter record <project> [--ref <ref>] [--repo <path>] [--merge]
       Visit every route against the live API and store its responses as the
       fixtures runs replay. --merge keeps existing entries and adds new ones.
+  spotter dashboard
+      Serve the dashboard on SPOTTER_TAILSCALE_IP:8089 (Tailscale IPv4 required).
   spotter list
       Configured projects.`;
 
@@ -56,6 +61,10 @@ export function parseArguments(argv) {
 
 async function runCommandLine(argv) {
   const options = parseArguments(argv);
+  if (options.command === 'dashboard') {
+    await startDashboard();
+    return null;
+  }
   if (options.command === 'list') {
     console.log((await listProjectNames()).join('\n') || 'No projects configured.');
     return EXIT_PASS;
@@ -79,67 +88,78 @@ async function runProject(config, options) {
   const fixtures = config.web?.api ? await loadFixtures(directories.fixtures) : null;
   if (config.web?.api && !fixtures) log(`no fixtures yet — run: spotter record ${config.name}`);
 
-  const runDir = path.join(directories.runs, `${timestampForPath()}-${slugify(options.workingTree ? 'working-tree' : headRef)}`);
+  const runDir = path.join(directories.runs, process.env.SPOTTER_RUN_ID ?? `${timestampForPath()}-${slugify(options.workingTree ? 'working-tree' : headRef)}-${randomUUID().slice(0, 8)}`);
   const workRoot = path.join(directories.work, path.basename(runDir));
   await mkdir(runDir, { recursive: true });
 
-  const changes = baseSha
-    ? {
-        addedLines: await listAddedLines(config.repo, baseSha, options.workingTree ? null : headSha),
-        commits: await listCommitMessages(config.repo, baseSha, headSha),
-      }
-    : { addedLines: [], commits: [] };
-  const sideArguments = { config, fixtures, skip: options.skip, workRoot };
+  const activity = createActivity(runDir, { project: config.name, branch: headRef, startedAt: new Date(startedAt).toISOString() });
+  try {
+    const changes = baseSha
+      ? {
+          addedLines: await listAddedLines(config.repo, baseSha, options.workingTree ? null : headSha),
+          commits: await listCommitMessages(config.repo, baseSha, headSha),
+        }
+      : { addedLines: [], commits: [] };
+    const sideArguments = { config, fixtures, skip: options.skip, workRoot, activity };
 
-  const headPromise = runSide({
-    ...sideArguments,
-    sha: options.workingTree ? null : headSha,
-    sideDir: runDir,
-    changes,
-    log: (step) => log(`head: ${step}`),
-  });
-  const basePromise = baseSha && (baseSha !== headSha || options.workingTree) ? loadOrRunBase({ ...sideArguments, baseSha, directories }) : null;
-  const [head, base] = await Promise.all([headPromise, basePromise]);
-  await rm(workRoot, { recursive: true, force: true });
+    const headPromise = runSide({
+      ...sideArguments,
+      sha: options.workingTree ? null : headSha,
+      sideDir: runDir,
+      changes,
+      log: (step, state) => { log(`head: ${step} (${state ?? 'started'})`); activity.event('head', step, state); },
+    });
+    const basePromise = baseSha && (baseSha !== headSha || options.workingTree) ? loadOrRunBase({ ...sideArguments, baseSha, directories }) : null;
+    const [head, base] = await Promise.all([headPromise, basePromise]);
+    await rm(workRoot, { recursive: true, force: true });
 
-  const comparison = base
-    ? compareWithBaseline(head.findings, base.findings)
-    : { newFindings: head.findings, existingFindings: [], fixedFindings: [] };
-  for (const category of Object.keys(comparison)) {
-    comparison[category] = sortFindings(comparison[category], STAGES).map(withHostPaths);
+    activity.event('run', 'compare findings and screenshots');
+    const comparison = base
+      ? compareWithBaseline(head.findings, base.findings)
+      : { newFindings: head.findings, existingFindings: [], fixedFindings: [] };
+    for (const category of Object.keys(comparison)) {
+      comparison[category] = sortFindings(comparison[category], STAGES).map(withHostPaths);
+    }
+
+    const run = {
+      project: config.name,
+      head: { label: options.workingTree ? `${headRef} + working tree` : headRef, sha: headSha, shortSha: headSha.slice(0, 7), stages: head.stages },
+      base: baseSha ? { label: `${config.baseBranch} merge base`, sha: baseSha, shortSha: baseSha.slice(0, 7) } : null,
+      fixtures: fixtures ? { recordedAt: fixtures.recordedAt, hash: fixtures.hash } : null,
+      comparison,
+      visual: await compareScreenshots(path.join(runDir, 'screenshots'), base?.screenshotDir ?? (baseSha === headSha && !options.workingTree ? path.join(runDir, 'screenshots') : null), runDir),
+      durationMs: Date.now() - startedAt,
+      paths: {
+        reportHtml: toHostPath(path.join(runDir, 'report.html')),
+        reportJson: toHostPath(path.join(runDir, 'report.json')),
+        screenshots: toHostPath(path.join(runDir, 'screenshots')),
+        logs: toHostPath(path.join(runDir, 'logs')),
+      },
+    };
+    const markdown = renderMarkdownReport(run);
+    await writeFile(path.join(runDir, 'report.md'), markdown);
+    await writeFile(path.join(runDir, 'report.html'), renderHtmlReport(run, markdown));
+    await writeFile(path.join(runDir, 'report.json'), JSON.stringify(run, null, 2));
+    await pointLatestAt(directories.runs, runDir);
+    process.stdout.write(markdown);
+    const exitCode = hasFailingFinding(comparison.newFindings) ? EXIT_FINDINGS : EXIT_PASS;
+    activity.event('run', 'compare findings and screenshots', 'done');
+    activity.finish(exitCode ? 'fail' : 'pass');
+    return exitCode;
+  } catch (error) {
+    activity.finish('error', error.message);
+    throw error;
   }
-
-  const run = {
-    project: config.name,
-    head: { label: options.workingTree ? `${headRef} + working tree` : headRef, sha: headSha, shortSha: headSha.slice(0, 7), stages: head.stages },
-    base: baseSha ? { label: `${config.baseBranch} merge base`, sha: baseSha, shortSha: baseSha.slice(0, 7) } : null,
-    fixtures: fixtures ? { recordedAt: fixtures.recordedAt, hash: fixtures.hash } : null,
-    comparison,
-    visual: await compareScreenshots(path.join(runDir, 'screenshots'), base?.screenshotDir ?? (baseSha === headSha && !options.workingTree ? path.join(runDir, 'screenshots') : null), runDir),
-    durationMs: Date.now() - startedAt,
-    paths: {
-      reportHtml: toHostPath(path.join(runDir, 'report.html')),
-      reportJson: toHostPath(path.join(runDir, 'report.json')),
-      screenshots: toHostPath(path.join(runDir, 'screenshots')),
-      logs: toHostPath(path.join(runDir, 'logs')),
-    },
-  };
-  const markdown = renderMarkdownReport(run);
-  await writeFile(path.join(runDir, 'report.json'), JSON.stringify(run, null, 2));
-  await writeFile(path.join(runDir, 'report.md'), markdown);
-  await writeFile(path.join(runDir, 'report.html'), renderHtmlReport(run, markdown));
-  await pointLatestAt(directories.runs, runDir);
-  process.stdout.write(markdown);
-  return hasFailingFinding(comparison.newFindings) ? EXIT_FINDINGS : EXIT_PASS;
 }
 
 /** The merge base's findings, from cache when the same commit, config and fixtures ran before. */
-async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, directories }) {
+async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, directories, activity }) {
   const cacheKey = `${baseSha.slice(0, 12)}-${spotterCodeHash()}-${config.configHash}-${fixtures?.hash ?? 'none'}-${[...skip].sort().join('_') || 'all'}`;
   const cacheFile = path.join(directories.baselines, cacheKey, 'side.json');
   const cached = await readCachedSide(cacheFile);
   if (cached) {
     log('base: reusing cached results');
+    activity.event('base', 'reusing cached results', 'done');
     return cached;
   }
   const base = await runSide({
@@ -150,7 +170,7 @@ async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, direct
     sha: baseSha,
     sideDir: path.dirname(cacheFile),
     changes: { addedLines: [], commits: [] },
-    log: (step) => log(`base: ${step}`),
+    log: (step, state) => { log(`base: ${step} (${state ?? 'started'})`); activity.event('base', step, state); },
   });
   await writeCachedSide(cacheFile, base);
   return base;
@@ -219,7 +239,7 @@ const slugify = (text) => text.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-|-$/
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   runCommandLine(process.argv.slice(2))
-    .then((code) => process.exit(code))
+    .then((code) => { if (code !== null) process.exit(code); })
     .catch((error) => {
       process.stderr.write(`spotter: ${error.message}\n`);
       process.exit(EXIT_ERROR);

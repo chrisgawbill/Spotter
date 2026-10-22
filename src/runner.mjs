@@ -19,16 +19,19 @@ export async function runSide({ config, sha, sideDir, workRoot, fixtures, change
   const logDir = path.join(sideDir, 'logs');
   await mkdir(logDir, { recursive: true });
   await rm(exportDir, { recursive: true, force: true });
+  log('export');
   if (sha) await exportCommit(config.repo, sha, exportDir);
   else await exportWorkingTree(config.repo, exportDir);
 
+  log('export', 'done');
   const findings = [];
   const stages = {};
   try {
     log('static checks');
     if (skip.has('static')) stages.static = 'skipped';
-    const staticResult = await runStaticStage({ config: skip.has('static') ? { ...config, checks: [] } : config, workdir, logDir });
+    const staticResult = await runStaticStage({ config: skip.has('static') ? { ...config, checks: [] } : config, workdir, logDir, log });
     findings.push(...staticResult.findings);
+    log('static checks', 'done');
     if (!skip.has('static')) stages.static = staticResult.summary;
 
     if (skip.has('rules')) stages.rules = 'skipped';
@@ -36,14 +39,16 @@ export async function runSide({ config, sha, sideDir, workRoot, fixtures, change
       log('rules');
       const rulesResult = await runRulesStage({ config, workdir, changes });
       findings.push(...rulesResult.findings);
+      log('rules', 'done');
       stages.rules = { ruleCount: config.rules.forbiddenText.length, boundaryCount: config.rules.importBoundaries.length };
     }
 
     if (!config.web || skip.has('web') || !staticResult.installed) stages.web = 'skipped';
     else {
       log(`web sweep (${config.web.routes.length} routes)`);
-      const webResult = await runWebStage({ config, workdir, logDir, screenshotDir: path.join(sideDir, 'screenshots'), fixtures });
+      const webResult = await runWebStage({ config, workdir, logDir, screenshotDir: path.join(sideDir, 'screenshots'), fixtures, log });
       findings.push(...webResult.findings);
+      log(`web sweep (${config.web.routes.length} routes)`, 'done');
       stages.web = webResult.summary;
     }
   } finally {

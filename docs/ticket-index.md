@@ -35,6 +35,7 @@ an agent should be able to act on `report.md` without opening anything else.
 | QA-03 | Jenkins job shape, the Tailscale port for the HTML report, and whether to post PR comments (needs a GitHub token on the server). |
 | QA-04 | Accepted 2026-10-22: project-repo specs with named tests mapping Verify items; sample report accepted. |
 | QA-05 | Workflow documentation accepted by Product Owner 2026-10-22. |
+| QA-06 | Dashboard implementation and hosting checks ready for review; sample acceptance and persistent service activation pending. |
 
 ## Dependency outline
 
@@ -229,7 +230,7 @@ defect verification was not rerun for this documentation change.
 
 ## QA-06 — Spotter dashboard
 
-**Status:** IDEA — proposed by Product Owner 2026-10-22.
+**Status:** ACTIVE — started by Product Owner 2026-10-22.
 
 - Product Owner decisions: start runs from the dashboard; text activity first;
   self-hosted access restricted to devices on the Tailscale network.
@@ -264,3 +265,30 @@ defect verification was not rerun for this documentation change.
 
 Depends on QA-03. Live hosting and Jenkins activation can be coordinated with
 this ticket.
+
+
+**QA-06 implementation (2026-10-22):**
+
+- `spotter dashboard` serves the project/branch launcher, recent runs, live
+  activity and embedded reports using the shared Aero stylesheet. Activity
+  events cover head/base work, static checks, builds, browser variants and
+  endpoint fault scenarios; a five-second heartbeat identifies interrupted runs.
+- Unit/HTTP checks pass (24 tests): branch/project validation, same-origin and
+  Host checks, run transitions, interrupted runs, artifact confinement, JSON/log
+  browsing, and rejection of non-Tailscale listener addresses.
+- Docker browser regression passes with real healthy/seeded CLI runs, live
+  activity, pass/fail reports, screenshots/diffs, reload persistence and mobile
+  layout. Preview evidence: `/tmp/spotter-dashboard-desktop.png`,
+  `/tmp/spotter-dashboard-mobile.png`.
+- Main regression: 66 page variants and 308 fault visits; the same 17 known
+  finding groups, no unexpected findings. Report:
+  `~/spotter/hockeystats-webapp/runs/20261022-155312-main-587ba74b/report.md`.
+- Full seeded regression: all six intended defects plus the seeded content’s
+  landmark finding are new (seven groups); 17 existing, zero fixed, no unrelated
+  new findings. All 374 screenshots are available for visual review. Report:
+  `~/spotter/hockeystats-webapp/runs/20261022-155314-verify-browser-depth-defects-ed54b828/report.md`.
+- Caddy configuration and systemd unit validate. Temporary hosting verified
+  project/branch discovery and a real report through Tailscale ports 8088/8089;
+  both listeners bound only `100.87.100.20`, and loopback access was refused.
+  Temporary servers were stopped. Persistent service installation and sample
+  acceptance remain pending; setup is in `docs/dashboard.md`.

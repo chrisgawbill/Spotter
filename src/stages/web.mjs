@@ -23,9 +23,11 @@ const MAX_NETWORK_WAIT_MS = 15_000;
  * returns findings plus screenshots; in `record` mode it forwards API calls to
  * the live API and fills `recordedEntries`.
  */
-export async function runWebStage({ config, workdir, logDir, screenshotDir, fixtures, mode = 'sweep', recordedEntries }) {
+export async function runWebStage({ config, workdir, logDir, screenshotDir, fixtures, mode = 'sweep', recordedEntries, log = () => {} }) {
   const web = config.web;
+  log('web build');
   const build = await buildApp({ config, workdir, logDir });
+  log('web build', 'done');
   if (build.finding) return { findings: [build.finding], summary: { built: false, pages: 0 } };
 
   const server = await startStaticServer(path.join(workdir, web.build.outDir), web.base);
@@ -35,7 +37,7 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
     const jobs = listPageJobs(web, mode);
     await mkdir(screenshotDir, { recursive: true });
     const results = await runPool(jobs, web.concurrency, (job) =>
-      visitPage({ browser, job, config, fixtures, mode, recordedEntries, appOrigin: server.origin, screenshotDir }),
+      visitPage({ browser, job, config, fixtures, mode, recordedEntries, appOrigin: server.origin, screenshotDir, log }),
     );
     const faultJobs = [];
     if (mode === 'sweep' && web.api && web.faultInjection) {
@@ -47,10 +49,12 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
       }
     }
     const faultResults = await runPool(faultJobs, web.concurrency, ({ job, fault, healthy }) =>
-      visitPage({ browser, job, config, fixtures, mode, appOrigin: server.origin, screenshotDir, fault, healthy }),
+      visitPage({ browser, job, config, fixtures, mode, appOrigin: server.origin, screenshotDir, fault, healthy, log }),
     );
     const shape = `${web.routes.length} routes × ${web.viewports.length} viewports × ${mode === 'record' ? 1 : web.colorSchemes.length} schemes × ${web.sessions.length} sessions`;
+    if (mode === 'sweep' && web.specs) log('project specs');
     const specs = mode === 'sweep' && web.specs ? await runSpecsStage({ config, workdir, logDir, fixtures, appOrigin: server.origin }) : null;
+    if (specs) log('project specs', 'done');
     return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
   } finally {
     await browser?.close();
@@ -104,7 +108,7 @@ async function runPool(items, limit, worker) {
   return results;
 }
 
-async function visitPage({ browser, job, config, fixtures, mode, recordedEntries, appOrigin, screenshotDir, fault, healthy }) {
+async function visitPage({ browser, job, config, fixtures, mode, recordedEntries, appOrigin, screenshotDir, fault, healthy, log = () => {} }) {
   const web = config.web;
   const { route, viewport, colorScheme, session } = job;
   const requests = new Set();
@@ -113,6 +117,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
   const sessionFixtures = session.name === 'anonymous' ? fixtures : { ...fixtures, entries: fixtures?.sessions?.[session.name] ?? {} };
   const screenshotName = `${route.name}-${viewport.width}-${colorScheme}-${session.name}${fault ? `-${fault.kind}-${createHash('sha1').update(fault.key).digest('hex').slice(0, 10)}` : ''}`;
   const where = `${route.path} [${session.name}]${fault ? ` ${fault.kind} ${fault.key}` : ''} @${viewport.width} ${colorScheme}`;
+  log(`browser: ${where}`);
   const problems = [];
   const report = (problem) => problems.push(problem);
 
@@ -183,6 +188,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
     report({ check: fault ? 'fault-navigation' : 'navigation', severity: 'high', title: `${fault ? `${fault.kind} ${fault.key}: ` : ''}page check failed: ${firstLine(error.message)}` });
   } finally {
     await context.close();
+    log(`browser: ${where}`, 'done');
   }
 
   if (mode === 'record') return { findings: [] };

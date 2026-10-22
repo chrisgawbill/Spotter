@@ -10,6 +10,7 @@ bin/spotter run hockeystats-webapp --ref feature/my-change      # prints report.
 bin/spotter run hockeystats-webapp --repo ~/worktrees/x --working-tree   # another clone, uncommitted changes included
 bin/spotter record hockeystats-webapp                           # (re)record API fixtures from the live API
 bin/spotter list
+SPOTTER_TAILSCALE_IP="$(tailscale ip -4)" bin/spotter dashboard # Tailscale-only dashboard
 ```
 
 Runs in Docker (`bin/spotter build-image` after dependency changes; it builds
@@ -26,6 +27,9 @@ itself on first use). Results go to `~/spotter/<project>/runs/<run>/`
 5. **Compare:** the same run on the merge base (cached by commit, config, fixtures and Spotter version) splits findings into new / already on base / fixed. Only new ones are listed.
 
 ## Adding a project
+
+For installation on another server and automatic dashboard startup, see
+[self-hosting](docs/self-hosting.md).
 
 Create `projects/<name>.yml`; `projects/hockeystats-webapp.yml` is the
 annotated reference. Fields:
@@ -158,3 +162,9 @@ later nonempty arrays can show drift. These are observed snapshots, not a
 complete API schema. Drift is advisory and does not change the record exit
 code. `--merge` retains existing responses, so use a full re-record to detect
 changes to existing endpoints.
+
+## Dashboard
+
+[Dashboard setup](docs/dashboard.md): start runs by project and branch, follow live
+text activity, and read reports with visual evidence inside the dashboard. Uses
+the shared Aero styling library; serves only on the configured Tailscale address.

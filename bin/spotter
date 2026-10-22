@@ -37,6 +37,7 @@ tty_flag=()
 exec docker run --rm "${tty_flag[@]}" --init --network host --ipc host \
   --user "$(id -u):$(id -g)" \
   -e SPOTTER_HOME=/data -e SPOTTER_HOST_HOME="$spotter_home" \
+  -e SPOTTER_TAILSCALE_IP="${SPOTTER_TAILSCALE_IP:-}" \
   -v "$spotter_dir/src:/opt/spotter/src:ro" \
   -v "$spotter_dir/projects:/opt/spotter/projects:ro" \
   -v "$spotter_home:/data" \

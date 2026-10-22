@@ -8,12 +8,14 @@ import { parsers } from '../parsers/index.mjs';
  * into findings. Returns { findings, summary, installed }; when install fails
  * nothing else can run, so `installed` is false.
  */
-export async function runStaticStage({ config, workdir, logDir }) {
+export async function runStaticStage({ config, workdir, logDir, log = () => {} }) {
   const findings = [];
   const summary = [];
 
   if (config.install) {
+    log('dependency install');
     const install = await runCommand(config.install, { cwd: workdir, logFile: path.join(logDir, 'install.log') });
+    log('dependency install', 'done');
     if (install.exitCode !== 0) {
       const [failure] = parsers.generic(install);
       findings.push(
@@ -32,7 +34,9 @@ export async function runStaticStage({ config, workdir, logDir }) {
   }
 
   for (const check of config.checks) {
+    log(`check: ${check.name}`);
     const checkFindings = await runCheck({ check, config, workdir, logDir });
+    log(`check: ${check.name}`, 'done');
     findings.push(...checkFindings);
     summary.push({ name: check.name, status: checkFindings.length ? 'FAIL' : 'PASS', count: checkFindings.length });
   }

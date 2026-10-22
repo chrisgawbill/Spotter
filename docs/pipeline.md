@@ -47,8 +47,10 @@ caddy run --config deploy/Caddyfile --adapter caddyfile
 ```
 
 Open `http://<tailscale-ip>:8088/<project>/runs/latest/report.html`.
-Caddy binds only the configured Tailscale address and only serves project run
-paths; fixtures, baseline caches and working exports return 404. Apply your
+Caddy binds only the configured Tailscale address. Project run paths retain
+static hosting; other requests proxy to the [dashboard](dashboard.md) on the
+same Tailscale address at port 8089. Fixtures, baseline caches and working
+exports return 404. Start the dashboard before using its pages. Apply your
 Tailscale ACL to port 8088. Reports/screenshots/logs can contain project data;
 restrict access to reviewers. Caddy follows the `latest` symlink inside each
 project's runs directory. Historical timestamped runs remain addressable.
