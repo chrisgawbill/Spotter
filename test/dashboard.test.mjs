@@ -3,8 +3,10 @@ import { test } from 'node:test';
 import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createDashboardServer, startDashboard } from '../src/dashboard.mjs';
+import YAML from 'yaml';
 import { createActivity } from '../src/activity.mjs';
 
 // Exercises the HTTP trust boundary, persistent activity, old reports and child failure handling.
@@ -12,7 +14,7 @@ test('dashboard launches only listed branches, follows activity and confines rep
   const home = await mkdtemp(path.join(tmpdir(), 'spotter-dashboard-'));
   let launched;
   let child;
-  const server = createDashboardServer({ home, projectNames: async () => ['demo'],
+  const server = createDashboardServer({ branchRefreshMs: 0, home, projectNames: async () => ['demo'],
     loadConfig: async () => ({ repo: path.resolve('.'), baseBranch: 'main' }),
     launch: (...args) => { launched = args; child = new EventEmitter(); child.pid = process.pid; return child; },
   });
@@ -102,7 +104,7 @@ test('dashboard requires an explicit Tailscale address', async () => {
 
 test('config editor validates YAML, preserves comments, detects stale edits and confines writes', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'spotter-config-editor-'));
-  const server = createDashboardServer({ configsDir: directory });
+  const server = createDashboardServer({ branchRefreshMs: 0, configsDir: directory });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const request = (name, method = 'GET', data, headers = {}) => fetch(`${origin}/api/${name}`, { method,
@@ -130,5 +132,93 @@ test('config editor validates YAML, preserves comments, detects stale edits and 
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test('dashboard periodically fetches new remote branches and prunes deleted ones without changing local branches', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'spotter-remote-branches-'));
+  const remote = path.join(directory, 'remote.git');
+  const repo = path.join(directory, 'repo');
+  const git = (...args) => execFileSync('git', args, { stdio: 'pipe' });
+  git('init', '--bare', remote);
+  git('init', '-b', 'main', repo);
+  git('-C', repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'Initial');
+  git('-C', repo, 'remote', 'add', 'origin', remote);
+  git('-C', repo, 'push', 'origin', 'main', 'main:stale');
+  const server = createDashboardServer({ branchRefreshMs: 50, projectNames: async () => ['demo'], loadConfig: async () => ({ repo, baseBranch: 'main' }) });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${server.address().port}/api/projects`;
+  async function waitForBranches(check) {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const [project] = await (await fetch(url)).json();
+      if (check(project.branches)) return project;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.fail('Remote branch list did not refresh');
+  }
+  try {
+    await waitForBranches((names) => names.includes('origin/stale'));
+    git('--git-dir', remote, 'update-ref', 'refs/heads/new', git('-C', repo, 'rev-parse', 'HEAD').toString().trim());
+    git('--git-dir', remote, 'update-ref', '-d', 'refs/heads/stale');
+    const project = await waitForBranches((names) => names.includes('origin/new') && !names.includes('origin/stale'));
+    assert.ok(project.branches.includes('main'));
+    assert.equal(git('-C', repo, 'branch', '--show-current').toString().trim(), 'main');
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    // Let an in-flight fetch exit before removing its repository.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+
+test('folder setup drafts nested apps without executing scripts and confines browsing to the projects root', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'spotter-setup-'));
+  const repo = path.join(root, 'sample');
+  const app = path.join(repo, 'frontend');
+  await mkdir(app, { recursive: true });
+  const git = (...args) => execFileSync('git', ['-C', repo, ...args], { stdio: 'pipe' });
+  git('init', '-b', 'main');
+  git('-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-m', 'Initial');
+  await writeFile(path.join(app, 'package.json'), JSON.stringify({ packageManager: 'pnpm@10.0.0', scripts: { build: 'vite build', test: 'vitest', lint: 'eslint .', typecheck: 'tsc --noEmit', 'format:check': 'prettier --write .' }, devDependencies: { vite: '*', vitest: '*' } }));
+  await symlink(tmpdir(), path.join(root, 'escape'));
+  const server = createDashboardServer({ projectsRoot: root, branchRefreshMs: 0, projectNames: async () => [] });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const setup = (folder, headers = {}) => fetch(`${origin}/api/project-setup`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ folder }) });
+  try {
+    const listing = await (await fetch(`${origin}/api/project-folders`)).json();
+    assert.equal(listing.parent, null);
+    assert.deepEqual(listing.folders.map((entry) => entry.name), ['sample']);
+    assert.equal((await fetch(`${origin}/api/project-folders?folder=${encodeURIComponent(tmpdir())}`)).status, 400);
+    assert.equal((await setup(path.join(root, 'escape'))).status, 400);
+    assert.equal((await setup(app, { Origin: 'http://outside.example' })).status, 403);
+    const draft = await (await setup(app)).json();
+    const config = YAML.parse(draft.source);
+    assert.equal(config.repo, repo);
+    assert.equal(config.workdir, 'frontend');
+    assert.equal(config.baseBranch, 'main');
+    assert.equal(config.install, 'pnpm install');
+    assert.equal(config.checks.find((check) => check.name === 'test').run, 'pnpm run test --run');
+    assert.ok(!config.checks.some((check) => check.name === 'format:check'));
+    assert.equal(config.web.build.outDir, 'dist');
+    assert.deepEqual(config.web.routes, [{ name: 'home', path: '/' }]);
+    assert.ok(draft.notes.some((note) => note.includes('Skipped format:check')));
+    await writeFile(path.join(repo, 'package.json'), JSON.stringify({ private: true, workspaces: ['frontend'] }));
+    const minimal = YAML.parse((await (await setup(repo)).json()).source);
+    assert.equal(minimal.workdir, 'frontend');
+    assert.equal(minimal.web.build.outDir, 'dist');
+    await writeFile(path.join(app, 'package.json'), JSON.stringify({ scripts: { lint: 'eslint . --fix', test: 'node --test' } }));
+    await writeFile(path.join(app, 'package-lock.json'), '{}');
+    const npm = YAML.parse((await (await setup(app)).json()).source);
+    assert.equal(npm.install, 'npm ci');
+    assert.deepEqual(npm.checks.map((check) => check.name), ['test']);
+    assert.equal(npm.web, undefined);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(root, { recursive: true, force: true });
   }
 });

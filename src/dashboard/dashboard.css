@@ -49,3 +49,6 @@ form .ds-button{width:100%}
 
 #config-editor{align-items:stretch}
 #config-list{grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+
+#folder-path,#folder-message{overflow-wrap:anywhere}
+#folder-list button{text-align:left;overflow-wrap:anywhere;white-space:normal}

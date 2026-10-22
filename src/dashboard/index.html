@@ -29,8 +29,15 @@
 <section><div class="ds-cluster"><h2>Recent runs</h2><span id="synced" class="muted" role="status"></span></div><div class="ds-table-wrap"><table class="ds-table"><thead><tr><th>Project / branch</th><th>Result</th><th>Activity</th><th>Run</th></tr></thead><tbody id="runs"></tbody></table></div><p id="empty" hidden>No runs yet. Select a project and branch to start.</p></section>
 </div>
 <section id="config-page" class="ds-stack" hidden aria-labelledby="config-title">
-<div class="ds-cluster"><h2 id="config-title">Configurations</h2><button id="new-config" class="ds-button" type="button">New configuration</button></div>
+<div class="ds-cluster"><h2 id="config-title">Configurations</h2><button id="setup-project" class="ds-button" type="button">Set up from folder</button><button id="new-config" class="ds-button" type="button">New configuration</button></div>
 <p class="muted">Create and edit project YAML. Changes apply to future runs.</p>
+<section id="folder-picker" class="ds-card ds-aero-surface ds-stack" hidden aria-labelledby="folder-title">
+<h3 id="folder-title">Choose a project folder on the server</h3>
+<p class="muted">Open the folder containing the app’s package.json. Generate a draft, review it, then save.</p>
+<p id="folder-path"></p><div id="folder-list" class="ds-stack"></div>
+<p id="folder-message" role="status"></p>
+<div class="ds-cluster"><button id="detect-project" class="ds-button" type="button">Generate configuration</button><button id="close-folders" class="ds-button" type="button">Cancel</button></div>
+</section>
 <div id="config-list" class="ds-grid"></div>
 <form id="config-editor" class="ds-card ds-aero-surface ds-stack" hidden>
 <h3 id="editor-title">New configuration</h3>

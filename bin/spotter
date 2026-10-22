@@ -42,23 +42,30 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 done
 
 config_mode=ro
+repo_mode=ro
 if [[ ${args[0]:-} == dashboard ]]; then
   config_mode=rw
+  repo_mode=rw
+  if [[ -n ${SPOTTER_SSH_DIR:-} ]]; then
+    extra_mounts+=(-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro
+      -v "$SPOTTER_SSH_DIR:$HOME/.ssh:ro" -e "HOME=$HOME")
+  fi
   mkdir -p "$spotter_dir/projects"
 fi
 
 tty_flag=()
 [[ -t 1 ]] && tty_flag=(-t)
 
-# Projects are mounted read-only at their real paths so configs can use host
-# paths; results land in $SPOTTER_HOME, reported with host paths.
+# Dashboard fetches update Git refs; QA-only containers keep projects read-only.
+# Results land in $SPOTTER_HOME, reported with host paths.
 exec docker run --rm "${tty_flag[@]}" --init --network host --ipc host \
   --user "$(id -u):$(id -g)" \
+  -e SPOTTER_PROJECTS_ROOT="$projects_root" \
   -e SPOTTER_HOME=/data -e SPOTTER_HOST_HOME="$spotter_home" \
   -e SPOTTER_TAILSCALE_IP="${SPOTTER_TAILSCALE_IP:-}" \
   -v "$spotter_dir/src:/opt/spotter/src:ro" \
   -v "$spotter_dir/projects:/opt/spotter/projects:$config_mode" \
   -v "$spotter_home:/data" \
-  -v "$projects_root:$projects_root:ro" \
+  -v "$projects_root:$projects_root:$repo_mode" \
   "${extra_mounts[@]}" \
   "$image" "${args[@]}"

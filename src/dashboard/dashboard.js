@@ -131,26 +131,54 @@ async function draft(apply = false) {
   for (const [key, value] of Object.entries(result.fields)) $(`field-${key}`).value = value;
   basicDirty = false;
 }
-async function openEditor(name = '') {
+async function openEditor(name = '', generated = null) {
   if (dirty && !confirm('Discard unsaved configuration changes?')) return;
   try {
-    const result = name ? await api(`/api/configs/${encodeURIComponent(name)}`) : { source: 'repo: /absolute/path/to/my-app\nbaseBranch: main\nworkdir: .\ninstall: npm ci\n\nchecks:\n  - name: tests\n    run: npm test\n    parser: generic\n' };
+    const result = generated ?? (name ? await api(`/api/configs/${encodeURIComponent(name)}`) : { source: 'repo: /absolute/path/to/my-app\nbaseBranch: main\nworkdir: .\ninstall: npm ci\n\nchecks:\n  - name: tests\n    run: npm test\n    parser: generic\n' });
     editorName = name;
     originalSource = name ? result.source : null;
     $('config-source').value = result.source;
-    $('config-name').value = name;
+    $('config-name').value = name || generated?.name || '';
     $('config-name').readOnly = !!name;
     $('editor-title').textContent = name ? `Edit ${name}` : 'New configuration';
     $('delete-config').hidden = !name;
     $('config-editor').hidden = false;
     dirty = false;
     basicDirty = false;
-    message('');
+    message(generated?.notes.join(' ') ?? '');
     for (const [key] of guided) $(`field-${key}`).value = '';
     try { await draft(); } catch (error) { message(`Repair the YAML below: ${error.message}`); }
+    if (generated) dirty = true;
     $('config-name').focus();
+    return true;
   } catch (error) { showError(error); }
 }
+let folder = '';
+async function browseFolders(next) {
+  try {
+    const result = await api(`/api/project-folders${next ? `?folder=${encodeURIComponent(next)}` : ''}`);
+    folder = result.folder;
+    $('folder-path').textContent = folder;
+    html('folder-list', `${result.parent ? `<button class="ds-button" type="button" data-folder="${escape(result.parent)}">↑ Parent folder</button>` : ''}${result.folders.map((entry) => `<button class="ds-button" type="button" data-folder="${escape(entry.path)}">${escape(entry.name)} →</button>`).join('') || '<p>No subfolders</p>'}`);
+    $('folder-message').textContent = '';
+    $('detect-project').disabled = false;
+  } catch (error) { $('folder-message').textContent = error.message; }
+}
+$('setup-project').addEventListener('click', async () => {
+  $('folder-picker').hidden = false;
+  $('detect-project').disabled = true;
+  await browseFolders();
+});
+$('folder-list').addEventListener('click', (event) => { const next = event.target.closest('[data-folder]')?.dataset.folder; if (next) void browseFolders(next); });
+$('close-folders').addEventListener('click', () => { $('folder-picker').hidden = true; });
+$('detect-project').addEventListener('click', async () => {
+  $('detect-project').disabled = true;
+  try {
+    const generated = await configRequest('/api/project-setup', 'POST', { folder });
+    if (await openEditor('', generated)) $('folder-picker').hidden = true;
+  } catch (error) { $('folder-message').textContent = error.message; }
+  finally { $('detect-project').disabled = false; }
+});
 $('new-config').addEventListener('click', () => openEditor());
 $('config-list').addEventListener('click', (event) => { const name = event.target.closest('[data-config]')?.dataset.config; if (name) void openEditor(name); });
 $('apply-fields').addEventListener('click', async () => { try { await draft(true); message('Basic fields applied. Review the YAML, then save.'); } catch (error) { message(error.message); } });

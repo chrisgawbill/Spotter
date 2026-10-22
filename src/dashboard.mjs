@@ -7,6 +7,8 @@ import { createRequire } from 'node:module';
 import { mkdir, readFile, readdir, realpath, stat, writeFile, lstat, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
+import { homedir } from 'node:os';
+import { browseProjects, detectProject } from './project-setup.mjs';
 import { listProjectNames, loadProjectConfig, normalizeConfig } from './config.mjs';
 import { spotterHome, spotterRoot } from './paths.mjs';
 import { hasFailingFinding } from './findings.mjs';
@@ -50,10 +52,34 @@ async function readRun(home, project, id) {
 }
 
 /** No shell is involved in run control. Only configured projects and listed branches are accepted. */
-export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn, configsDir = path.join(spotterRoot, 'projects') } = {}) {
+export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn, branchRefreshMs = 60_000, projectsRoot = process.env.SPOTTER_PROJECTS_ROOT ?? path.join(homedir(), 'projects'), configsDir = path.join(spotterRoot, 'projects') } = {}) {
   let starting = false;
   let editing = false;
   const children = new Set();
+  const fetchErrors = new Map();
+  let fetching = false;
+  async function refreshRemotes() {
+    if (fetching) return;
+    fetching = true;
+    try {
+      const repos = new Set();
+      for (const name of (await projectNames()).filter(safeName)) {
+        try { repos.add((await loadConfig(name)).repo); } catch { /* Invalid configs are reported by /api/projects. */ }
+      }
+      await Promise.all([...repos].map(async (repo) => {
+        try {
+          await exec('git', ['-C', repo, 'fetch', '--all', '--prune', '--no-tags'], {
+            timeout: 45_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never', GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? 'ssh -oBatchMode=yes -oConnectTimeout=15' },
+          });
+          fetchErrors.delete(repo);
+        } catch {
+          fetchErrors.set(repo, 'Remote branch refresh failed. Showing cached branches; check repository access and Git credentials on the server.');
+        }
+      }));
+    } finally { fetching = false; }
+  }
+  let refreshTimer;
+
   const server = createServer(async (req, res) => {
     const send = (status, data, type = 'application/json') => {
       res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' });
@@ -64,6 +90,20 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
       const proxyHost = process.env.SPOTTER_TAILSCALE_IP ? `${process.env.SPOTTER_TAILSCALE_IP}:8088` : null;
       if (req.headers.host !== localHost && req.headers.host !== proxyHost) return send(403, { error: 'Unrecognized dashboard host' });
       const url = new URL(req.url, 'http://dashboard');
+      if (url.pathname === '/api/project-folders' && req.method === 'GET') {
+        return send(200, await browseProjects(projectsRoot, url.searchParams.get('folder') ?? undefined));
+      }
+      if (url.pathname === '/api/project-setup' && req.method === 'POST') {
+        if (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON required' });
+        let body = '';
+        for await (const chunk of req) {
+          body += chunk;
+          if (Buffer.byteLength(body) > 4096) return send(413, { error: 'Request too large' });
+        }
+        const { folder } = JSON.parse(body);
+        if (typeof folder !== 'string') return send(400, { error: 'Select a server folder' });
+        return send(200, await detectProject(projectsRoot, folder));
+      }
       if (url.pathname === '/api/config-draft' && req.method === 'POST') {
         if (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON required' });
         let body = '';
@@ -171,7 +211,7 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
       if (url.pathname === '/api/projects') {
         const names = await projectNames();
         return send(200, await Promise.all(names.filter(safeName).map(async (name) => {
-          try { const config = await loadConfig(name); return { name, branches: await branches(config), baseBranch: config.baseBranch }; }
+          try { const config = await loadConfig(name); return { name, branches: await branches(config), baseBranch: config.baseBranch, error: fetchErrors.get(config.repo) }; }
           catch (error) { return { name, branches: [], error: error.message }; }
         })));
       }
@@ -231,6 +271,14 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
       send(error.code === 'ENOENT' ? 404 : 400, { error: error.code === 'ENOENT' ? 'Not found' : error.message });
     }
   });
+  server.on('listening', () => {
+    if (!branchRefreshMs) return;
+    const refresh = () => { void refreshRemotes().catch(console.error); };
+    refresh();
+    refreshTimer = setInterval(refresh, branchRefreshMs);
+    refreshTimer.unref();
+  });
+  server.on('close', () => clearInterval(refreshTimer));
   return server;
 }
 

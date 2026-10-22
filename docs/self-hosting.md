@@ -47,8 +47,8 @@ fixtures with `bin/spotter record <project>` before running QA.
 
 The `spotter-dashboard` container uses Docker's `unless-stopped` restart policy:
 it starts after server reboots and restarts after failures. Docker must itself
-start at boot. No terminal session needs to stay open. The dashboard stays
-idle between requests; QA workers run only when requested.
+start at boot. No terminal session needs to stay open. The dashboard refreshes remote Git branches every minute; QA workers run only
+when requested. Its projects mount is writable so Git can update remote refs.
 
 ```bash
 docker logs --tail 50 spotter-dashboard

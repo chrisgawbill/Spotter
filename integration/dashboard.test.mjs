@@ -24,7 +24,7 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
   git('add', '.'); git('commit', '-m', 'Seed browser failure');
   git('switch', 'main');
   await writeFile(configFile, JSON.stringify({ repo, baseBranch: 'main', checks: [{ name: 'slow-check', run: 'node -e "setTimeout(() => {}, 2500)"' }], web: { build: { run: 'mkdir -p dist && cp index.html dist/' }, routes: ['/'], viewports: [375], colorSchemes: ['light'], accessibility: false, keyboard: false, faultInjection: false, settleMs: 100 } }));
-  const server = createDashboardServer({ home: path.join(root, 'data'), projectNames: async () => (await readdir(path.join(spotterRoot, 'projects'))).filter((file) => /^dashboard-.*\.yml$/.test(file)).map((file) => file.slice(0, -4)) });
+  const server = createDashboardServer({ projectsRoot: root, branchRefreshMs: 0, home: path.join(root, 'data'), projectNames: async () => (await readdir(path.join(spotterRoot, 'projects'))).filter((file) => /^dashboard-.*\.yml$/.test(file)).map((file) => file.slice(0, -4)) });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch();
@@ -59,6 +59,16 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.evaluate(() => scrollTo(0, 0));
     await page.screenshot({ path: '/tmp/spotter-config-desktop.png', fullPage: true });
+    await page.click('#close-config');
+    await writeFile(path.join(repo, 'package.json'), JSON.stringify({ scripts: { test: 'node --test', build: 'vite build' }, devDependencies: { vite: '*' } }));
+    await page.click('#setup-project');
+    await page.locator('[data-folder]').filter({ hasText: 'repo →' }).click();
+    await page.waitForFunction((folder) => document.querySelector('#folder-path').textContent === folder, repo);
+    await page.click('#detect-project');
+    await page.waitForFunction(() => document.querySelector('#config-name').value === 'repo');
+    assert.match(await page.inputValue('#config-source'), /outDir: dist/);
+    assert.match(await page.textContent('#config-message'), /Review generated commands/);
+    page.once('dialog', (dialog) => dialog.accept());
     await page.click('#close-config');
     await page.click('#new-config');
     await page.locator('#config-name').fill('dashboard-created');

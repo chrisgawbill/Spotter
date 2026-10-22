@@ -48,7 +48,7 @@ bash deploy/start-dashboard
 
 Docker's `unless-stopped` policy restarts the named `spotter-dashboard`
 container after failures and server reboots (Docker must start at boot).
-It retries if the Tailscale address is not yet available. It stays idle between requests. Open
+It retries if the Tailscale address is not yet available. It refreshes remote Git branches every minute. Open
 `http://<tailscale-ip>:8089`; no terminal command is needed after installation.
 Use `docker logs spotter-dashboard` for logs and `docker restart spotter-dashboard`
 to restart it. An intentional `docker stop spotter-dashboard` keeps it stopped
@@ -60,10 +60,19 @@ short-lived runner containers and does not depend on the dashboard service.
 
 Select a configured project and an existing local or remote branch. Starting a
 run opens its activity page, which remains addressable after a reload. Project and branch lists refresh automatically every two seconds, including
-branch additions and deletions; valid selections are preserved. No fetch or
-checkout mutation occurs: branches reflect the server's current repository
-refs. Remote additions/deletions appear after the server repository is fetched
-with pruning (`git fetch --all --prune`). Dashboard runs execute the normal CLI inside the same container, using
+branch additions and deletions; valid selections are preserved. The server runs `git fetch --all --prune --no-tags` at startup and every minute,
+even with no browser open. This updates remote-tracking refs without changing
+checked-out files or local branches. Deleted remote branches disappear as
+`origin/<branch>`; separately retained local branches remain selectable. Fetch
+failures keep cached branches and show a warning; the next minute retries.
+Private remotes need noninteractive Git credentials available inside the
+container. For SSH remotes, start with `SPOTTER_SSH_DIR="$HOME/.ssh" bash
+deploy/start-dashboard` (also supported by `bin/spotter dashboard`). This mounts
+the chosen SSH directory and host user/group definitions read-only; use a
+dedicated directory with a read-only deploy key and trusted `known_hosts` where
+possible. The key must work without an interactive passphrase prompt. Dashboard containers require a writable projects mount for Git refs;
+recreate older containers with the updated startup template (or CLI wrapper).
+Dashboard runs execute the normal CLI inside the same container, using
 the same mounted repositories, fixtures and output directory. Preparation and
 runner failures show an error and the final log tail even without a report.
 Only one dashboard-triggered run is allowed at a time; CLI/Jenkins runs remain
@@ -95,6 +104,24 @@ project config inside the disposable container; do not mount production configs
 for this test. Preview screenshots are written under `/tmp` in the container.
 
 ## Project configurations
+
+Use **Configurations → Set up from folder** to browse folders on the server
+under `SPOTTER_PROJECTS_ROOT` (default `~/projects`). Open the app folder that
+contains `package.json`, then choose **Generate configuration**. When a selected
+repository has exactly one immediate app subfolder, Spotter selects it automatically. Spotter detects
+the repository, default branch, app subdirectory, npm/pnpm/Yarn/Bun install
+command, common check scripts and Vite/Create React App static build defaults.
+The generated YAML opens in the existing editor; review it and click **Save
+configuration**. Existing configurations are never overwritten by generation.
+
+Detection reads Git metadata and `package.json`; it does not install dependencies
+or execute app scripts. Watch/fix/write check scripts are skipped. Other stacks
+receive a minimal draft with guidance. Review custom build output and base path,
+add routes beyond the home page, and supply project rules, API fixture settings,
+private sessions and project-owned specs as needed. Monorepos may require
+adjusting install commands. Folder browsing follows the configured server root,
+not folders on the device running your browser. Custom roots must be mounted
+and passed as `SPOTTER_PROJECTS_ROOT`; the launchers do both automatically.
 
 Open **Configurations** to create, edit or delete `projects/<name>.yml`.
 The basic form covers repository, base branch, working directory and install

@@ -3,14 +3,21 @@
 set -euo pipefail
 spotter_dir=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 mkdir -p "${SPOTTER_HOME:-$HOME/spotter}" "$spotter_dir/projects"
+git_mounts=()
+if [[ -n ${SPOTTER_SSH_DIR:-} ]]; then
+  git_mounts+=(-v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro
+    -v "$SPOTTER_SSH_DIR:$HOME/.ssh:ro" -e "HOME=$HOME")
+fi
 docker run --detach --name spotter-dashboard --restart unless-stopped \
   --init --network host --ipc host \
   --user "$(id -u):$(id -g)" \
+  -e SPOTTER_PROJECTS_ROOT="${SPOTTER_PROJECTS_ROOT:-$HOME/projects}" \
   -e SPOTTER_HOME=/data \
   -e SPOTTER_HOST_HOME="${SPOTTER_HOME:-$HOME/spotter}" \
   -e SPOTTER_TAILSCALE_IP="${SPOTTER_TAILSCALE_IP:-$(tailscale ip -4)}" \
   -v "$spotter_dir/src:/opt/spotter/src:ro" \
   -v "$spotter_dir/projects:/opt/spotter/projects:rw" \
   -v "${SPOTTER_HOME:-$HOME/spotter}:/data" \
-  -v "${SPOTTER_PROJECTS_ROOT:-$HOME/projects}:${SPOTTER_PROJECTS_ROOT:-$HOME/projects}:ro" \
+  -v "${SPOTTER_PROJECTS_ROOT:-$HOME/projects}:${SPOTTER_PROJECTS_ROOT:-$HOME/projects}:rw" \
+  "${git_mounts[@]}" \
   "${SPOTTER_IMAGE:-spotter:latest}" dashboard

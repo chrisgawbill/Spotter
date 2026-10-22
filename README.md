@@ -31,7 +31,8 @@ itself on first use). Results go to `~/spotter/<project>/runs/<run>/`
 For installation on another server and automatic dashboard startup, see
 [self-hosting](docs/self-hosting.md).
 
-Copy `examples/project.yml` to `projects/<name>.yml` and customize it.
+Use **Configurations → Set up from folder** in the dashboard to generate a
+configuration draft from a server project folder, or copy `examples/project.yml` to `projects/<name>.yml` and customize it.
 The `projects/` and `deploy/` directories and root `Jenkinsfile` stay local
 and are ignored by Git; share only the templates in `examples/`. Fields:
 
