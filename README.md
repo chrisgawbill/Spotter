@@ -9,6 +9,7 @@ for screenshots and visual review.
 bin/spotter run my-app --ref feature/my-change      # writes report.md; exit 1 = new high/medium findings
 bin/spotter run my-app --repo ~/worktrees/x --working-tree   # another clone, uncommitted changes included
 bin/spotter record my-app                           # (re)record API fixtures from the live API
+bin/spotter prune my-app --dry-run                  # list old runs and cache entries that cleanup would delete
 bin/spotter list
 SPOTTER_TAILSCALE_IP="$(tailscale ip -4)" bin/spotter dashboard # Tailscale-only dashboard
 ```
@@ -60,6 +61,18 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `web.errorText`, `web.ignoreConsole`, `web.ignoreRequests` | Visible text that means failure; regexes to ignore |
 
 Projects under `~/projects` are mounted automatically; `--repo` paths elsewhere are mounted on demand.
+
+## Disk usage
+
+After each run that finishes, Spotter deletes that project's older runs, unused
+baseline cache entries and leftover work folders. Set the limits with
+`SPOTTER_KEEP_RUNS` (default 10) and `SPOTTER_KEEP_BASELINES` (default 5); set
+`SPOTTER_AUTO_PRUNE=off` to disable automatic cleanup. In-progress runs and the
+run `runs/latest` points to are always kept.
+
+`spotter prune [<project>] [--dry-run] [--keep-runs <n>] [--keep-baselines <n>]`
+runs the same cleanup on demand for one project or all of them. The flags
+override the variables; `--dry-run` only lists what would be removed.
 
 ## Severity and exit codes
 

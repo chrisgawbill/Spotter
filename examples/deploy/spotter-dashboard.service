@@ -10,6 +10,9 @@ User=spotter
 WorkingDirectory=/home/spotter/projects/Spotter
 Environment=SPOTTER_TAILSCALE_IP=100.64.0.1
 Environment=SPOTTER_HOME=/home/spotter/spotter
+#Environment=SPOTTER_KEEP_RUNS=10
+#Environment=SPOTTER_KEEP_BASELINES=5
+#Environment=SPOTTER_AUTO_PRUNE=on
 ExecStart=/home/spotter/projects/Spotter/bin/spotter dashboard
 Restart=on-failure
 RestartSec=5

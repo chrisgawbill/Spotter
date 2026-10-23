@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { listProjectNames, loadProjectConfig } from './config.mjs';
 import { compareWithBaseline, hasFailingFinding, sortFindings } from './findings.mjs';
@@ -10,6 +10,7 @@ import { exportCommit, findMergeBase, listAddedLines, listCommitMessages, resolv
 import { projectDirs, spotterCodeHash, toHostPath } from './paths.mjs';
 import { createActivity } from './activity.mjs';
 import { startDashboard } from './dashboard.mjs';
+import { pruneProject, retentionSettings } from './prune.mjs';
 import { renderMarkdownReport } from './report.mjs';
 import { renderHtmlReport } from './htmlReport.mjs';
 import { compareScreenshots } from './visual.mjs';
@@ -27,6 +28,11 @@ const USAGE = `Spotter — automatic QA that reports what is new on a branch.
   spotter record <project> [--ref <ref>] [--repo <path>] [--merge]
       Visit every route against the live API and store its responses as the
       fixtures runs replay. --merge keeps existing entries and adds new ones.
+  spotter prune [<project>] [--dry-run] [--keep-runs <n>] [--keep-baselines <n>]
+      Delete older runs, unused baseline cache entries and leftover work folders.
+      In-progress runs and runs/latest are kept. Defaults come from
+      SPOTTER_KEEP_RUNS / SPOTTER_KEEP_BASELINES, else 10 and 5. The same cleanup
+      runs after every run unless SPOTTER_AUTO_PRUNE=off.
   spotter dashboard
       Serve the dashboard on SPOTTER_TAILSCALE_IP:8089 (Tailscale IPv4 required).
   spotter list
@@ -40,7 +46,9 @@ const log = (message) => process.stderr.write(`[spotter] ${message}\n`);
 
 /** Parses `<command> <project> --flag value --switch` into a plain object. */
 export function parseArguments(argv) {
-  const [command, project, ...flags] = argv;
+  const [command, ...rest] = argv;
+  const project = rest[0]?.startsWith('--') ? undefined : rest.shift();
+  const flags = rest;
   const options = { command, project, skip: new Set() };
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
@@ -50,6 +58,9 @@ export function parseArguments(argv) {
     else if (flag === '--no-baseline') options.noBaseline = true;
     else if (flag === '--live-auth') options.liveAuth = true;
     else if (flag === '--merge') options.merge = true;
+    else if (flag === '--dry-run') options.dryRun = true;
+    else if (flag === '--keep-runs') options.keepRuns = flags[++index];
+    else if (flag === '--keep-baselines') options.keepBaselines = flags[++index];
     else if (flag === '--skip') {
       for (const stage of flags[++index].split(',')) options.skip.add(stage.trim());
     } else throw new Error(`Unknown option ${flag}`);
@@ -70,6 +81,7 @@ async function runCommandLine(argv) {
     console.log((await listProjectNames()).join('\n') || 'No projects configured.');
     return EXIT_PASS;
   }
+  if (options.command === 'prune') return pruneCommand(options);
   if (!['run', 'record'].includes(options.command) || !options.project) {
     console.log(USAGE);
     return options.command && options.command !== 'help' ? EXIT_ERROR : EXIT_PASS;
@@ -83,6 +95,22 @@ async function runCommandLine(argv) {
     options.noBaseline = true;
   }
   return options.command === 'run' ? runProject(config, options) : recordProject(config, options);
+}
+
+/** `spotter prune`: delete old artifacts for one project or all of them. */
+async function pruneCommand(options) {
+  const names = await listProjectNames();
+  if (options.project && !names.includes(options.project)) throw new Error(`Unknown project "${options.project}"`);
+  const settings = retentionSettings(process.env, { keepRuns: options.keepRuns, keepBaselines: options.keepBaselines });
+  let total = 0;
+  for (const name of options.project ? [options.project] : names) {
+    const { removed, skipped } = await pruneProject(projectDirs(name), { ...settings, dryRun: options.dryRun });
+    for (const removedPath of removed) console.log(`${options.dryRun ? 'would remove' : 'removed'} ${toHostPath(removedPath)}`);
+    if (skipped) console.log(`${name}: ${skipped}`);
+    total += removed.length;
+  }
+  console.log(`${total} item(s) ${options.dryRun ? 'would be removed' : 'removed'}.`);
+  return EXIT_PASS;
 }
 
 /** `spotter run`: head vs merge base, report written and printed. */
@@ -152,6 +180,15 @@ async function runProject(config, options) {
     const exitCode = hasFailingFinding(comparison.newFindings) ? EXIT_FINDINGS : EXIT_PASS;
     activity.event('run', 'compare findings and screenshots', 'done');
     activity.finish(exitCode ? 'fail' : 'pass');
+    try {
+      const settings = retentionSettings();
+      if (settings.autoPrune) {
+        const { removed } = await pruneProject(directories, settings);
+        if (removed.length) log(`pruned ${removed.length} old item(s)`);
+      }
+    } catch (error) {
+      log(`retention skipped: ${error.message}`);
+    }
     return exitCode;
   } catch (error) {
     activity.finish('error', error.message);
@@ -167,6 +204,7 @@ async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, direct
   if (cached) {
     log('base: reusing cached results');
     activity.event('base', 'reusing cached results', 'done');
+    await utimes(cacheFile, new Date(), new Date()).catch(() => {});
     return cached;
   }
   const base = await runSide({
