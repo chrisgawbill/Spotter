@@ -1,10 +1,13 @@
 import { createHash } from 'node:crypto';
+import { BROWSERS, isDefaultMatrix, listTargets } from './browsers.mjs';
 
 export const LEVELS = ['low', 'medium', 'high'];
 
+/** Devices every web project adds at high: one WebKit and one Chromium phone. */
+export const HIGH_DEVICES = ['iPhone 13', 'Pixel 7'];
+
 /** Wider coverage high would add; none is implemented yet. Listed, never enabled. */
 export const UNSUPPORTED_AT_HIGH = [
-  { name: 'browser matrix', ticket: 'QA-12', reason: 'not implemented' },
   { name: 'data edge cases', ticket: 'QA-13', reason: 'not implemented' },
   { name: 'recovery scenarios', ticket: 'QA-11', reason: 'not implemented' },
   { name: 'performance budgets', ticket: 'QA-15', reason: 'not implemented' },
@@ -58,6 +61,10 @@ export function resolvePlan(config, selected) {
   const exclusions = [];
   let effective = config;
   if (name === 'low') effective = narrowToLow(config, skip, exclusions);
+  else if (name === 'high' && config.web) {
+    const union = (base, extra) => [...new Set([...base, ...extra])];
+    effective = { ...config, web: { ...config.web, browsers: union(config.web.browsers, BROWSERS), devices: union(config.web.devices, HIGH_DEVICES) } };
+  }
   const record = name && { name, source, exclusions, unsupported: name === 'high' ? UNSUPPORTED_AT_HIGH : [] };
   const hash = createHash('sha1').update(JSON.stringify({ name, skip: [...skip].sort(), config: effective })).digest('hex').slice(0, 10);
   return { config: effective, skip, record, hash };
@@ -84,7 +91,9 @@ function narrowToLow(config, skip, exclusions) {
   const colorSchemes = keep(web.colorSchemes ?? [], 'colorScheme', (scheme) => scheme);
   if (web.faultInjection) exclude('fault visits', 'faults');
   const { specs, ...rest } = web;
-  const narrowedWeb = { ...rest, routes, viewports, colorSchemes, faultInjection: null };
+  web.browsers.slice(1).forEach((name) => exclude(name, 'browser'));
+  web.devices.forEach((name) => exclude(name, 'device'));
+  const narrowedWeb = { ...rest, routes, viewports, colorSchemes, browsers: web.browsers.slice(0, 1), devices: [], faultInjection: null };
   let specsChanged = false;
   if (low.specs) {
     narrowedWeb.specs = { ...specs, grep: low.specs.grep };
@@ -109,6 +118,7 @@ export function summarizePlan({ config, skip, record }) {
   const web = config.web;
   if (web) {
     parts.push(`${web.routes.length} routes × ${web.viewports.length} viewports × ${web.colorSchemes.length} schemes × ${web.sessions?.length ?? 1} sessions${web.faultInjection ? ' + fault visits' : ''}`);
+    if (!isDefaultMatrix(web)) parts.push(`matrix ${listTargets(web).map((t) => t.label).join(', ')}`);
     if (web.specs) parts.push(web.specs.grep ? `specs (grep ${web.specs.grep})` : 'specs');
   }
   if (record?.exclusions.length) parts.push(`excluded: ${record.exclusions.map((item) => item.name).join(', ')}`);

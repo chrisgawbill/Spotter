@@ -1,4 +1,4 @@
-# Playwright's image ships Node, git and a matching Chromium.
+# Playwright's image ships Node, git and matching Chromium, Firefox and WebKit.
 FROM mcr.microsoft.com/playwright:v1.64.1-noble
 
 RUN npm install -g pnpm@12.14.0 && mkdir -p /tmp/home && chmod 1777 /tmp/home

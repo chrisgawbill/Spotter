@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
+import { matrixProblems } from './browsers.mjs';
 import { requirableNames } from './completeness.mjs';
 import { levelProblems, normalizeLevels } from './levels.mjs';
 import { spotterRoot } from './paths.mjs';
@@ -12,6 +13,8 @@ const projectsDir = path.join(spotterRoot, 'projects');
 export const WEB_DEFAULTS = {
   viewports: [375, 1280],
   colorSchemes: ['light'],
+  browsers: ['chromium'],
+  devices: [],
   errorText: [],
   ignoreConsole: [],
   ignoreRequests: [],
@@ -52,6 +55,7 @@ export function normalizeConfig(config, { projectName, source = '' }) {
     if (!check.name || !check.run) problems.push(`checks[${index}] needs \`name\` and \`run\``);
   }
   if (config.web) {
+    problems.push(...matrixProblems(config.web, 'web'));
     const specs = config.web.specs;
     if (specs?.mode !== undefined) problems.push('`web.specs.mode` is selected by --live-auth, not project configuration');
     if (specs !== undefined && (!specs || typeof specs !== 'object' || Array.isArray(specs)

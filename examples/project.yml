@@ -34,3 +34,5 @@ web:
     - { name: home, path: / }
   viewports: [375, 1280]
   colorSchemes: [light, dark]
+  # browsers: [chromium, firefox, webkit]   # default [chromium]
+  # devices: ['iPhone 13']                  # Playwright device names, emulated

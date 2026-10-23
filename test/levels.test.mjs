@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { normalizeConfig } from '../src/config.mjs';
-import { UNSUPPORTED_AT_HIGH, resolvePlan, summarizePlan } from '../src/levels.mjs';
+import { HIGH_DEVICES, UNSUPPORTED_AT_HIGH, resolvePlan, summarizePlan } from '../src/levels.mjs';
 
 const make = ({ levels, required = ['typecheck'], minSpecs, web = {} } = {}) => normalizeConfig({
   repo: '/tmp/app',
@@ -31,10 +31,11 @@ test('medium selects the full run', () => {
   assert.deepEqual(plan.record, { name: 'medium', source: 'selected', exclusions: [], unsupported: [] });
 });
 
-test('high is medium plus the unsupported list', () => {
+test('high is medium plus the browser matrix and the unsupported list', () => {
   const config = make();
   const plan = resolvePlan(config, 'high');
-  assert.equal(plan.config, config);
+  assert.deepEqual({ ...plan.config, web: { ...plan.config.web, browsers: config.web.browsers, devices: config.web.devices } }, config);
+  assert.equal(UNSUPPORTED_AT_HIGH.length, 3);
   assert.deepEqual(plan.record.unsupported, UNSUPPORTED_AT_HIGH);
   assert.deepEqual(plan.record.exclusions, []);
 });
@@ -105,5 +106,36 @@ test('summarizePlan renders low and no-level lines', () => {
     'level low (selected) · 1 checks · no rules · 1 routes × 1 viewports × 1 schemes × 1 sessions · excluded: unit, format, rules, config, about, more, 1280, dark, fault visits, specs');
   assert.equal(summarizePlan(resolvePlan(config, undefined)),
     'no level · 3 checks · rules · 3 routes × 2 viewports × 2 schemes × 1 sessions + fault visits · specs (grep all)');
-  assert.match(summarizePlan(resolvePlan(config, 'high')), /unsupported: browser matrix \(QA-12\), .*performance budgets \(QA-15\)$/);
+  assert.match(summarizePlan(resolvePlan(config, 'high')), /unsupported: data edge cases \(QA-13\), .*performance budgets \(QA-15\)$/);
+});
+
+test('high adds every browser and the standard devices to any web project, keeping configured ones first', () => {
+  const config = make({ web: { browsers: ['firefox'], devices: ['Galaxy S9+'] } });
+  const plan = resolvePlan(config, 'high');
+  assert.deepEqual(plan.config.web.browsers, ['firefox', 'chromium', 'webkit']);
+  assert.deepEqual(plan.config.web.devices, ['Galaxy S9+', 'iPhone 13', 'Pixel 7']);
+  assert.deepEqual(HIGH_DEVICES, ['iPhone 13', 'Pixel 7']);
+  assert.deepEqual(plan.record.exclusions, []);
+  assert.notEqual(plan.hash, resolvePlan(config, 'medium').hash);
+  assert.match(summarizePlan(resolvePlan(make(), 'high')), / · matrix chromium, firefox, webkit, iPhone 13, Pixel 7 · /);
+});
+
+test('high leaves a config without web alone', () => {
+  const config = normalizeConfig({ repo: '/tmp/app' }, { projectName: 'demo' });
+  assert.equal(resolvePlan(config, 'high').config, config);
+});
+
+test('low keeps the first browser and drops devices as exclusions', () => {
+  const config = make({ web: { browsers: ['firefox', 'webkit'], devices: ['iPhone 13'] } });
+  const plan = resolvePlan(config, 'low');
+  assert.deepEqual(plan.config.web.browsers, ['firefox']);
+  assert.deepEqual(plan.config.web.devices, []);
+  const kinds = plan.record.exclusions.filter((item) => item.kind === 'browser' || item.kind === 'device');
+  assert.deepEqual(kinds, [E('webkit', 'browser'), E('iPhone 13', 'device')]);
+});
+
+test('summarizePlan shows the matrix only when it is not the default', () => {
+  assert.doesNotMatch(summarizePlan(resolvePlan(make(), 'medium')), /matrix/);
+  const line = summarizePlan(resolvePlan(make({ web: { browsers: ['chromium', 'firefox'], devices: ['iPhone 13'] } }), 'medium'));
+  assert.match(line, / · matrix chromium, firefox, iPhone 13 · specs/);
 });

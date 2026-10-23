@@ -60,7 +60,7 @@ test('levels block is validated and normalized', () => {
   }, { projectName: 'demo' });
   const bad = (levels, message, web) => assert.throws(() => make(levels, web), (error) => error.message.includes(`- ${message}`));
   const shape = '`levels` must be an object with optional default and low';
-  for (const levels of [[], 'x', null, { other: 1 }]) bad(levels, shape);
+  for (const levels of [[], 'x', null, { other: 1 }, { high: {} }]) bad(levels, shape);
   bad({ default: 'fast' }, '`levels.default` must be low, medium or high');
   bad({ default: 'low' }, '`levels.default: low` requires `levels.low`');
   for (const low of [[], 'x', { other: 1 }]) bad({ low }, '`levels.low` accepts routes and specs');
@@ -140,4 +140,13 @@ test('web.api.expectedStatuses normalizes statuses and rejects malformed entries
     assert.throws(() => withExpected([entry]), /web\.api\.expectedStatuses\[0\]` needs `request` as "METHOD \/path-regex"/, JSON.stringify(entry));
   }
   assert.throws(() => withExpected({ request: 'GET /api/a', status: 404 }), /must be a list of \{ request, status \} entries/);
+});
+
+test('web browsers and devices default and are validated', () => {
+  const make = (web = {}) => normalizeConfig({ repo: '/tmp/app', web: { build: { run: 'true' }, routes: ['home'], ...web } }, { projectName: 'demo' });
+  assert.deepEqual(make().web.browsers, ['chromium']);
+  assert.deepEqual(make().web.devices, []);
+  assert.deepEqual(make({ browsers: ['firefox'], devices: ['iPhone 13'] }).web.devices, ['iPhone 13']);
+  assert.throws(() => make({ browsers: ['ie'] }), /- `web\.browsers` must list unique browsers from chromium, firefox and webkit/);
+  assert.throws(() => make({ devices: ['iPhone 13', 'iphone 13'] }), /- `web\.devices` must list unique Playwright device names such as "iPhone 13"/);
 });

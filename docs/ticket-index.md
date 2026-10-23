@@ -19,7 +19,7 @@ ticket.
 | [QA-09](#qa-09--coverage-and-run-completeness) | DONE | Trustworthy pass results |
 | [QA-10](#qa-10--critical-interaction-journeys) | IDEA | Interaction testing |
 | [QA-11](#qa-11--fault-recovery-and-response-ordering) | IDEA | Recovery testing |
-| [QA-12](#qa-12--cross-browser-and-device-matrix) | IDEA | Browser compatibility |
+| [QA-12](#qa-12--cross-browser-and-device-matrix) | ACTIVE | Browser compatibility |
 | [QA-13](#qa-13--data-edge-case-scenarios) | IDEA | Data robustness |
 | [QA-14](#qa-14--deployed-application-smoke-checks) | IDEA | Deployment verification |
 | [QA-15](#qa-15--performance-regression-budgets) | IDEA | Performance checks |
@@ -477,7 +477,8 @@ initial page rendering, without building a separate journey language.
 
 ## QA-12 — Cross-browser and device matrix
 
-**Status:** IDEA
+**Status:** ACTIVE — started by Product Owner 2026-10-23. Plan:
+[browser-matrix](plans/browser-matrix.md).
 
 **Goal:** Extend the Chromium-only coverage with configurable Firefox and WebKit runs.
 

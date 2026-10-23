@@ -10,7 +10,7 @@ const base = (extra = {}) => ({
   checks: [{ name: 'typecheck' }, { name: 'test' }],
   coverage: { required: [], minSpecs: null },
   web: {
-    routes: [{ name: 'a' }, { name: 'b' }, { name: 'c' }], viewports: [375, 1280], colorSchemes: ['light'],
+    routes: [{ name: 'a' }, { name: 'b' }, { name: 'c' }], viewports: [375, 1280], colorSchemes: ['light'], browsers: ['chromium'], devices: [],
     sessions: [{ name: 'anonymous' }, { name: 'member', expectSelector: '#me' }],
     api: {}, specs: { files: ['x'] },
   },
@@ -199,4 +199,11 @@ test('fixtures with no data add a coverage note without changing completeness', 
   assert.deepEqual(assess({ fixtures: { ...empty, summary: { data: 3, empty: 0, clientErrors: 0, seeded: true } } }).notes, []);
   assert.deepEqual(assess().notes, []);
   assert.deepEqual(assess({ fixtures: null }).notes, []);
+});
+
+test('expected pages count browsers and devices', () => {
+  const config = base();
+  config.web.browsers = ['chromium', 'firefox'];
+  config.web.devices = ['iPhone 13'];
+  assert.equal(assess({ config }).counts.pages.expected, 2 * 12 + 6);
 });

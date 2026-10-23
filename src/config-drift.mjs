@@ -55,7 +55,7 @@ export async function findIneffectiveSchemes(web, results) {
     const visits = new Map();
     for (const { job, screenshot } of results) {
       if (job.route !== route || !screenshot) continue;
-      const variant = `${job.viewport.width} ${job.session.name}`;
+      const variant = `${job.target?.id ?? ''} ${job.viewport.width} ${job.session.name}`;
       if (!visits.has(variant)) visits.set(variant, {});
       visits.get(variant)[job.colorScheme] = await readFile(screenshot);
     }

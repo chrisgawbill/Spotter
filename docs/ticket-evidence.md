@@ -236,3 +236,31 @@ finding IDs to the accepted reports. Evidence:
   `~/spotter/hockeystats-webapp/runs/20261023-174826-verify-browser-depth-defects-75bd8fe5/report.md`.
 - Not verified: recording triple-crown (awaits Product Owner approval); a
   Compose stop command that exceeds 120 s.
+
+## QA-12
+
+**Browser and device matrix evidence (2026-10-23, not yet accepted):**
+
+- `npm test`: 157 tests pass (145 before). Docker integration, all files with
+  `examples/` mounted: 17/17 pass, including `integration/browser-matrix.test.mjs`
+  (one journey and replay spec in Chromium, Firefox, WebKit and iPhone 13; a
+  Firefox-only defect new only in Firefox, including its spec; launch failure and
+  unknown device messages; legacy names unchanged) and the dashboard test.
+- HockeyStats main (legacy config): 19 groups, COMPLETE 66/66, exit 1; every
+  finding fingerprint and screenshot name identical to the pre-QA-12 run on the
+  same commit (`20261023-193359-main-3ae0f9a4`):
+  `~/spotter/hockeystats-webapp/runs/20261023-211520-main-ad7a7897/report.md`.
+  Seeded (`/tmp/spotter-depth-seeded`): all 7 seeded groups new, 19 on base,
+  COMPLETE, exit 1:
+  `~/spotter/hockeystats-webapp/runs/20261023-212127-verify-browser-depth-defects-ab7616a3/report.md`.
+- Temporary copy of the config with `levels.high: { browsers: [firefox, webkit],
+  devices: [iPhone 13] }`, seeded branch at `--level high`: 220/220 visits
+  (`chromium 66, firefox 66, webkit 66, iPhone 13 22`), COMPLETE, exit 1, all 7
+  seeded groups new, 528 screenshots each compared with the same case on base:
+  `~/spotter/qa12-matrix/runs/20261023-213234-verify-browser-depth-defects-0afa7eab/report.md`.
+- Known limitation seen there: HockeyStats logs its shutouts 500 error to the
+  console on 62 of 66 Firefox visits (every visit in other cases), so 4 Firefox
+  visits flip between base and head and appear as new/fixed console errors.
+  Timing-dependent; raising `web.settleMs` or QA-16 flake tracking addresses it.
+- Not verified: a real phone (emulation only); an image without Firefox/WebKit
+  (covered by an injected launch failure in the integration test).

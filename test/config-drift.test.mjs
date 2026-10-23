@@ -87,3 +87,21 @@ test('colour schemes with byte-identical screenshots on every visit of a route a
     assert.deepEqual(await findIneffectiveSchemes({ routes: [home], colorSchemes: ['light'] }, results), []);
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
+
+test('identical light and dark screenshots in only one target are not reported as an ineffective scheme', async () => {
+  const folder = await mkdtemp(path.join(tmpdir(), 'spotter-scheme-targets-'));
+  try {
+    const route = { name: 'home', path: '/' };
+    const session = { name: 'anonymous' };
+    const visit = async (target, colorScheme, bytes) => {
+      const screenshot = path.join(folder, `${target}-${colorScheme}.png`);
+      await writeFile(screenshot, bytes);
+      return { job: { route, viewport: { width: 375 }, colorScheme, session, target: { id: target } }, screenshot };
+    };
+    const results = [
+      await visit('firefox', 'light', 'light'), await visit('firefox', 'dark', 'dark'),
+      await visit('chromium', 'light', 'same'), await visit('chromium', 'dark', 'same'),
+    ];
+    assert.deepEqual(await findIneffectiveSchemes({ routes: [route], colorSchemes: ['light', 'dark'] }, results), []);
+  } finally { await rm(folder, { recursive: true, force: true }); }
+});

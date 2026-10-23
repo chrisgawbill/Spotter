@@ -3,7 +3,8 @@ import { createRequire } from 'node:module';
 import { runAccessibility, runKeyboardSmoke } from './accessibility.mjs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium } from 'playwright';
+import { chromium, devices, firefox, webkit } from 'playwright';
+import { DEFAULT_TARGET_ID, isDefaultMatrix, listTargets } from '../browsers.mjs';
 import { lastLines, runCommand } from '../exec.mjs';
 import { findIneffectiveSchemes } from '../config-drift.mjs';
 import { createFinding } from '../findings.mjs';
@@ -33,31 +34,33 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
     log('live authentication specs', 'done');
     return { findings: specs.findings, summary: { pages: 0, specs: specs.summary } };
   }
+  const targets = listTargets(web);
+  targets.forEach((target) => target.device && deviceOptions(target.device));
   log('web build');
   const build = await buildApp({ config, workdir, logDir });
   log('web build', 'done');
   if (build.finding) return { findings: [build.finding], summary: { built: false, pages: 0 } };
 
   const server = await startStaticServer(path.join(workdir, web.build.outDir), web.base);
-  let browser;
+  let browsers = new Map();
   try {
-    browser = await chromium.launch();
+    browsers = await launchBrowsers([...new Set((mode === 'record' ? targets.slice(0, 1) : targets).map((target) => target.browser ?? deviceOptions(target.device).engine))]);
     const jobs = listPageJobs(web, mode);
     await mkdir(screenshotDir, { recursive: true });
     const results = await runPool(jobs, web.concurrency, (job) =>
-      visitPage({ browser, job, config, fixtures, mode, recordedEntries, appOrigin: server.origin, screenshotDir, log }),
+      visitPage({ browsers, job, config, fixtures, mode, recordedEntries, appOrigin: server.origin, screenshotDir, log }),
     );
     const faultJobs = [];
     if (mode === 'sweep' && web.api && web.faultInjection) {
       for (let i = 0; i < results.length; i++) {
-        if (jobs[i].viewport.width !== toViewport(web.viewports[0]).width || jobs[i].colorScheme !== web.colorSchemes[0]) continue;
+        if (jobs[i].target.id !== targets[0].id || jobs[i].viewport.width !== toViewport(web.viewports[0]).width || jobs[i].colorScheme !== web.colorSchemes[0]) continue;
         for (const key of results[i].requests) {
           for (const kind of ['500', 'delay']) faultJobs.push({ job: jobs[i], healthy: results[i], fault: { ...web.faultInjection, key, kind } });
         }
       }
     }
     const faultResults = await runPool(faultJobs, web.concurrency, ({ job, fault, healthy }) =>
-      visitPage({ browser, job, config, fixtures, mode, appOrigin: server.origin, screenshotDir, fault, healthy, log }),
+      visitPage({ browsers, job, config, fixtures, mode, appOrigin: server.origin, screenshotDir, fault, healthy, log }),
     );
     const sessionChecks = {};
     for (const result of results) {
@@ -67,14 +70,16 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
       if (!result.sessionCheck) { entry.failed += 1; if (entry.examples.length < 3) entry.examples.push(result.where); }
     }
     const countFailed = (list, check) => list.filter((result) => result.findings.some((finding) => finding.check === check)).length;
-    const shape = `${web.routes.length} routes × ${web.viewports.length} viewports × ${mode === 'record' ? 1 : web.colorSchemes.length} schemes × ${web.sessions.length} sessions`;
+    const targetPages = targets.map((target) => ({ id: target.id, label: target.label, pages: jobs.filter((job) => job.target.id === target.id).length }));
+    const shape = `${web.routes.length} routes × ${web.viewports.length} viewports × ${mode === 'record' ? 1 : web.colorSchemes.length} schemes × ${web.sessions.length} sessions${isDefaultMatrix(web) ? '' : ` in ${targetPages.map((target) => `${target.label} ${target.pages}`).join(', ')}`}`;
+    const projects = isDefaultMatrix(web) ? null : targets.map((target) => ({ name: target.id, use: target.device ? devices[target.device] : { browserName: target.browser } }));
     if (mode === 'sweep' && web.specs) log('project specs');
-    const specs = mode === 'sweep' && web.specs ? await runSpecsStage({ config, workdir, logDir, fixtures, appOrigin: server.origin }) : null;
+    const specs = mode === 'sweep' && web.specs ? await runSpecsStage({ config, workdir, logDir, fixtures, appOrigin: server.origin, projects }) : null;
     if (specs) log('project specs', 'done');
     const schemeFindings = mode === 'sweep' ? await findIneffectiveSchemes(web, results) : [];
-    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(schemeFindings, specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
+    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(schemeFindings, specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, targets: targetPages, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
   } finally {
-    await browser?.close();
+    await Promise.all([...browsers.values()].map((browser) => browser.close()));
     await server.close();
   }
 }
@@ -96,12 +101,40 @@ async function buildApp({ config, workdir, logDir }) {
   };
 }
 
-/** Every page visit for the run; recording only needs one colour scheme. */
+/** Launches one browser per engine; on failure closes the ones already up. */
+export async function launchBrowsers(engines, types = { chromium, firefox, webkit }) {
+  const launched = new Map();
+  try {
+    for (const engine of engines) {
+      try {
+        launched.set(engine, await types[engine].launch());
+      } catch (error) {
+        throw new Error(`Cannot launch ${engine}: ${firstLine(error.message)}. Rebuild the Spotter image (bin/spotter build-image); ${engine} is needed at level high and wherever web.browsers or web.devices use it.`);
+      }
+    }
+  } catch (error) {
+    await Promise.all([...launched.values()].map((browser) => browser.close()));
+    throw error;
+  }
+  return launched;
+}
+
+/** Playwright context options for a named device, and the engine that runs it. */
+export function deviceOptions(name) {
+  if (!Object.hasOwn(devices, name)) throw new Error(`Unknown Playwright device "${name}" in web.devices; use a name from Playwright's device list such as "iPhone 13".`);
+  const { defaultBrowserType, ...options } = devices[name];
+  return { engine: defaultBrowserType, options };
+}
+
+/** Every page visit for the run: each matrix case, or only the primary one when recording. */
 function listPageJobs(web, mode) {
   const schemes = mode === 'record' ? web.colorSchemes.slice(0, 1) : web.colorSchemes;
-  return web.routes.flatMap((route) =>
-    web.viewports.flatMap((viewport) => schemes.flatMap((colorScheme) => web.sessions.map((session) => ({ route, viewport: toViewport(viewport), colorScheme, session })))),
-  );
+  const targets = mode === 'record' ? listTargets(web).slice(0, 1) : listTargets(web);
+  return targets.flatMap((target) => web.routes.flatMap((route) =>
+    (target.device ? [deviceOptions(target.device).options.viewport] : web.viewports.map(toViewport)).flatMap((viewport) =>
+      schemes.flatMap((colorScheme) => web.sessions.map((session) => ({ route, viewport, colorScheme, session, target }))),
+    ),
+  ));
 }
 
 function toViewport(viewport) {
@@ -125,9 +158,13 @@ async function runPool(items, limit, worker) {
   return results;
 }
 
-async function visitPage({ browser, job, config, fixtures, mode, recordedEntries, appOrigin, screenshotDir, fault, healthy, log = () => {} }) {
+async function visitPage({ browsers, job, config, fixtures, mode, recordedEntries, appOrigin, screenshotDir, fault, healthy, log = () => {} }) {
   const web = config.web;
-  const { route, viewport, colorScheme, session } = job;
+  const { route, viewport, colorScheme, session, target } = job;
+  const primary = target.id === listTargets(web)[0].id;
+  const device = target.device ? deviceOptions(target.device) : null;
+  const browser = browsers.get(device?.engine ?? target.browser);
+  const suffix = target.id === DEFAULT_TARGET_ID ? '' : target.id;
   const requests = new Set();
   const notReplayed = new Set();
   let loading = [];
@@ -137,13 +174,13 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
   const storageState = await sessionStorageState(session, appOrigin, web.colorSchemeStorage?.[colorScheme]);
   const secrets = session.storageState ? [...storageState.cookies.map((cookie) => cookie.value), ...storageState.origins.flatMap((origin) => origin.localStorage.map((entry) => entry.value))] : [];
   const sessionFixtures = session.name === 'anonymous' ? fixtures : { ...fixtures, entries: fixtures?.sessions?.[session.name] ?? {} };
-  const screenshotName = `${route.name}-${viewport.width}-${colorScheme}-${session.name}${fault ? `-${fault.kind}-${createHash('sha1').update(fault.key).digest('hex').slice(0, 10)}` : ''}`;
-  const where = redactSecrets(`${route.path} [${session.name}]${fault ? ` ${fault.kind} ${fault.key}` : ''} @${viewport.width} ${colorScheme}`, secrets);
+  const screenshotName = `${route.name}-${viewport.width}-${colorScheme}-${session.name}${suffix && `-${suffix}`}${fault ? `-${fault.kind}-${createHash('sha1').update(fault.key).digest('hex').slice(0, 10)}` : ''}`;
+  const where = redactSecrets(`${route.path} [${session.name}]${fault ? ` ${fault.kind} ${fault.key}` : ''} @${viewport.width} ${colorScheme}${suffix && ` ${target.label}`}`, secrets);
   log(`browser: ${where}`);
   const problems = [];
   const report = (problem) => problems.push(problem);
 
-  const context = await browser.newContext({ viewport, colorScheme, storageState, serviceWorkers: 'block', reducedMotion: 'reduce' });
+  const context = await browser.newContext({ ...device?.options, viewport, colorScheme, storageState, serviceWorkers: 'block', reducedMotion: 'reduce' });
   if (fixtures?.recordedAt) await context.clock.setFixedTime(new Date(fixtures.recordedAt));
   if (web.api && mode === 'record') {
     await recordFixtures(context, { fakeOrigin: web.api.fakeOrigin, apiPaths: web.api.paths, ...recordingHeaders(web.api, session), liveOrigin: web.api.recordFrom, appOrigin, entries: session.name === 'anonymous' ? recordedEntries.entries : (recordedEntries.sessions[session.name] ??= {}) });
@@ -169,7 +206,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
       severity: 'high',
       title: `API request answered with the app's HTML page: ${endpoint}`,
       detail: `The app asked for data on its own origin and got its HTML page (HTTP ${status}).\nConfigure web.api.paths for this prefix and record fixtures, or add it to web.ignoreRequests if intended.`,
-      key: { route: null, viewport: null, colorScheme: null, session: null, endpoint },
+      key: { route: null, viewport: null, colorScheme: null, session: null, browser: undefined, endpoint },
     });
   }, report: (problem) => {
     if (!fault) report(problem);
@@ -210,14 +247,14 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
         });
       } else {
         await probeRenderedPage(page, { web, report });
-        if (web.accessibility) await runAccessibility(page, axePath, report);
+        if (primary && web.accessibility) await runAccessibility(page, axePath, report);
       }
       const screenshotFile = path.join(screenshotDir, `${screenshotName}.png`);
       if (!session.storageState) {
         await page.screenshot({ path: screenshotFile, fullPage: true, animations: 'disabled' });
         screenshot = screenshotFile;
       }
-      if (!fault && web.keyboard) await runKeyboardSmoke(page, report);
+      if (!fault && primary && web.keyboard) await runKeyboardSmoke(page, report);
       problems.forEach((problem) => (problem.artifacts = session.storageState ? [] : [screenshotFile]));
     }
   } catch (error) {
@@ -242,7 +279,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
         where,
         repro: problem.repro ?? null,
         artifacts: problem.artifacts ?? [],
-        key: { route: route.path, viewport: viewport.width, colorScheme, session: session.name, ...(fault ? { endpoint: fault.key, fault: fault.kind } : {}), ...problem.key },
+        key: { route: route.path, viewport: viewport.width, colorScheme, session: session.name, ...(suffix ? { browser: target.id } : {}), ...(fault ? { endpoint: fault.key, fault: fault.kind } : {}), ...problem.key },
       }),
     ),
   };

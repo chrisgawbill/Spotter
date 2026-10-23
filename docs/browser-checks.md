@@ -1,6 +1,7 @@
 # Browser checks
 
-The sweep runs axe on every route × viewport × scheme × session. New serious
+The sweep runs axe on every route × viewport × scheme × session in the primary
+browser (see [Browsers and devices](#browsers-and-devices)). New serious
 or critical violations are medium severity; minor/moderate violations and
 keyboard smoke findings are advisory. Keyboard smoke presses Tab and checks
 reachability and outline/box-shadow focus styles; review other focus styles
@@ -49,6 +50,45 @@ app's retry window to finish. Set `web.faultInjection: false` to skip this sweep
 Screenshots include session and fault identity. Review visual changes in `report.html`; keyboard and accessibility judgment
 still require human review.
 
+
+## Browsers and devices
+
+Every web project gets the browser matrix at `--level high` with no
+configuration: Chromium, Firefox and WebKit, plus emulated iPhone 13 (WebKit)
+and Pixel 7 (Chromium). Low and medium run Chromium only, unless a project
+sets `web.browsers` or `web.devices` for its routine runs; high still adds the
+rest:
+
+```yaml
+web:
+  browsers: [chromium, firefox]     # default [chromium]; any of chromium, firefox, webkit
+  devices: ['iPad Mini']            # Playwright device names; default none
+```
+
+Each browser visits every route × viewport × scheme × session. Each device
+visits every route × scheme × session once, at its own viewport, user agent,
+pixel ratio and touch settings, in the engine its Playwright descriptor names
+(iPhone and iPad devices run in WebKit, Pixel and Galaxy devices in Chromium).
+The first browser is the primary case: only it runs fault visits, axe and
+keyboard checks, and `spotter record` visits only it, because fixtures do not
+depend on the browser. Low runs only the first browser. All visits share
+`web.concurrency`; a high run takes roughly twice as long as medium.
+
+Findings, screenshots and `where` text name the browser or device for every
+case except Chromium, so existing configurations keep their names and baselines.
+The branch and its merge base run the same matrix, and each case is compared
+only with the same case. With more than one case, project specs run once per
+case as Playwright projects named after it (`webkit`, `iphone-13`); specs
+selected and `coverage.minSpecs` count every case. Live-authentication specs
+run in Chromium only. Reports list visits per case on the `web:` line.
+
+Device emulation is not a real phone: WebKit is not Safari, and Chromium with a
+mobile user agent is not Chrome for Android. Emulation does not cover
+on-screen keyboards, browser chrome, safe areas, real touch input or device
+performance. Firefox cannot emulate mobile devices. The Spotter image includes
+all three engines; a run that cannot launch one stops with the reason and asks
+for `bin/spotter build-image`. An unknown device name stops the run before the
+build.
 
 ## Same-origin APIs and recording
 

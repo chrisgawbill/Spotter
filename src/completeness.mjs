@@ -1,3 +1,4 @@
+import { countPageVisits } from './browsers.mjs';
 import { summarizeFixtureData } from './fixtures.mjs';
 
 /** Names usable in coverage.required for this (raw or normalized) config. */
@@ -105,7 +106,7 @@ export function assessCompleteness({ config, skip, stages, fixtures, baseline, l
   const counts = { pages: null, faultVisits: null, specs: null };
   if (web && !liveAuth) {
     const w = config.web;
-    const expected = w.routes.length * w.viewports.length * w.colorSchemes.length * w.sessions.length;
+    const expected = countPageVisits(w);
     const failed = summary ? summary.pagesFailed ?? 0 : 0;
     const executed = summary ? summary.pages - failed : 0;
     counts.pages = { expected, executed, failed, skipped: expected - executed - failed };

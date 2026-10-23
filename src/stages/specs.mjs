@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
 /** Run the project's named Playwright tests against the already-built app. */
-export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrigin }) {
+export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrigin, projects = null }) {
   const specs = config.web.specs;
   const live = specs.mode === 'live';
   const workers = live ? 1 : (specs.workers ?? 1);
@@ -39,6 +39,7 @@ export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrig
       testDir: workdir, testMatch, workers, fullyParallel: workers > 1, retries: 0, forbidOnly: true,
       outputDir: path.join(privateDir, 'artifacts'), reporter: [['json', { outputFile: reportFile }]],
       use: { baseURL: live ? specs.live.baseURL : `${appOrigin}${config.web.base.replace(/\/?$/, '/')}`, trace: 'off', screenshot: 'off', video: 'off', serviceWorkers: 'block', reducedMotion: 'reduce' },
+      ...(!live && projects?.length ? { projects } : {}),
     })}; ${specs.grep ? `config.grep = new RegExp(${JSON.stringify(specs.grep)});` : ''} export default config;\n`);
     result = await runCommand(`${quote(process.execPath)} ${quote(path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'))} test --config ${quote(configFile)}`, {
       cwd: workdir, env: {
