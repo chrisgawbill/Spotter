@@ -151,15 +151,60 @@ async function refresh() {
       html('events', run.events.map((e) => `<li><time>${escape(time(e.at))}</time> <span class="side">${escape(e.side)}</span> ${e.state === 'done' ? '✓ Completed' : '→ Started'} ${escape(e.activity)}</li>`).join('') || '<li>Preparing run…</li>');
       if (atBottom) history.scrollTop = history.scrollHeight;
       $('report-section').hidden = !run.report;
-      if (run.report && $('report').getAttribute('src') !== run.report) {
-        $('report').src = run.report;
-        $('report-link').href = run.report;
+      if (run.report && $('report').dataset.report !== run.report) {
+        $('report').dataset.report = run.report;
+        $('report').src = `${run.report}?embed`;
+        void showFormat(format);
       }
       if (key !== selected) { $('detail').scrollIntoView({ block: 'start' }); selected = key; }
     } else selected = '';
   } catch (error) { $('synced').textContent = `Updates paused: ${error.message}`; $('synced').classList.add('is-paused'); }
   finally { refreshing = false; }
 }
+// The Clipboard API needs a secure context; the Tailscale http:// address is not one.
+async function copyText(text) {
+  if (window.isSecureContext && navigator.clipboard) return navigator.clipboard.writeText(text);
+  const focused = document.activeElement;
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.cssText = 'position:fixed;opacity:0';
+  document.body.append(area);
+  area.select();
+  const copied = document.execCommand('copy');
+  area.remove();
+  focused?.focus();
+  if (!copied) throw new Error('the browser blocked clipboard access');
+}
+// The selected format stays selected across runs; Copy takes whichever one is shown.
+const formats = { html: 'HTML', md: 'Markdown', json: 'JSON' };
+let format = 'html';
+const reportUrl = (name) => $('report').dataset.report.replace(/report\.html$/, `report.${name}`);
+async function reportText(name) {
+  const response = await fetch(reportUrl(name));
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.text();
+}
+async function showFormat(next) {
+  format = next;
+  for (const button of document.querySelectorAll('[data-format]')) button.setAttribute('aria-pressed', String(button.dataset.format === format));
+  $('report').hidden = format !== 'html';
+  $('report-text').hidden = format === 'html';
+  $('report-link').href = reportUrl(format);
+  $('copy-message').textContent = '';
+  if (format === 'html') return;
+  $('report-text').textContent = 'Loading…';
+  const text = await reportText(format).catch((error) => `Could not load the ${formats[format]} report: ${error.message}`);
+  if (format === next) $('report-text').textContent = text;
+}
+$('report-section').addEventListener('click', (event) => { const next = event.target.closest('[data-format]')?.dataset.format; if (next) void showFormat(next); });
+$('copy-report').addEventListener('click', async () => {
+  const name = formats[format];
+  try {
+    await copyText(await reportText(format));
+    $('copy-message').textContent = `Copied the full ${name} report.`;
+  } catch (error) { $('copy-message').textContent = `Could not copy the ${name} report: ${error.message}`; }
+});
 let originalSource = null;
 let editorName = '';
 let dirty = false;

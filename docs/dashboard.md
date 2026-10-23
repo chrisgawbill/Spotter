@@ -14,6 +14,12 @@ route, specs, comparison) and marks it done, in progress or not finished, with
 its duration. The **Now** panel shows the current section, browser sweep
 progress and the merge-base status; the full event log stays available below.
 Per-section finding counts are not shown during a run; use the report.
+Above the embedded report, **Report**, **Markdown** and **JSON** switch between
+`report.html`, `report.md` and `report.json`; the choice is kept across runs.
+**Copy** copies the whole report in the format shown, and **Open in a new tab**
+opens that format. Copying also works over the plain-http Tailscale address.
+The embedded HTML view omits the report's own Markdown · JSON · Logs links;
+the standalone `report.html` keeps them.
 
 ## Start on this server
 

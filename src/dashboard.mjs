@@ -288,6 +288,8 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
         // Reports are untrusted artifacts; sandbox even when opened outside the iframe.
         res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'");
         const data = await readFile(file);
+        // The embedded view has its own format tabs, so drop the report's Markdown · JSON · Logs links.
+        if (url.searchParams.has('embed') && path.basename(file) === 'report.html') return send(200, data.toString().replace(/<p><a href="report\.md">Markdown<\/a>.*?<\/p>\n?/, ''), types[ext]);
         return send(200, data, types[ext]);
       }
       if (url.pathname === '/core.css') return send(200, await readFile(require.resolve('@chrisgawbill/aero-md3-core/core.css')), 'text/css');

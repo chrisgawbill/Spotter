@@ -48,7 +48,7 @@ test('dashboard launches only listed branches, follows activity and confines rep
     assert.match(running.current[0].activity, /browser:/);
     assert.ok(running.updatedAt);
     await writeFile(path.join(directory, 'report.json'), JSON.stringify({ head: { label: branch, stages: { static: [] } }, comparison: { newFindings: [] } }));
-    await writeFile(path.join(directory, 'report.html'), '<h1>Report</h1><img src="screenshots/test.png">');
+    await writeFile(path.join(directory, 'report.html'), '<h1>Report</h1><p><a href="report.md">Markdown</a> · <a href="report.json">JSON</a> · <a href="logs/">Logs</a></p>\n<img src="screenshots/test.png">');
     await mkdir(path.join(directory, 'screenshots'));
     await writeFile(path.join(directory, 'screenshots/test.png'), 'png');
     const completed = await (await get(runURL)).json();
@@ -62,6 +62,8 @@ test('dashboard launches only listed branches, follows activity and confines rep
     await writeFile(path.join(directory, 'logs/build.log'), 'build output');
     assert.match(await (await get(completed.report.replace('report.html', 'logs/'))).text(), /build.log/);
     assert.equal((await get(completed.report.replace('report.html', 'screenshots/test.png'))).status, 200);
+    assert.match(await (await get(completed.report)).text(), /href="logs\/"/);
+    assert.equal(await (await get(`${completed.report}?embed`)).text(), '<h1>Report</h1><img src="screenshots/test.png">');
     await symlink(path.join(home, 'outside.log'), path.join(directory, 'escape.log'));
     await writeFile(path.join(home, 'outside.log'), 'private');
     assert.equal((await get(completed.report.replace('report.html', 'escape.log'))).status, 404);

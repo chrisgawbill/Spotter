@@ -46,6 +46,17 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     assert.match(await page.textContent('#checklist'), /Done: Compare with base/);
     assert.equal(await page.locator('#checklist .mark-running').count(), 0);
     await page.frameLocator('#report').getByRole('heading', { name: 'Spotter: dashboard-demo' }).waitFor();
+    assert.equal(await page.frameLocator('#report').locator('a[href="report.md"]').count(), 0);
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    for (const [tab, format, expected] of [['Markdown', 'Markdown', /^# Spotter: dashboard-demo/], ['JSON', 'JSON', /"project": "dashboard-demo"/], ['Report', 'HTML', /^<!doctype html>/i]]) {
+      await page.getByRole('button', { name: tab, exact: true }).click();
+      assert.equal(await page.getByRole('button', { name: tab, exact: true }).getAttribute('aria-pressed'), 'true');
+      assert.equal(await page.isVisible('#report'), tab === 'Report');
+      if (tab !== 'Report') await page.waitForFunction((pattern) => new RegExp(pattern).test(document.querySelector('#report-text').textContent), expected.source);
+      await page.click('#copy-report');
+      await page.waitForFunction((text) => document.querySelector('#copy-message').textContent === text, `Copied the full ${format} report.`);
+      assert.match(await page.evaluate(() => navigator.clipboard.readText()), expected);
+    }
     const first = page.url();
     await page.getByRole('link', { name: 'Configurations', exact: true }).click();
     await page.waitForSelector('#config-page:not([hidden])');

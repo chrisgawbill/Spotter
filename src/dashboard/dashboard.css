@@ -111,7 +111,11 @@ td{overflow-wrap:anywhere;max-width:450px}
 #retention-form input[type=number]{width:8rem}
 #retention-form p{margin:0}
 #retention-form p:empty{display:none}
-#retention-message:empty,#cleanup-message:empty{display:none}
+#retention-message:empty,#cleanup-message:empty,#copy-message:empty{display:none}
+#copy-message{margin:0}
+.format-button[aria-pressed=false]{background:transparent;color:var(--ds-color-primary);border:1px solid var(--ds-color-outline-variant)}
+.format-button[aria-pressed=true]::before{content:'✓ ';content:'✓ ' / ''}
+.report-text{height:80vh;max-height:none;white-space:pre-wrap}
 #cleanup-message,#storage-total{margin:0}
 .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 
