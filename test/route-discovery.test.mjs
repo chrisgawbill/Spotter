@@ -158,7 +158,8 @@ test('route discovery proposes hand-written location.hash routes', async () => {
     ]);
     const notes = result.notes.join(' ');
     assert.match(notes, /Routes needing concrete sample URLs: location\.hash set from an expression in Workspace\.tsx\./);
-    assert.match(notes, /Detected 5 hash routes from location\.hash: .*Drop legacy aliases the app rewrites with history\.replaceState\./);
+    assert.match(notes, /Detected 5 hash routes from location\.hash: .*Drop legacy aliases the app rewrites with history\.replaceState: #old-settings\./);
+    assert.deepEqual(result.hashAliases, ['/#old-settings']);
     assert.doesNotMatch(notes, /No literal routes detected/);
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
