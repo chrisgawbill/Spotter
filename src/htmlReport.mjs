@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { summarizeCompleteness } from './completeness.mjs';
-import { groupFindings } from './report.mjs';
+import { describeVisual, groupFindings } from './report.mjs';
 
 const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const url = (value) => value.split('/').map(encodeURIComponent).join('/');
@@ -18,7 +18,7 @@ export function renderHtmlReport(run, markdown) {
 <pre>${escape(markdown)}</pre>
 ${coverage(run.completeness)}
 ${groups.map(({ first }) => `<section><h2>${escape(first.title)}</h2>${first.artifacts.map((file) => image('Screenshot', `screenshots/${path.basename(file)}`)).join('')}</section>`).join('')}
-<h2>Visual review (advisory)</h2><p>${escape(run.visual?.status ?? 'not checked')} · ${visuals.length} changed pages · ${run.visual?.unchanged ?? 0} unchanged</p>
+<h2>Visual review (advisory)</h2><p>${escape(run.visual?.status === 'compared' ? describeVisual(run.visual) : run.visual?.status ?? 'not checked')}</p>
 ${visuals.map((change) => `<details><summary>${escape(change.name)} — ${escape(change.status)}</summary><div class="images">${image('Before', change.before)}${image('After', change.after)}${image('Diff', change.diff)}</div></details>`).join('\n')}
 </html>\n`;
 }

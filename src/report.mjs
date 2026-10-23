@@ -48,15 +48,17 @@ export function renderMarkdownReport(run) {
     lines.push('## New on this branch', '', 'Nothing new.', '');
   }
 
-  if (comparison.fixedFindings.length) {
-    lines.push(`## Fixed vs base (${comparison.fixedFindings.length})`, '');
-    groupFindings(comparison.fixedFindings)
+  const fixedGroups = groupFindings(comparison.fixedFindings);
+  if (fixedGroups.length) {
+    lines.push(`## Fixed vs base (${fixedGroups.length})`, '');
+    fixedGroups
       .slice(0, 10)
       .forEach((group) => lines.push(`- ${group.first.stage}/${group.first.check}: ${group.first.title} — ${renderPlace(group)}`));
+    if (fixedGroups.length > 10) lines.push(`- …and ${fixedGroups.length - 10} more in report.json`);
     lines.push('');
   }
 
-  if (run.visual?.status === 'compared') lines.push(`Visual review (advisory): ${run.visual.changes.length} changed pages · ${run.paths.reportHtml}`, '');
+  if (run.visual?.status === 'compared') lines.push(`Visual review (advisory): ${describeVisual(run.visual)} · ${run.paths.reportHtml}`, '');
   lines.push('## Checks', '', ...renderStageSummary(run), '');
   if (notChecked(run).length) lines.push(`Not checked: ${notChecked(run).join(', ')}.`);
   lines.push(`Details: ${run.paths.reportJson} · screenshots: ${run.paths.screenshots} · logs: ${run.paths.logs}`);
@@ -131,7 +133,7 @@ function renderStageSummary(run) {
         continue;
       }
       const fixtures = run.fixtures ? `fixtures recorded ${run.fixtures.recordedAt}` : 'no fixtures recorded';
-      lines.push(`- web: ${summary.built ? `${summary.pages} pages (${summary.shape})` : 'build failed, sweep skipped'} · ${fixtures}${summary.faultVisits ? ` · ${summary.faultVisits} fault visits` : ''}`);
+      lines.push(`- web: ${summary.built ? `${summary.pages} page visits (${summary.shape})` : 'build failed, sweep skipped'} · ${fixtures}${summary.faultVisits ? ` · ${summary.faultVisits} fault visits` : ''}`);
       if (summary.specs) lines.push(`- project specs${summary.specs.mode ? ` (${summary.specs.mode})` : ''}: ${summary.specs.passed} passed, ${summary.specs.failed} failed, ${summary.specs.skipped} skipped`);
     }
   }
@@ -148,6 +150,14 @@ function describeCounts({ newFindings, existingFindings, fixedFindings }) {
     .map(([severity, count]) => `${count} ${severity}`);
   const newPart = newGroups.length ? `${newGroups.length} new issues (${bySeverity.join(', ')})` : 'nothing new';
   return `${newPart} · ${groupFindings(fixedFindings).length} fixed · ${groupFindings(existingFindings).length} already on base (not shown)`;
+}
+
+/** "4 changed · 12 added · 3 unchanged" — screenshots per comparison status, zero parts omitted. */
+export function describeVisual(visual) {
+  const counts = { changed: 0, added: 0, removed: 0 };
+  for (const change of visual?.changes ?? []) counts[change.status]++;
+  counts.unchanged = visual?.unchanged ?? 0;
+  return Object.entries(counts).filter(([, count]) => count).map(([status, count]) => `${count} ${status}`).join(' · ') || 'no screenshots';
 }
 
 function describeBase(run) {

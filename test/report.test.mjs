@@ -107,3 +107,37 @@ test('live authentication is identified without claiming a failed build or branc
   assert.match(markdown, /no sweep/);
   assert.doesNotMatch(markdown, /build failed/);
 });
+
+const fixedType = (file) => createFinding({ stage: 'static', check: 'typecheck', severity: 'high', title: 'TS2322: bad', file, line: 1 });
+const countsRun = (comparison, visual) => ({
+  project: 'demo', head: { label: 'x', shortSha: 'abc', stages: {} }, base: null, fixtures: null,
+  comparison: { newFindings: [], existingFindings: [], fixedFindings: [], ...comparison }, visual, durationMs: 1000, paths: { reportHtml: '/r/report.html' },
+});
+
+test('headings count grouped issues like the RESULT line', () => {
+  const markdown = renderMarkdownReport(countsRun({
+    newFindings: [overflowAt(375, 'light'), overflowAt(375, 'dark'), overflowAt(768, 'light')],
+    fixedFindings: [fixedType('a.ts'), fixedType('b.ts'), fixedType('c.ts'), fixedType('d.ts')],
+    existingFindings: [fixedType('e.ts'), fixedType('f.ts')],
+  }));
+  assert.match(markdown, /RESULT: FAIL — 1 new issues \(1 medium\) · 1 fixed · 1 already on base/);
+  assert.match(markdown, /## New on this branch \(1\)/);
+  assert.match(markdown, /## Fixed vs base \(1\)\n\n- static\/typecheck: TS2322: bad — a\.ts:1 · b\.ts:1/);
+  assert.match(markdown, /1\. \[medium\] web\/horizontal-overflow — page scrolls sideways\n {3}3× /);
+});
+
+test('visual summaries split changed, added, removed and unchanged screenshots', async () => {
+  const { renderHtmlReport } = await import('../src/htmlReport.mjs');
+  const visual = (statuses, unchanged = 0) => ({ status: 'compared', unchanged, changes: statuses.map((status, index) => ({ name: `${index}.png`, status })) });
+  const cases = [
+    [visual(['changed', 'changed']), '2 changed'],
+    [visual(['added', 'added', 'added']), '3 added'],
+    [visual(['changed', 'added', 'added', 'removed'], 5), '1 changed · 2 added · 1 removed · 5 unchanged'],
+  ];
+  for (const [value, expected] of cases) {
+    const run = countsRun({}, value);
+    const markdown = renderMarkdownReport(run);
+    assert.ok(markdown.includes(`Visual review (advisory): ${expected} · /r/report.html`), markdown);
+    assert.ok(renderHtmlReport(run, markdown).includes(`<h2>Visual review (advisory)</h2><p>${expected}</p>`));
+  }
+});
