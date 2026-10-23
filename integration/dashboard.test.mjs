@@ -165,7 +165,7 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     await writeFile(path.join(seeded, 'activity.json'), JSON.stringify({ branch: 'seeded', status: 'incomplete', updatedAt: new Date().toISOString() }));
     await page.goto(`${origin}/#run/dashboard-demo/incomplete-seed`);
     await page.waitForFunction(() => document.querySelector('#status').textContent.includes('INCOMPLETE'));
-    await page.waitForFunction(() => /^INCOMPLETE · baseline none/.test(document.querySelector('#coverage').textContent));
+    await page.waitForFunction(() => /^Coverage: INCOMPLETE · baseline none/.test(document.querySelector('#coverage').textContent));
     await page.getByText('specs: selected zero tests').waitFor();
     await page.setViewportSize({ width: 375, height: 812 });
     await page.screenshot({ path: '/tmp/spotter-dashboard-mobile.png', fullPage: true });

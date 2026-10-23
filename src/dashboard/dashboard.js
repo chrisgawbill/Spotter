@@ -6,6 +6,9 @@ const badge = (status) => {
   const [tone, icon] = statuses[status] ?? ['danger', '!'];
   return `<span class="ds-chip ds-chip-${tone} status status-${escape(status)}"><span aria-hidden="true">${icon}</span>${escape(status.toUpperCase())}</span>`;
 };
+// Chips with hidden separators, so text and screen readers still read "a · b".
+const chips = (parts, sep = ' · ', tone = '') => parts.map((part) => `<span class="ds-chip meta-chip${tone && ` ds-chip-${tone}`}">${escape(part)}</span>`).join(`<span class="ds-visually-hidden">${sep}</span>`);
+const labelled = (label, content) => `<span class="meta-label">${label}<span class="ds-visually-hidden">: </span></span><span class="meta-chips">${content}</span>`;
 const link = (run) => `#run/${encodeURIComponent(run.project)}/${encodeURIComponent(run.id)}`;
 const time = (at) => at ? new Date(at).toLocaleString() : 'Not recorded';
 const labels = { export: 'Export', 'static checks': 'Static checks', rules: 'Rules', 'web build': 'Build', 'web sweep': 'Browser sweep', 'project specs': 'Project specs', 'live authentication specs': 'Live authentication', 'compare findings and screenshots': 'Compare with base', 'reusing cached results': 'Reused cached results' };
@@ -98,7 +101,7 @@ async function updatePlan() {
   try {
     const plan = await api(`/api/plan?project=${encodeURIComponent($('project').value)}&level=${encodeURIComponent($('level').value)}&branch=${encodeURIComponent($('branch').value)}`);
     if (key !== planKey) return;
-    $('plan').textContent = `Plan: ${plan.summary}`;
+    $('plan').innerHTML = labelled('Plan', chips(plan.summary.split(' · ')));
     $('record-help').hidden = !plan.fixtures;
     $('record-reason').textContent = plan.fixtures?.reason ?? '';
     $('record-command').textContent = plan.fixtures?.command ?? '';
@@ -172,14 +175,15 @@ async function refresh() {
     if (match) {
       const key = `${match[1]}/${match[2]}`;
       const run = await api(`/api/runs/${key}`);
-      $('identity').textContent = `${run.project} / ${run.branch} · ${run.id}`;
-      $('run-plan').textContent = run.plan ? `Plan: ${run.plan}` : '';
+      html('identity', labelled('Run', `${chips([run.project, run.branch], ' / ')}<span class="ds-visually-hidden"> · </span>${chips([run.id])}`));
+      html('run-plan', run.plan ? labelled('Plan', chips(run.plan.split(' · '))) : '');
       $('run-plan').hidden = !run.plan;
       html('status', badge(run.status));
-      $('updated').textContent = `Last runner update: ${time(run.updatedAt)} · Checked ${new Date().toLocaleTimeString()}`;
+      html('updated', labelled('Updated', chips([`Runner ${time(run.updatedAt)}`, `Checked ${new Date().toLocaleTimeString()}`])));
       html('current', run.current.map((e) => `<li><span class="side">${escape(e.side)}</span> ${escape(e.activity)}</li>`).join('') || (run.status === 'running' ? '' : '<li>Run finished</li>'));
       $('run-error').textContent = run.error ?? '';
-      $('coverage').textContent = run.coverage ?? '';
+      const [result, ...coverage] = (run.coverage ?? '').split(' · ');
+      html('coverage', run.coverage ? labelled('Coverage', `${chips([result], '', statuses[run.status]?.[0])}${coverage.length ? `<span class="ds-visually-hidden"> · </span>${chips(coverage)}` : ''}`) : '');
       $('coverage').hidden = !run.coverage;
       html('coverage-gaps', (run.gaps ?? []).map((gap) => `<li>${escape(gap)}</li>`).join(''));
       html('coverage-notes', (run.notes ?? []).map((note) => `<li>Note: ${escape(note)}</li>`).join(''));
