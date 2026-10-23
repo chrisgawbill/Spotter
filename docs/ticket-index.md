@@ -29,17 +29,17 @@ ticket.
 | [QA-19](#qa-19--structured-security-scanner-findings) | IDEA | Security tool integration |
 | [QA-20](#qa-20--runner-lifecycle-and-artifact-retention) | IDEA | Runner reliability |
 | [QA-21](#qa-21--scheduled-deep-runs) | IDEA | Scheduled coverage |
-| [QA-22](#qa-22--same-origin-api-fixtures-by-path-prefix) | ACTIVE | Same-origin API fixtures |
-| [QA-23](#qa-23--infer-same-origin-apis-from-dev-server-proxies) | ACTIVE | Setup inference for proxied APIs |
-| [QA-24](#qa-24--project-started-backend-for-recording) | ACTIVE | Local recording source |
-| [QA-25](#qa-25--recording-request-headers) | ACTIVE | Recording protected APIs |
-| [QA-26](#qa-26--incomplete-when-api-traffic-is-not-replayed) | ACTIVE | Trustworthy pass without fixtures |
-| [QA-27](#qa-27--host-started-recording-backend-and-backend-detection) | ACTIVE | Recording backends with their own toolchain |
-| [QA-28](#qa-28--detect-hand-written-hash-routes-in-setup) | ACTIVE | Setup inference for custom hash routing |
-| [QA-29](#qa-29--report-fixtures-recorded-from-an-empty-backend) | ACTIVE | Trustworthy pass with empty fixtures |
-| [QA-30](#qa-30--stale-project-configuration-warning) | ACTIVE | Config drift from the tested branch |
-| [QA-31](#qa-31--consistent-report-counts) | ACTIVE | Report accuracy |
-| [QA-32](#qa-32--expected-api-statuses) | ACTIVE | Fewer false API-error findings |
+| [QA-22](#qa-22--same-origin-api-fixtures-by-path-prefix) | DONE | Same-origin API fixtures |
+| [QA-23](#qa-23--infer-same-origin-apis-from-dev-server-proxies) | DONE | Setup inference for proxied APIs |
+| [QA-24](#qa-24--project-started-backend-for-recording) | DONE | Local recording source |
+| [QA-25](#qa-25--recording-request-headers) | DONE | Recording protected APIs |
+| [QA-26](#qa-26--incomplete-when-api-traffic-is-not-replayed) | DONE | Trustworthy pass without fixtures |
+| [QA-27](#qa-27--host-started-recording-backend-and-backend-detection) | DONE | Recording backends with their own toolchain |
+| [QA-28](#qa-28--detect-hand-written-hash-routes-in-setup) | DONE | Setup inference for custom hash routing |
+| [QA-29](#qa-29--report-fixtures-recorded-from-an-empty-backend) | DONE | Trustworthy pass with empty fixtures |
+| [QA-30](#qa-30--stale-project-configuration-warning) | DONE | Config drift from the tested branch |
+| [QA-31](#qa-31--consistent-report-counts) | DONE | Report accuracy |
+| [QA-32](#qa-32--expected-api-statuses) | DONE | Fewer false API-error findings |
 
 Statuses and acceptance below are recorded decisions. Historical test output is
 in [ticket evidence](ticket-evidence.md); usage instructions are in the [README](../README.md).
@@ -746,7 +746,7 @@ configured coverage on a schedule.
 
 ## QA-22 — Same-origin API fixtures by path prefix
 
-**Status:** ACTIVE — started by Product Owner 2026-10-23 with QA-23–QA-26.
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** Record and replay APIs that the app calls on its own origin (for
 example `/admin/...` behind a dev-server proxy), not only APIs whose origin the
@@ -786,7 +786,7 @@ app uses relative `/admin` paths, so `web.api.envVar` cannot redirect it.
 
 ## QA-23 — Infer same-origin APIs from dev-server proxies
 
-**Status:** ACTIVE — started by Product Owner 2026-10-23 with QA-22–QA-26.
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** Let project setup propose `web.api.paths` and `recordFrom` when an
 app reaches its API through a dev-server proxy.
@@ -814,7 +814,7 @@ app reaches its API through a dev-server proxy.
 
 ## QA-24 — Project-started backend for recording
 
-**Status:** ACTIVE — started by Product Owner 2026-10-23 with QA-22–QA-26.
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** Record fixtures from a backend the project starts locally when there
 is no shared live API, so recordings come from reproducible seeded data.
@@ -840,7 +840,7 @@ is no shared live API, so recordings come from reproducible seeded data.
 
 ## QA-25 — Recording request headers
 
-**Status:** ACTIVE — started by Product Owner 2026-10-23 with QA-22–QA-26.
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** Record APIs that require request headers the production build does
 not send (for example dev-only identity headers or a test token).
@@ -866,7 +866,7 @@ not send (for example dev-only identity headers or a test token).
 
 ## QA-26 — Incomplete when API traffic is not replayed
 
-**Status:** ACTIVE — started by Product Owner 2026-10-23 with QA-22–QA-25.
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** A run must not report COMPLETE when the app called an API that Spotter
 neither replayed nor recorded.
@@ -898,7 +898,7 @@ independent.
 
 ## QA-27 — Host-started recording backend and backend detection
 
-**Status:** ACTIVE — started by Product Owner 2026-10-23 (alone).
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** Let `spotter record` start a project's real API when it needs a
 toolchain or services the Spotter image lacks (for example .NET with Postgres in
@@ -958,8 +958,7 @@ databases and port isolation, building per-project images.
 
 ## QA-28 — Detect hand-written hash routes in setup
 
-**Status:** ACTIVE — proposed 2026-10-23 from the triple-crown `creature-bench`
-report review.
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** Setup proposes the hash routes of apps that route on `location.hash`
 without a router library.
@@ -998,8 +997,7 @@ opened Challenge Lab or Duel.
 
 ## QA-29 — Report fixtures recorded from an empty backend
 
-**Status:** ACTIVE — proposed 2026-10-23 from the triple-crown `creature-bench`
-report review.
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** A report says when its fixtures came from an empty backend, so a PASS
 over empty states is not read as full coverage.
@@ -1031,8 +1029,7 @@ and listed four expected "no document yet" 404s as new API errors.
 
 ## QA-30 — Stale project configuration warning
 
-**Status:** ACTIVE — proposed 2026-10-23 from the triple-crown `creature-bench`
-report review.
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** A run warns when setup inference on the tested head would propose web
 settings that the project configuration lacks.
@@ -1069,8 +1066,7 @@ never checked.
 
 ## QA-31 — Consistent report counts
 
-**Status:** ACTIVE — proposed 2026-10-23 from the triple-crown `creature-bench`
-report review.
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** Every count in a report describes the same unit as its label, so the
 summary line, headings and visual summary agree.
@@ -1106,8 +1102,7 @@ every entry in `visual.changes`).
 
 ## QA-32 — Expected API statuses
 
-**Status:** ACTIVE — proposed 2026-10-23 from the triple-crown `creature-bench`
-report review.
+**Status:** DONE — accepted by Product Owner 2026-10-23.
 
 **Goal:** A project can declare an API status that the app handles on purpose,
 so it stops producing `api-error` findings while other failures from the same
