@@ -35,7 +35,7 @@ ticket.
 | [QA-25](#qa-25--recording-request-headers) | ACTIVE | Recording protected APIs |
 | [QA-26](#qa-26--incomplete-when-api-traffic-is-not-replayed) | ACTIVE | Trustworthy pass without fixtures |
 | [QA-27](#qa-27--host-started-recording-backend-and-backend-detection) | ACTIVE | Recording backends with their own toolchain |
-| [QA-28](#qa-28--detect-hand-written-hash-routes-in-setup) | IDEA | Setup inference for custom hash routing |
+| [QA-28](#qa-28--detect-hand-written-hash-routes-in-setup) | ACTIVE | Setup inference for custom hash routing |
 | [QA-29](#qa-29--report-fixtures-recorded-from-an-empty-backend) | IDEA | Trustworthy pass with empty fixtures |
 | [QA-30](#qa-30--stale-project-configuration-warning) | IDEA | Config drift from the tested branch |
 | [QA-31](#qa-31--consistent-report-counts) | ACTIVE | Report accuracy |
@@ -958,7 +958,7 @@ databases and port isolation, building per-project images.
 
 ## QA-28 — Detect hand-written hash routes in setup
 
-**Status:** IDEA — proposed 2026-10-23 from the triple-crown `creature-bench`
+**Status:** ACTIVE — proposed 2026-10-23 from the triple-crown `creature-bench`
 report review.
 
 **Goal:** Setup proposes the hash routes of apps that route on `location.hash`

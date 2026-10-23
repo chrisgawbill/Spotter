@@ -33,6 +33,8 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
   let outDir;
   let staticExport = false;
   let serverBuild = false;
+  const hashRoutes = new Set();
+  let replaceState = false;
   const add = (route) => {
     if (/[:*$?\[\]]/.test(route)) pending.add(route);
     else routes.add(route || '/');
@@ -92,11 +94,13 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
     const imports = new Map();
     const imported = new Map();
     const exported = new Map();
-    const module = { ast, bindings, imports, imported, exported, file, strings };
+    const functions = new Map();
+    const module = { ast, bindings, imports, imported, exported, functions, file, strings };
     modules.set(file, module);
     walk(ast, (node) => {
       owners.set(node, module);
       if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier') bindings.set(node.id.name, bindings.has(node.id.name) ? null : node.init);
+      if (node.type === 'FunctionDeclaration' && node.id) functions.set(node.id.name, node);
       if (node.type === 'ImportDeclaration' && ['react-router', 'react-router-dom', 'vue-router', '@angular/router'].includes(node.source.value)) {
         for (const spec of node.specifiers) imports.set(spec.local.name, spec.type === 'ImportSpecifier' ? spec.imported.name : spec.type === 'ImportNamespaceSpecifier' ? '*' : 'VueRouter');
       }
@@ -114,7 +118,7 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
     const relative = path.posix.normalize(path.posix.join(path.posix.dirname(file), from));
     return [relative, ...['.ts', '.tsx', '.js', '.jsx', '.mjs', '/index.ts', '/index.js'].map((ext) => relative + ext)].map((candidate) => modules.get(candidate)).find(Boolean);
   }
-  for (const { ast, imports, file, strings } of modules.values()) {
+  for (const { ast, imports, functions, file, strings } of modules.values()) {
     function resolve(node, seen = new Set()) {
       if (node?.type === 'Identifier' && !seen.has(node)) {
         const owner = owners.get(node);
@@ -170,6 +174,37 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
         if (prop(item, 'children')) objectRoutes(prop(item, 'children'), route, seen);
       }
     }
+    // Hand-written hash routing: literals compared with location.hash (directly or via a function parameter) or assigned to it.
+    // `#/path` values belong to hash routers, which the router detection below already reads.
+    const isHash = (node) => /^(?:window\.|document\.)?location\.hash$/.test(memberPath(node));
+    const addHash = (value) => { value = value.replace(/^#/, ''); if (value && !value.startsWith('/')) hashRoutes.add(value); };
+    const hashComparisons = (scope, matches) => walk(scope, (node) => {
+      if (node.type === 'BinaryExpression' && ['===', '==', '!==', '!='].includes(node.operator)) {
+        const value = matches(node.left) ? literal(node.right) : matches(node.right) ? literal(node.left) : undefined;
+        if (value !== undefined) addHash(value);
+      }
+      if (node.type === 'SwitchStatement' && matches(node.discriminant)) {
+        for (const item of node.cases) if (item.test && literal(item.test) !== undefined) addHash(literal(item.test));
+      }
+    });
+    hashComparisons(ast, isHash);
+    walk(ast, (node) => {
+      if (node.type === 'CallExpression' && /(?:^|\.)history\.replaceState$/.test(memberPath(node.callee))) replaceState = true;
+      if (node.type === 'AssignmentExpression' && node.operator === '=' && isHash(node.left)) {
+        const right = resolve(node.right);
+        for (const value of right?.type === 'ConditionalExpression' ? [right.consequent, right.alternate] : [right]) {
+          if (literal(value) !== undefined) addHash(literal(value));
+          else if (!/^#?\//.test(value?.quasis?.[0].value.cooked ?? '')) pending.add(`location.hash set from an expression in ${file}`);
+        }
+      }
+      const index = node.type === 'CallExpression' ? node.arguments.findIndex(isHash) : -1;
+      if (index >= 0) {
+        const target = resolve(node.callee);
+        const fn = /Function/.test(target?.type ?? '') ? target : functions.get(node.callee.name);
+        const param = fn?.params[index];
+        if (param?.type === 'Identifier') hashComparisons(fn.body, (child) => child.type === 'Identifier' && child.name === param.name);
+      }
+    });
     jsx(ast);
     walk(ast, (node) => {
       if (/^playwright\.config\.[cm]?[jt]s$/.test(file) && node.type === 'ObjectProperty') {
@@ -306,7 +341,11 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
   if (hash && browser) notes.push('Both hash and browser routers found; review route URL format.');
   const prefix = hash && !browser ? '#' : '';
   if (pending.size) notes.push(`Routes needing concrete sample URLs: ${[...pending].join(', ')}. Replace parameters/wildcards and add these routes manually.`);
-  if (!routes.size) { routes.add('/'); notes.push('No literal routes detected; using home only. Add routes manually for unsupported routers.'); }
-  else notes.push(`Detected ${routes.size} literal routes. Review query parameters and routes assembled across files.`);
-  return { base, outDir, staticExport, serverBuild, evidence, patterns: [...routes, ...pending].filter((route) => route.startsWith('/')), routes: [...routes].map((route) => ({ name: route === '/' ? 'home' : route.slice(1).replace(/[^\w-]+/g, '-'), path: `${prefix}${prefix ? hashBasename : ''}${route}` })), notes };
+  if (!routes.size) {
+    routes.add('/');
+    if (!hashRoutes.size) notes.push('No literal routes detected; using home only. Add routes manually for unsupported routers.');
+  } else notes.push(`Detected ${routes.size} literal routes. Review query parameters and routes assembled across files.`);
+  if (hashRoutes.size) notes.push(`Detected ${hashRoutes.size} hash routes from location.hash: ${[...hashRoutes].map((value) => `#${value}`).join(', ')}.${replaceState ? ' Drop legacy aliases the app rewrites with history.replaceState.' : ''}`);
+  return { base, outDir, staticExport, serverBuild, evidence, patterns: [...routes, ...pending].filter((route) => route.startsWith('/')), routes: [...routes].map((route) => ({ name: route === '/' ? 'home' : route.slice(1).replace(/[^\w-]+/g, '-'), path: `${prefix}${prefix ? hashBasename : ''}${route}` }))
+    .concat([...hashRoutes].map((value) => ({ name: value.replace(/[^\w-]+/g, '-'), path: `/#${value}` }))), notes };
 }

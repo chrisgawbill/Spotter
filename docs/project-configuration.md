@@ -10,7 +10,10 @@ Route discovery identifies the frontend from dependencies and source: React
 Router JSX/object routes, Vue Router and Angular route arrays (including relative
 imports), and file-based pages in Next.js, Nuxt, SvelteKit and Astro. It joins
 nested routes, recognizes hash URLs and excludes framework layouts, API handlers
-and private pages. Literal build base paths and output directories are detected
+and private pages. Apps that route on `location.hash` without a router library
+get a `/#<value>` route for each string literal compared with or assigned to it
+(including through a function parameter); routes assembled from expressions are
+listed for concrete samples. Literal build base paths and output directories are detected
 without executing project source. Next static exports, Nuxt generate, static
 SvelteKit, Astro, Vue CLI and unambiguous Angular build output can also receive
 browser-check drafts; server-only or unknown builds get setup guidance and a list

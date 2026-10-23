@@ -127,3 +127,38 @@ test('relative API requests are collected from fetch-like calls and templates on
     { path: '/api/items', file: 'api.js' }, { path: '/admin/collections', file: 'api.js' }, { path: '/api/items/', file: 'api.js' },
   ]);
 });
+
+test('route discovery proposes hand-written location.hash routes', async () => {
+  const folder = await mkdtemp(path.join(tmpdir(), 'spotter-routes-'));
+  try {
+    await writeFile(path.join(folder, 'constants.ts'), `export const REPORTS = '#reports';`);
+    await writeFile(path.join(folder, 'Workspace.tsx'), `
+      import { REPORTS } from './constants';
+      function fromHash(hash) {
+        if (hash === REPORTS) return 'reports';
+        if (hash === '#settings' || hash === '#old-settings') return 'settings';
+        return 'home';
+      }
+      const start = fromHash(location.hash);
+      if (window.location.hash == '#old-settings') history.replaceState(null, '', '#settings');
+      switch (location.hash) { case '#stats': break; case '': break; case '#': break; }
+      export function select(area, next) {
+        location.hash = next === 'home' ? '' : \`#\${area}\`;
+        window.location.hash = 'help';
+        window.location.hash = \`#/game/\${area}\`;
+      }
+      const url = new URL(document.baseURI);
+      if (url.hash === '#not-a-route' || file.hash !== '#nor-this') url.hash = '#nope';
+    `);
+    const result = await discoverRoutes(folder, ['constants.ts', 'Workspace.tsx']);
+    assert.deepEqual(result.routes, [
+      { name: 'home', path: '/' },
+      { name: 'old-settings', path: '/#old-settings' }, { name: 'stats', path: '/#stats' },
+      { name: 'reports', path: '/#reports' }, { name: 'settings', path: '/#settings' }, { name: 'help', path: '/#help' },
+    ]);
+    const notes = result.notes.join(' ');
+    assert.match(notes, /Routes needing concrete sample URLs: location\.hash set from an expression in Workspace\.tsx\./);
+    assert.match(notes, /Detected 5 hash routes from location\.hash: .*Drop legacy aliases the app rewrites with history\.replaceState\./);
+    assert.doesNotMatch(notes, /No literal routes detected/);
+  } finally { await rm(folder, { recursive: true, force: true }); }
+});
