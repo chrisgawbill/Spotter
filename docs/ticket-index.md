@@ -35,6 +35,11 @@ ticket.
 | [QA-25](#qa-25--recording-request-headers) | ACTIVE | Recording protected APIs |
 | [QA-26](#qa-26--incomplete-when-api-traffic-is-not-replayed) | ACTIVE | Trustworthy pass without fixtures |
 | [QA-27](#qa-27--host-started-recording-backend-and-backend-detection) | ACTIVE | Recording backends with their own toolchain |
+| [QA-28](#qa-28--detect-hand-written-hash-routes-in-setup) | IDEA | Setup inference for custom hash routing |
+| [QA-29](#qa-29--report-fixtures-recorded-from-an-empty-backend) | IDEA | Trustworthy pass with empty fixtures |
+| [QA-30](#qa-30--stale-project-configuration-warning) | IDEA | Config drift from the tested branch |
+| [QA-31](#qa-31--consistent-report-counts) | IDEA | Report accuracy |
+| [QA-32](#qa-32--expected-api-statuses) | IDEA | Fewer false API-error findings |
 
 Statuses and acceptance below are recorded decisions. Historical test output is
 in [ticket evidence](ticket-evidence.md); usage instructions are in the [README](../README.md).
@@ -948,3 +953,195 @@ databases and port isolation, building per-project images.
   success, startup failure, readiness timeout and Ctrl-C.
 - Setup proposes `paths`, `recordFrom` and `backend` for triple-crown `card-lab`;
   recording against it waits for Product Owner approval.
+
+---
+
+## QA-28 — Detect hand-written hash routes in setup
+
+**Status:** IDEA — proposed 2026-10-23 from the triple-crown `creature-bench`
+report review.
+
+**Goal:** Setup proposes the hash routes of apps that route on `location.hash`
+without a router library.
+
+**Context:** `route-discovery.mjs` recognises router libraries (`HashRouter`,
+`createHashRouter`, `createWebHashHistory`, `withHashLocation`, `useHash`) and
+literal `to`/`href` values starting with `/` or `#/`. triple-crown card-lab
+switches workspaces with `location.hash === "#duel"` and
+`location.hash = \`#${area}\``, so setup proposed only `/` and the sweep never
+opened Challenge Lab or Duel.
+
+**Scope:**
+
+- Collect string literals compared with `location.hash` or
+  `window.location.hash` (`===`, `==`, `!==`, `switch` cases) and literals
+  assigned to it. Resolve constants with the existing `resolve`/`literal`
+  helpers.
+- Propose each as a route with path `/#<value>` (respecting `web.base`) and a
+  name derived from the value. Skip `""` and `"#"`.
+- Dynamic assignments (template literals with expressions) add a note asking for
+  concrete sample routes, like the existing pending-parameter note.
+- Values only compared and immediately rewritten with `history.replaceState`
+  may be proposed; the route note asks the user to drop legacy aliases.
+- Existing router detection and `hash`/`browser` notes are unchanged.
+
+**Verify:**
+
+- `test/route-discovery.test.mjs` cases: literal comparison, `switch` cases,
+  constant-resolved values, literal assignment, dynamic assignment note, and no
+  routes from unrelated `hash` properties.
+- Setup on a copy of triple-crown `origin/creature-bench` `card-lab` proposes
+  `/#challenges` and `/#duel` besides `/`. HockeyStatsWebApp setup output is
+  unchanged.
+
+---
+
+## QA-29 — Report fixtures recorded from an empty backend
+
+**Status:** IDEA — proposed 2026-10-23 from the triple-crown `creature-bench`
+report review.
+
+**Goal:** A report says when its fixtures came from an empty backend, so a PASS
+over empty states is not read as full coverage.
+
+**Context:** Setup notes "No seed or reset script found for the backend;
+recordings will reflect an empty database", but only on the setup screen. The
+triple-crown fixtures hold only empty arrays and 404s; the report said COMPLETE
+and listed four expected "no document yet" 404s as new API errors.
+
+**Scope:**
+
+- At record time, store a fixture data summary in `fixtures/api.json`: counts
+  of entries with nonempty JSON bodies, empty arrays/objects and 4xx statuses,
+  and whether `web.api.backend` has a seed step (`web.api.backend.seeded` or a
+  detected seed/reset script).
+- When every JSON entry is empty or 4xx, add a coverage note (not a gap)
+  "fixtures hold no data; pages show empty states only" to `report.md`, the
+  report JSON and the dashboard, with a hint to seed the recording backend.
+- No change to exit codes or COMPLETE/INCOMPLETE status.
+
+**Verify:**
+
+- Fixture and completeness unit tests: all-empty, mixed and populated
+  recordings; old fixture files without the summary still load.
+- Report test for the note's wording and placement. A HockeyStatsWebApp run has
+  no new note.
+
+---
+
+## QA-30 — Stale project configuration warning
+
+**Status:** IDEA — proposed 2026-10-23 from the triple-crown `creature-bench`
+report review.
+
+**Goal:** A run warns when setup inference on the tested head would propose web
+settings that the project configuration lacks.
+
+**Context:** triple-crown's config was generated from a `main` checkout without
+a theme switch. On `creature-bench` setup infers
+`web.colorSchemeStorage` (`card-lab:theme`), but the run used no storage, so the
+light and dark visits produced identical screenshots and the light theme was
+never checked.
+
+**Scope:**
+
+- During `run`, after exporting the head, run the existing read-only setup
+  inference on the exported tree (no installs, no project code) and compare its
+  `web.colorSchemeStorage`, `web.routes` and `web.api.paths` with the loaded
+  config.
+- Report each missing inferred value once as a low finding in a `config` stage
+  with the suggested YAML, keyed by setting and value only. Settings already
+  present, even with different values, are not reported.
+- Separately, when two configured colour schemes produce byte-identical
+  screenshots for every visit of a route, report a low finding that the scheme
+  setting has no effect.
+- `--skip config` and a level setting can turn the inference check off.
+
+**Verify:**
+
+- Unit tests for the comparison (missing, present, differing), finding keys and
+  the identical-screenshot check.
+- A triple-crown `origin/creature-bench` run with a config lacking `colorSchemeStorage` reports
+  the missing `colorSchemeStorage`; with the current config it reports nothing
+  new. HockeyStatsWebApp main has no new findings.
+
+---
+
+## QA-31 — Consistent report counts
+
+**Status:** IDEA — proposed 2026-10-23 from the triple-crown `creature-bench`
+report review.
+
+**Goal:** Every count in a report describes the same unit as its label, so the
+summary line, headings and visual summary agree.
+
+**Context:** The triple-crown report said "1 fixed" in the RESULT line
+(`describeCounts` counts grouped findings) but "Fixed vs base (4)" in the
+heading (`report.mjs` counts ungrouped findings) above a single bullet. The
+visual summary said "16 changed pages · 0 unchanged" while the comparison held
+4 changed and 12 added screenshots (`report.mjs` and `htmlReport.mjs` count
+every entry in `visual.changes`).
+
+**Scope:**
+
+- Section headings for new, fixed and existing findings use the same grouped
+  count as the RESULT line; per-visit counts stay in each entry (`4×`).
+- The visual summary in `report.md` and `report.html` splits changed, added,
+  removed and unchanged screenshots, omitting zero parts, for example
+  "4 changed · 12 added".
+- Check other count labels in `report.md`, `report.html` and the dashboard for
+  the same mismatch and fix any found in the same way.
+- Report JSON keeps its current fields; add a grouped count only if a consumer
+  needs it.
+
+**Verify:**
+
+- Report and HTML report tests: grouped heading counts for new, fixed and
+  existing findings, and visual summaries with changed-only, added-only and
+  mixed entries.
+- A HockeyStatsWebApp run's report shows matching counts in the RESULT line,
+  headings and visual summary.
+
+---
+
+## QA-32 — Expected API statuses
+
+**Status:** IDEA — proposed 2026-10-23 from the triple-crown `creature-bench`
+report review.
+
+**Goal:** A project can declare an API status that the app handles on purpose,
+so it stops producing `api-error` findings while other failures from the same
+endpoint are still reported.
+
+**Context:** triple-crown's API returns 404 for lab documents that were never
+saved (`/admin/library`, `/admin/ronin-rules`, `/admin/growth-rules`,
+`/admin/mlb-snapshot`), and card-lab's hooks turn that 404 into "nothing yet".
+Every visit reported four low `api-error` findings. `web.ignoreRequests`
+removes all findings for a URL, including the 500s from fault visits, so it is
+too broad.
+
+**Scope:**
+
+- Optional `web.api.expectedStatuses`: a list of `{ request, status }` entries,
+  where `request` is a method plus a path regex (for example
+  `GET /admin/(library|ronin-rules)`) and `status` is one status or a list.
+  A replayed response that matches produces no `api-error` finding. Fault
+  visits and statuses that aren't listed are reported as before.
+- The dashboard configuration editor and `config-fields.mjs` describe the
+  field; config validation rejects malformed entries with a clear message.
+- Setup inference, read-only: when source code compares an API error's status
+  with a literal 4xx value (for example `e.status === 404`) in the function
+  that calls a literal API path, propose that path and status, with an evidence
+  note to review.
+
+**Out of scope:** Changing default severities for 4xx responses.
+
+**Verify:**
+
+- Config, web-stage and setup-inference unit tests: listed status suppressed,
+  other status on the same path still reported, fault 500 still reported,
+  malformed entries rejected, and inference from a status comparison.
+- With `expectedStatuses` for its four document endpoints, a triple-crown
+  `origin/creature-bench` run has no `api-error` findings for them, and its
+  500 fault visits are still checked. HockeyStatsWebApp main has no new
+  findings.
