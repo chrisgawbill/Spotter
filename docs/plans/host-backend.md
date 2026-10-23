@@ -29,7 +29,7 @@ web:
     paths: [/admin]
     recordFrom: http://localhost:5209
     backend:
-      run: docker compose -p spotter-triple-crown -f api/docker-compose.yml up -d --wait && (cd api && dotnet tool restore && ASPNETCORE_ENVIRONMENT=Development dotnet ef database update --project src/TripleCrown.Infrastructure --startup-project src/TripleCrown.Api) && exec dotnet run --project api/src/TripleCrown.Api --launch-profile http
+      run: docker compose -p spotter-triple-crown -f api/docker-compose.yml up -d --wait && (cd api && dotnet tool restore && dotnet restore src/TripleCrown.Api && ASPNETCORE_ENVIRONMENT=Development dotnet ef database update --project src/TripleCrown.Infrastructure --startup-project src/TripleCrown.Api) && exec dotnet run --project api/src/TripleCrown.Api --launch-profile http
       readyUrl: http://localhost:5209/health
       timeoutMs: 300000
       stop: docker compose -p spotter-triple-crown -f api/docker-compose.yml down -v

@@ -31,7 +31,7 @@ test('a .NET web project with Compose and EF migrations gets a full proposal', a
   try {
     const found = await discoverBackend(r.dir, r.files, options);
     assert.deepEqual(found.backend, {
-      run: "docker compose -p spotter-shop -f api/compose.yaml up -d --wait && (cd api && dotnet tool restore && ASPNETCORE_ENVIRONMENT=Development dotnet ef database update --project Data --startup-project Api) && exec dotnet run --project api/Api --launch-profile http",
+      run: "docker compose -p spotter-shop -f api/compose.yaml up -d --wait && (cd api && dotnet tool restore && dotnet restore Api && ASPNETCORE_ENVIRONMENT=Development dotnet ef database update --project Data --startup-project Api) && exec dotnet run --project api/Api --launch-profile http",
       readyUrl: 'http://localhost:5000/health', timeoutMs: 300000, stop: 'docker compose -p spotter-shop -f api/compose.yaml down -v' });
     assert.equal(found.evidence, 'backend inferred from api/Api/Api.csproj with health route /health, Compose services db from api/compose.yaml, EF migrations via api/.config/dotnet-tools.json; review the command before recording');
     assert.deepEqual(found.notes, ['The proposed web.api.backend needs .NET SDK and Docker Compose on this server; record with bin/spotter record shop --host-backend.', 'No seed or reset script found for the backend; recordings will reflect an empty database unless the backend seeds itself.']);

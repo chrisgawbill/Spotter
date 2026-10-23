@@ -102,7 +102,7 @@ export async function discoverBackend(repo, files, { recordFrom, name, workdir }
   const parts = [];
   if (compose) parts.push(`docker compose -p spotter-${name} -f ${q(compose.file)} up -d --wait`);
   if (c.kind === 'dotnet') {
-    if (ef) parts.push(`(cd ${q(ef.toolDir)} && dotnet tool restore && ${ef.env}dotnet ef database update --project ${q(rel(ef.toolDir, ef.projectDir))} --startup-project ${q(rel(ef.toolDir, c.dir))})`);
+    if (ef) parts.push(`(cd ${q(ef.toolDir)} && dotnet tool restore && dotnet restore ${q(rel(ef.toolDir, c.dir))} && ${ef.env}dotnet ef database update --project ${q(rel(ef.toolDir, ef.projectDir))} --startup-project ${q(rel(ef.toolDir, c.dir))})`);
     if (seed) parts.push(seedCommand(seed.dir));
     parts.push(`exec dotnet run --project ${q(c.dir)} --launch-profile ${q(c.profileName)}`);
   } else {

@@ -198,7 +198,8 @@ otherwise `npm install`. The manager is `npm`, `pnpm` or `yarn` accordingly.
 
 1. Compose: `` `docker compose -p spotter-${name} -f ${q(compose.file)} up -d --wait` ``
 2. .NET:
-   - EF: `` `(cd ${q(toolDir)} && dotnet tool restore && ${envPrefix}dotnet ef database update --project ${q(rel(toolDir, migrationsDir))} --startup-project ${q(rel(toolDir, c.dir))})` ``
+   - EF: `` `(cd ${q(toolDir)} && dotnet tool restore && dotnet restore ${q(rel(toolDir, c.dir))} && ${envPrefix}dotnet ef database update --project ${q(rel(toolDir, migrationsDir))} --startup-project ${q(rel(toolDir, c.dir))})` ``
+     (`dotnet restore` added after the first triple-crown recording: a `git archive` export has no `obj/`, and `dotnet ef` reads project metadata before it builds.)
    - seed (if any): `` `(cd ${q(seedDir)} && ${install} && ${manager} run ${script})` ``
    - `` `exec dotnet run --project ${q(c.dir)} --launch-profile ${q(profileName)}` ``
 3. Node: `` `cd ${q(c.dir)}` `` (omitted when `.`), `install`, seed (`` `${manager} run ${script}` `` when the seed is
