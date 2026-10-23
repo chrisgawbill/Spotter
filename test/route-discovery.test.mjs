@@ -163,3 +163,38 @@ test('route discovery proposes hand-written location.hash routes', async () => {
     assert.doesNotMatch(notes, /No literal routes detected/);
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
+
+test('setup proposes expected API statuses from 4xx comparisons beside literal API calls', async () => {
+  const { discoverOptions } = await import('../src/project-options.mjs');
+  const folder = await mkdtemp(path.join(tmpdir(), 'spotter-routes-'));
+  try {
+    await writeFile(path.join(folder, 'vite.config.ts'), `export default { server: { proxy: { '/api': 'http://localhost:5000' } } };`);
+    await writeFile(path.join(folder, 'hooks.ts'), `
+      export const useRules = () => useQuery({ queryFn: async () => {
+        try { return await apiFetch('GET', '/api/rules.v2'); } catch (e) { if (e instanceof ApiError && e.status === 404) return null; throw e; }
+      } });
+      export async function loadSnapshot(season) {
+        try { return await apiFetch('GET', \`/api/snapshot\${season ? \`?season=\${season}\` : ''}\`); }
+        catch (e) { if (e.status === 404 || 409 == e.status) throw new Error('none'); }
+      }
+      export async function save(item) {
+        const res = await fetch('/api/items', { method: 'POST' });
+        if (res.status === 422) return 'invalid';
+      }
+      export async function nested() {
+        await fetch('/api/outer');
+        const inner = () => { if (error.status === 404) return null; };
+      }
+      export const unrelated = () => { if (job.status === 404) return; fetch('/api/items/' + id); fetch(\`/api/items/\${id}\`); };
+      export const outside = async () => { if (res.status === 404) await fetch('/elsewhere'); };
+    `);
+    const files = ['vite.config.ts', 'hooks.ts'];
+    const { web, evidence } = await discoverOptions(folder, files, await discoverRoutes(folder, files, { vite: '5' }));
+    assert.deepEqual(web.api.expectedStatuses, [
+      { request: 'GET /api/rules\\.v2', status: 404 },
+      { request: 'GET /api/snapshot', status: [404, 409] },
+      { request: 'POST /api/items', status: 422 },
+    ]);
+    assert.match(evidence['web.api.expectedStatuses'], /hooks\.ts: literal 4xx status comparisons beside literal API calls; inferred, review/);
+  } finally { await rm(folder, { recursive: true, force: true }); }
+});

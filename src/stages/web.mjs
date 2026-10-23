@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { lastLines, runCommand } from '../exec.mjs';
 import { findIneffectiveSchemes } from '../config-drift.mjs';
 import { createFinding } from '../findings.mjs';
-import { apiRequestMatcher, recordFixtures, recordingHeaders, replayFixtures } from '../fixtures.mjs';
+import { apiRequestMatcher, isExpectedStatus, recordFixtures, recordingHeaders, replayFixtures } from '../fixtures.mjs';
 import { startStaticServer } from '../staticServer.mjs';
 import { findHorizontalOverflow, measureVisibleContent } from './pageProbes.mjs';
 import { runSpecsStage } from './specs.mjs';
@@ -304,7 +304,9 @@ function watchPageProblems(page, { web, appOrigin, report, onNotReplayed }) {
     if (response.status() < 400 || isIgnored(web.ignoreRequests, url)) return;
     if (isApi(parsed)) {
       // Unrecorded requests are already reported by the replay handler.
-      if (!response.headers()['x-spotter-unrecorded'] && !response.headers()['x-spotter-injected']) report(apiErrorProblem(response));
+      // Injected fault responses are judged by the fault checks; expected statuses are handled by the app on purpose.
+      if (!response.headers()['x-spotter-unrecorded'] && !response.headers()['x-spotter-injected']
+        && !isExpectedStatus(web.api.expectedStatuses, request.method(), parsed.pathname, response.status())) report(apiErrorProblem(response));
       return;
     }
     report(requestProblem(response.request(), `HTTP ${response.status()}`, appOrigin));

@@ -91,3 +91,29 @@ test('healthy layout controls do not become overflow or blank-page findings', as
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('expected API statuses suppress only the listed replayed status; fault visits still run', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'spotter-expected-'));
+  try {
+    await mkdir(path.join(dir, 'dist'));
+    await mkdir(path.join(dir, 'logs'));
+    const config = normalizeConfig({ repo: dir, web: {
+      build: { run: 'true' }, api: { envVar: 'API_URL', expectedStatuses: [{ request: 'GET /docs/(library|rules)', status: 404 }] },
+      routes: ['/'], viewports: [375], colorSchemes: ['light'], settleMs: 0, accessibility: false, keyboard: false,
+      faultInjection: { delayMs: 80, timeoutMs: 160 },
+    } }, { projectName: 'expected' });
+    await writeFile(path.join(dir, 'dist/index.html'), shell(`<h1>Docs</h1><script>
+      Promise.all(['library', 'rules', 'other'].map((name) => fetch('http://api.spotter.test/docs/' + name).then((r) => {
+        if (r.status >= 500) { document.body.innerHTML = ''; throw Error('crash on ' + name); }
+      }))).finally(() => document.querySelector('main').removeAttribute('aria-busy'));
+    </script>`));
+    const run = (entries) => runWebStage({ config, workdir: dir, logDir: path.join(dir, 'logs'), screenshotDir: path.join(dir, 'screenshots'), fixtures: { entries, sessions: {} } });
+    const result = await run({ 'GET /docs/library': { status: 404, body: '' }, 'GET /docs/rules': { status: 409, body: '' }, 'GET /docs/other': { status: 404, body: '' } });
+    const apiErrors = result.findings.filter((f) => f.check === 'api-error').map((f) => f.title).sort();
+    assert.deepEqual(apiErrors, ['API answered 404: GET /docs/other', 'API answered 409: GET /docs/rules'], JSON.stringify(result.findings));
+    assert.equal(result.summary.faultVisits, 6);
+    assert(result.findings.some((f) => f.check === 'fault-blank' && f.where.includes('500 GET /docs/library')), JSON.stringify(result.findings));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

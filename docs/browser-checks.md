@@ -118,6 +118,26 @@ intended request to `web.ignoreRequests`. Generated setups propose `paths` and
 `recordFrom` from a Vite `server.proxy`, and note relative request paths when no
 API was found.
 
+A replayed 4xx response is a low `api-error` finding (5xx is medium). When the
+app handles a status on purpose, for example a 404 that means "nothing saved
+yet", list it in `web.api.expectedStatuses`:
+
+```yaml
+web:
+  api:
+    expectedStatuses:
+      - { request: "GET /admin/(library|settings)", status: 404 }
+      - { request: "POST /api/items", status: [409, 422] }
+```
+
+`request` is a method and a regex matched against the whole request path
+(query excluded); `status` is one status from 400 to 599 or a list. A matching
+response produces no finding. Other statuses from the same endpoint and endpoint
+fault visits are still reported, unlike `web.ignoreRequests`, which drops every
+finding for a URL. Setup proposes entries when a function compares an error's
+status with a literal 4xx value (`e.status === 404`) beside a literal API call;
+review that each one is intended.
+
 Generated setups also propose `backend` when exactly one backend in the
 repository serves `recordFrom`: a .NET web project (its launch-profile URL) or a
 Node package with a `start`/`dev` script and a server framework. They add a

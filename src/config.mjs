@@ -134,6 +134,7 @@ function normalizeWebConfig(web) {
       fakeOrigin: 'http://api.spotter.test', envVar: null, recordFrom: null, headers: {},
       ...web.api,
       paths: web.api.paths ?? [],
+      expectedStatuses: (web.api.expectedStatuses ?? []).map(({ request, status }) => ({ request, status: [status].flat() })),
       backend: web.api.backend ? { timeoutMs: 60_000, stop: null, ...web.api.backend } : null,
     } : null,
     routes: web.routes.map((route) => (typeof route === 'string' ? { name: route, path: route } : route)),
@@ -153,8 +154,8 @@ function validHeaders(map) {
 }
 
 function apiProblems(api) {
-  if (!isPlainObject(api) || Object.keys(api).some((key) => !['envVar', 'paths', 'recordFrom', 'headers', 'backend', 'fakeOrigin'].includes(key))) {
-    return ['`web.api` accepts envVar, paths, recordFrom, headers and backend'];
+  if (!isPlainObject(api) || Object.keys(api).some((key) => !['envVar', 'paths', 'recordFrom', 'headers', 'backend', 'expectedStatuses', 'fakeOrigin'].includes(key))) {
+    return ['`web.api` accepts envVar, paths, recordFrom, headers, backend and expectedStatuses'];
   }
   const problems = [];
   if (api.envVar === undefined && api.paths === undefined) problems.push('`web.api` needs `envVar` or `paths`');
@@ -165,6 +166,10 @@ function apiProblems(api) {
   }
   if (api.recordFrom !== undefined && !isHttpUrl(api.recordFrom)) problems.push('`web.api.recordFrom` must be an http(s) URL');
   if (api.headers !== undefined && !validHeaders(api.headers)) problems.push(`\`web.api.headers\` ${HEADERS_MESSAGE}`);
+  if (api.expectedStatuses !== undefined && !Array.isArray(api.expectedStatuses)) problems.push('`web.api.expectedStatuses` must be a list of { request, status } entries');
+  else for (const [index, entry] of (api.expectedStatuses ?? []).entries()) {
+    if (!validExpectedStatus(entry)) problems.push(`\`web.api.expectedStatuses[${index}]\` needs \`request\` as "METHOD /path-regex" (for example "GET /api/items/\\d+") and \`status\` as an HTTP status from 400 to 599 or a list of them`);
+  }
   const backend = api.backend;
   if (backend !== undefined && !(isPlainObject(backend) && Object.keys(backend).every((key) => ['run', 'readyUrl', 'timeoutMs', 'stop'].includes(key))
     && typeof backend.run === 'string' && backend.run.trim() && isHttpUrl(backend.readyUrl)
@@ -173,6 +178,14 @@ function apiProblems(api) {
     problems.push('`web.api.backend` needs a `run` command, an http(s) `readyUrl`, optional positive `timeoutMs` and optional `stop` command');
   }
   return problems;
+}
+
+function validExpectedStatus(entry) {
+  if (!isPlainObject(entry) || Object.keys(entry).some((key) => !['request', 'status'].includes(key))) return false;
+  const match = /^(GET|HEAD|POST|PUT|PATCH|DELETE|OPTIONS) (\/\S*)$/.exec(entry.request ?? '');
+  try { if (!match) return false; new RegExp(match[2]); } catch { return false; }
+  const statuses = [entry.status].flat();
+  return statuses.length > 0 && statuses.every((status) => Number.isInteger(status) && status >= 400 && status <= 599);
 }
 
 function validSpecFiles(files) {

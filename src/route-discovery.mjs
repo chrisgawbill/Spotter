@@ -17,7 +17,7 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
   const routes = new Set();
   const pending = new Set();
   const notes = [];
-  const evidence = { api: [], themeKeys: [], errorText: [], retryDelays: [], routeSamples: [], loadingSelectors: [], proxy: [], relativeRequests: [], playwright: { viewports: [], colorSchemes: [] } };
+  const evidence = { api: [], themeKeys: [], errorText: [], retryDelays: [], routeSamples: [], loadingSelectors: [], proxy: [], relativeRequests: [], expectedStatuses: [], playwright: { viewports: [], colorSchemes: [] } };
   const cleanUrl = (value) => {
     try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash ? url.href.replace(/\/$/, '') : null; } catch { return null; }
   };
@@ -211,7 +211,16 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
       }
     });
     jsx(ast);
+    // Literal 4xx comparisons (`e.status === 404`) pair with literal API calls in the same innermost function.
+    const scopes = [];
+    const statusChecks = [];
+    const apiCalls = [];
     walk(ast, (node) => {
+      if (/Function|ObjectMethod|ClassMethod/.test(node.type)) scopes.push(node);
+      const status = node.type === 'BinaryExpression' && ['===', '=='].includes(node.operator)
+        && [[node.left, node.right], [node.right, node.left]].find(([member, value]) => member.type === 'MemberExpression' && !member.computed && member.property.name === 'status'
+          && value.type === 'NumericLiteral' && value.value >= 400 && value.value <= 499)?.[1].value;
+      if (status) statusChecks.push({ node, status });
       if (/^playwright\.config\.[cm]?[jt]s$/.test(file) && node.type === 'ObjectProperty') {
         const key = node.key.name ?? node.key.value;
         const value = resolve(node.value);
@@ -279,7 +288,13 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
       if (node.type === 'CallExpression' && /fetch|request|^(?:get|post|put|patch|delete)$/i.test(node.callee.name ?? (node.callee.type === 'MemberExpression' && !node.callee.computed ? node.callee.property.name : ''))) {
         for (const arg of node.arguments.slice(0, 2)) {
           const text = literal(arg) ?? (arg.type === 'TemplateLiteral' ? arg.quasis[0].value.cooked : undefined);
-          if (/^\/(?!\/)[\w-]/.test(text ?? '')) evidence.relativeRequests.push({ path: text.split(/[?#]/)[0], file });
+          if (/^\/(?!\/)[\w-]/.test(text ?? '')) {
+            evidence.relativeRequests.push({ path: text.split(/[?#]/)[0], file });
+            const calleeName = node.callee.name ?? (node.callee.type === 'MemberExpression' && !node.callee.computed ? node.callee.property.name : '');
+            const method = [literal(node.arguments[0]), literal(prop(node.arguments[1], 'method')), calleeName].map((value) => value?.toUpperCase())
+              .find((value) => ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(value)) ?? 'GET';
+            if (literal(arg) !== undefined || !text.endsWith('/')) apiCalls.push({ node, method, path: text.split(/[?#]/)[0] });
+          }
         }
       }
       if (node.type === 'CallExpression' || node.type === 'NewExpression') {
@@ -341,6 +356,11 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
         if (file.startsWith('astro.config') && ['server', 'hybrid'].includes(literal(prop(config, 'output')))) serverBuild = true;
       }
     });
+    const scopeOf = (node) => scopes.filter((scope) => scope.start <= node.start && node.end <= scope.end).sort((a, b) => (a.end - a.start) - (b.end - b.start))[0];
+    for (const { node, status } of statusChecks) {
+      const scope = scopeOf(node);
+      for (const call of scope ? apiCalls.filter((item) => scopeOf(item.node) === scope) : []) evidence.expectedStatuses.push({ method: call.method, path: call.path, status, file });
+    }
   }
   if (frameworks.length) notes.unshift(`Detected frontend routing: ${[...new Set(frameworks)].join(', ')}.`);
   if (hash && browser) notes.push('Both hash and browser routers found; review route URL format.');

@@ -44,3 +44,15 @@ test('recordingHeaders fails when a referenced variable is missing or empty', ()
     assert.throws(() => recordingHeaders(api, {}, env), { message: 'Recording header authorization needs environment variable API_TOKEN' });
   }
 });
+
+test('expected statuses match method, whole path and listed status only', async () => {
+  const { isExpectedStatus } = await import('../src/fixtures.mjs');
+  const expected = [{ request: 'GET /admin/(library|settings)', status: [404] }, { request: 'POST /api/items', status: [409, 422] }];
+  assert.equal(isExpectedStatus(expected, 'GET', '/admin/library', 404), true);
+  assert.equal(isExpectedStatus(expected, 'GET', '/admin/library', 500), false, 'fault or unlisted status');
+  assert.equal(isExpectedStatus(expected, 'GET', '/admin/library', 409), false, 'other status on the same path');
+  assert.equal(isExpectedStatus(expected, 'POST', '/admin/library', 404), false, 'other method');
+  assert.equal(isExpectedStatus(expected, 'GET', '/admin/library-old', 404), false, 'pattern covers the whole path');
+  assert.equal(isExpectedStatus(expected, 'POST', '/api/items', 422), true);
+  assert.equal(isExpectedStatus(undefined, 'GET', '/admin/library', 404), false);
+});

@@ -22,6 +22,14 @@ export function matchesApiPath(pathname, apiPaths) {
 }
 
 /** Predicate for context.route: the fake API origin, or an app-origin path under web.api.paths. */
+/** Whether `web.api.expectedStatuses` lists this replayed response: method, whole path regex and status. */
+export function isExpectedStatus(expectedStatuses = [], method, pathname, status) {
+  return expectedStatuses.some(({ request, status: statuses }) => {
+    const [expectedMethod, pattern] = request.split(' ');
+    return expectedMethod === method && [statuses].flat().includes(status) && new RegExp(`^(?:${pattern})$`).test(pathname);
+  });
+}
+
 export function apiRequestMatcher({ fakeOrigin, apiPaths = [], appOrigin }) {
   const fakeApiOrigin = new URL(fakeOrigin).origin;
   return (url) => url.origin === fakeApiOrigin || (url.origin === appOrigin && matchesApiPath(url.pathname, apiPaths));

@@ -39,7 +39,7 @@ ticket.
 | [QA-29](#qa-29--report-fixtures-recorded-from-an-empty-backend) | IDEA | Trustworthy pass with empty fixtures |
 | [QA-30](#qa-30--stale-project-configuration-warning) | ACTIVE | Config drift from the tested branch |
 | [QA-31](#qa-31--consistent-report-counts) | ACTIVE | Report accuracy |
-| [QA-32](#qa-32--expected-api-statuses) | IDEA | Fewer false API-error findings |
+| [QA-32](#qa-32--expected-api-statuses) | ACTIVE | Fewer false API-error findings |
 
 Statuses and acceptance below are recorded decisions. Historical test output is
 in [ticket evidence](ticket-evidence.md); usage instructions are in the [README](../README.md).
@@ -1106,7 +1106,7 @@ every entry in `visual.changes`).
 
 ## QA-32 — Expected API statuses
 
-**Status:** IDEA — proposed 2026-10-23 from the triple-crown `creature-bench`
+**Status:** ACTIVE — proposed 2026-10-23 from the triple-crown `creature-bench`
 report review.
 
 **Goal:** A project can declare an API status that the app handles on purpose,

@@ -1,5 +1,6 @@
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
+import { matchesApiPath } from './fixtures.mjs';
 
 /** Bounded reads, confined to the selected checkout. Private env/state files are never scanned. */
 export async function projectText(folder, file) {
@@ -42,6 +43,16 @@ export async function discoverOptions(folder, files, discovered) {
   if (!web.api && facts.relativeRequests.length) {
     const shown = [...new Set(facts.relativeRequests.map((item) => item.path))].slice(0, 3).join(', ');
     notes.push(`Relative API requests found in ${facts.relativeRequests[0].file} (${shown}) but no API was detected; their traffic will not be replayed. Configure web.api.paths and recordFrom.`);
+  }
+  const handled = facts.expectedStatuses.filter((item) => !web.api?.paths || matchesApiPath(item.path, web.api.paths));
+  if (web.api && handled.length) {
+    const statuses = new Map();
+    for (const { method, path: requestPath, status } of handled) {
+      const request = `${method} ${requestPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`;
+      statuses.set(request, [...new Set([...(statuses.get(request) ?? []), status])]);
+    }
+    web.api.expectedStatuses = [...statuses].map(([request, list]) => ({ request, status: list.length === 1 ? list[0] : list }));
+    evidence['web.api.expectedStatuses'] = `${[...new Set(handled.map((item) => item.file))].join(', ')}: literal 4xx status comparisons beside literal API calls; inferred, review that the app handles each status on purpose`;
   }
   const themes = [...new Set(facts.themeKeys.map((item) => item.key))];
   if (themes.length === 1) {

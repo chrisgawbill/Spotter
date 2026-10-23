@@ -82,7 +82,7 @@ const withApi = (api, web = {}) => normalizeConfig({
   web: { build: { run: 'true' }, routes: ['/'], api, ...web },
 }, { projectName: 'demo' });
 const apiMessages = {
-  shape: '`web.api` accepts envVar, paths, recordFrom, headers and backend',
+  shape: '`web.api` accepts envVar, paths, recordFrom, headers, backend and expectedStatuses',
   needs: '`web.api` needs `envVar` or `paths`',
   envVar: '`web.api.envVar` must be an environment variable name',
   paths: '`web.api.paths` must list unique same-origin path prefixes such as /api (no trailing slash, query or wildcard)',
@@ -94,7 +94,7 @@ const apiMessages = {
 
 test('web.api accepts envVar-only and paths-only and fills defaults', () => {
   assert.deepEqual(withApi({ envVar: 'VITE_API_URL' }).web.api, {
-    fakeOrigin: 'http://api.spotter.test', envVar: 'VITE_API_URL', recordFrom: null, headers: {}, paths: [], backend: null,
+    fakeOrigin: 'http://api.spotter.test', envVar: 'VITE_API_URL', recordFrom: null, headers: {}, paths: [], expectedStatuses: [], backend: null,
   });
   const paths = withApi({ paths: ['/api', '/admin/v1'] }).web.api;
   assert.deepEqual([paths.envVar, paths.paths], [null, ['/api', '/admin/v1']]);
@@ -127,4 +127,16 @@ test('session apiHeaders are accepted when valid and rejected otherwise', () => 
   for (const apiHeaders of [[], null, 'x', { 'bad name': 'v' }, { a: 5 }, { a: '${' }]) {
     assert.throws(() => withApi({ paths: ['/api'] }, session(apiHeaders)), (error) => error.message.includes(`- ${apiMessages.apiHeaders}`));
   }
+});
+
+test('web.api.expectedStatuses normalizes statuses and rejects malformed entries', () => {
+  const withExpected = (expectedStatuses) => normalizeConfig({ repo: '/repo', web: { build: { run: 'b' }, routes: ['/'], api: { paths: ['/api'], expectedStatuses } } }, { projectName: 'demo' });
+  assert.deepEqual(withExpected([{ request: 'GET /api/(a|b)', status: 404 }, { request: 'POST /api/items', status: [409, 422] }]).web.api.expectedStatuses,
+    [{ request: 'GET /api/(a|b)', status: [404] }, { request: 'POST /api/items', status: [409, 422] }]);
+  assert.deepEqual(normalizeConfig({ repo: '/repo', web: { build: { run: 'b' }, routes: ['/'], api: { paths: ['/api'] } } }, { projectName: 'demo' }).web.api.expectedStatuses, []);
+  for (const entry of [{ request: '/api/a', status: 404 }, { request: 'FETCH /api/a', status: 404 }, { request: 'GET /api/(', status: 404 },
+    { request: 'GET /api/a', status: 200 }, { request: 'GET /api/a', status: [] }, { request: 'GET /api/a', status: '404' }, { request: 'GET /api/a', status: 404, note: 'x' }]) {
+    assert.throws(() => withExpected([entry]), /web\.api\.expectedStatuses\[0\]` needs `request` as "METHOD \/path-regex"/, JSON.stringify(entry));
+  }
+  assert.throws(() => withExpected({ request: 'GET /api/a', status: 404 }), /must be a list of \{ request, status \} entries/);
 });
