@@ -39,11 +39,18 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     await page.waitForFunction(() => document.querySelector('#identity').textContent.includes('dashboard-demo / main'));
     await page.waitForFunction(() => document.querySelector('#current').textContent.includes('slow-check'));
     assert.match(await page.textContent('#status'), /RUNNING/);
+    await page.waitForFunction(() => document.querySelector('#checklist').textContent.includes('slow-check'));
+    assert.match(await page.textContent('#now-step'), /Static checks/);
     await page.waitForFunction(() => document.querySelector('#status').textContent.includes('PASS'), { timeout: 30000 });
+    await page.waitForFunction(() => /Done: Browser sweep/.test(document.querySelector('#checklist').textContent));
+    assert.match(await page.textContent('#checklist'), /Done: Compare with base/);
+    assert.equal(await page.locator('#checklist .mark-running').count(), 0);
     await page.frameLocator('#report').getByRole('heading', { name: 'Spotter: dashboard-demo' }).waitFor();
     const first = page.url();
     await page.getByRole('link', { name: 'Configurations', exact: true }).click();
     await page.waitForSelector('#config-page:not([hidden])');
+    assert.equal(await page.getByRole('link', { name: 'Configurations', exact: true }).getAttribute('aria-current'), 'page');
+    assert.equal(await page.getByRole('link', { name: 'Runs', exact: true }).getAttribute('aria-current'), null);
     await page.locator('[data-config="dashboard-demo"]').click();
     await page.waitForFunction(() => document.querySelector('#field-repo').value.length > 0);
     await page.locator('#field-workdir').focus();

@@ -8,6 +8,13 @@ current work includes the comparison side, check, route, viewport, scheme,
 session and injected endpoint where applicable. The last runner update and
 last browser refresh are shown separately.
 
+A run's checklist lists each section as the branch run reaches it (export,
+static checks with each check, rules, browser sweep with its build and each
+route, specs, comparison) and marks it done, in progress or not finished, with
+its duration. The **Now** panel shows the current section, browser sweep
+progress and the merge-base status; the full event log stays available below.
+Per-section finding counts are not shown during a run; use the report.
+
 ## Start on this server
 
 Build the image before the first start:

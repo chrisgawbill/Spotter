@@ -1,9 +1,62 @@
 import { configFields } from '/config-fields.mjs';
 const $ = (id) => document.getElementById(id);
 const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const badge = (status) => `<span class="ds-chip ds-chip-${status === 'pass' ? 'success' : status === 'running' ? 'primary' : 'danger'}">${escape(status.toUpperCase())}</span>`;
+const statuses = { pass: ['success', '✓'], fail: ['danger', '✕'], running: ['primary', '●'], error: ['warning', '!'] };
+const badge = (status) => {
+  const [tone, icon] = statuses[status] ?? ['danger', '!'];
+  return `<span class="ds-chip ds-chip-${tone} status status-${escape(status)}"><span aria-hidden="true">${icon}</span>${escape(status.toUpperCase())}</span>`;
+};
 const link = (run) => `#run/${encodeURIComponent(run.project)}/${encodeURIComponent(run.id)}`;
 const time = (at) => at ? new Date(at).toLocaleString() : 'Not recorded';
+const labels = { export: 'Export', 'static checks': 'Static checks', rules: 'Rules', 'web build': 'Build', 'web sweep': 'Browser sweep', 'project specs': 'Project specs', 'live authentication specs': 'Live authentication', 'compare findings and screenshots': 'Compare with base', 'reusing cached results': 'Reused cached results' };
+const duration = (ms) => { const s = Math.round(ms / 1000); return Number.isFinite(s) ? (s < 60 ? `${Math.max(0, s)}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`) : ''; };
+const marks = { done: ['✓', 'Done'], running: ['●', 'In progress'], stopped: ['✕', 'Did not finish'] };
+const mark = (state) => `<span class="mark mark-${state}" aria-hidden="true">${marks[state][0]}</span><span class="ds-visually-hidden">${marks[state][1]}: </span>`;
+// Group one side's runner events into checklist sections; checks and browser routes become sub-items.
+function sections(events, side) {
+  const list = new Map();
+  for (const e of events.filter((e) => e.side === side || (side === 'head' && e.side === 'run'))) {
+    const at = Date.parse(e.at);
+    const [key, child] = e.activity.startsWith('check: ') ? ['static checks', e.activity.slice(7)]
+      : e.activity === 'dependency install' ? ['static checks', 'install']
+      : e.activity === 'web build' ? ['web sweep', 'build']
+      : e.activity.startsWith('browser: ') ? ['web sweep', e.activity.slice(9).split(' [')[0]]
+      : [e.activity.startsWith('web sweep') ? 'web sweep' : e.activity, null];
+    if (!list.has(key)) list.set(key, { label: labels[key] ?? key.replace(/^./, (c) => c.toUpperCase()), start: at, children: new Map() });
+    const section = list.get(key);
+    if (!child) {
+      if (key === 'web sweep') section.total = Number(/\((\d+) routes/.exec(e.activity)?.[1]) || 0;
+      if (e.state === 'done') section.end = at;
+      continue;
+    }
+    if (!section.children.has(child)) section.children.set(child, new Set());
+    if (e.state === 'done') section.children.get(child).delete(e.activity); else section.children.get(child).add(e.activity);
+  }
+  return list;
+}
+// A route counts as checked while none of its visits are open; it can briefly reopen when its next visit starts.
+const checked = (section) => [...section.children].filter(([name, open]) => name !== 'build' && !open.size).length;
+function checklist(run, steps) {
+  const running = run.status === 'running';
+  const finished = Date.parse(run.updatedAt);
+  return [...steps.values()].map((s) => {
+    const state = s.end ? 'done' : running ? 'running' : 'stopped';
+    const items = [...s.children].map(([name, open]) => { const item = !open.size ? 'done' : running ? 'running' : 'stopped'; return `<li>${mark(item)}<span>${escape(name)}</span></li>`; }).join('');
+    const count = s.total ? ` <span class="muted">${checked(s)}/${s.total}</span>` : '';
+    return `<li class="step-${state}">${mark(state)}<span>${escape(s.label)}${count}</span><time>${duration((s.end ?? (running ? Date.now() : finished)) - s.start)}</time>${items ? `<ol>${items}</ol>` : ''}</li>`;
+  }).join('') || `<li class="muted">${running ? 'Waiting for the runner…' : 'No step history recorded for this run.'}</li>`;
+}
+function now(run, steps) {
+  const base = sections(run.events, 'base');
+  const baseOpen = [...base.values()].filter((s) => !s.end).at(-1);
+  const baseText = base.has('reusing cached results') ? '✓ Reused cached results' : baseOpen && run.status === 'running' ? `● ${escape(baseOpen.label)}` : base.size ? '✓ Finished' : 'Waiting';
+  if (run.status !== 'running') return `<p class="muted">${run.status === 'error' ? 'Stopped before completing.' : `Finished${run.startedAt ? ` in ${duration(Date.parse(run.updatedAt) - Date.parse(run.startedAt))}` : ''}.`} Merge base: ${baseText}</p>`;
+  const current = [...steps.values()].filter((s) => !s.end).at(-1);
+  const sweep = steps.get('web sweep');
+  const visit = run.current.filter((e) => e.side === 'head' && e.activity.startsWith('browser: ')).at(-1)?.activity.slice(9);
+  const progress = sweep && !sweep.end && sweep.total ? `<progress max="${sweep.total}" value="${checked(sweep)}" aria-label="Routes checked"></progress><p>${checked(sweep)} / ${sweep.total} routes checked${visit ? ` · <span class="muted">${escape(visit)}</span>` : ''}</p>` : '';
+  return `${current ? `<p class="muted">Running for ${duration(Date.now() - current.start)}</p>` : ''}${progress}<p class="muted">Merge base: ${baseText}</p>`;
+}
 // Preserve keyboard focus and avoid announcing unchanged activity on every poll.
 function html(id, content) {
   const element = $(id);
@@ -27,7 +80,7 @@ function updateBranches(previousBranch = '') {
   html('branch', (project?.branches ?? []).map((b) => `<option>${escape(b)}</option>`).join(''));
   if (project?.branches.includes(previousBranch)) $('branch').value = previousBranch;
   else if (project?.branches.includes(project.baseBranch)) $('branch').value = project.baseBranch;
-  $('project-info').textContent = project?.error ?? `Compare against ${project?.baseBranch ?? 'main'}. Runs use recorded API fixtures.`;
+  $('project-info').textContent = project?.error ?? (project ? `Compare against ${project.baseBranch ?? 'main'}. Runs use recorded API fixtures.` : 'Add a project configuration to start a run.');
   $('submit').disabled = !$('branch').value;
 }
 $('project').addEventListener('change', () => updateBranches());
@@ -51,21 +104,29 @@ async function refresh() {
     $('page-description').textContent = location.hash === '#configs' ? 'Build a project configuration with field guidance and examples.' : 'Start a check, follow the work, and review what Spotter found.';
     $('config-page').hidden = location.hash !== '#configs';
     $('run-page').hidden = location.hash === '#configs';
+    for (const a of document.querySelectorAll('nav a.nav-link')) {
+      if ((a.getAttribute('href') === '#configs') === (location.hash === '#configs')) a.setAttribute('aria-current', 'page');
+      else a.removeAttribute('aria-current');
+    }
     const previousProject = $('project').value;
     const previousBranch = $('branch').value;
     const [nextProjects, runs] = await Promise.all([api('/api/projects'), api('/api/runs')]);
     projects = nextProjects;
-    html('config-list', projects.map((p) => `<article class="ds-card ds-aero-surface"><h3>${escape(p.name)}</h3><button class="ds-button" type="button" data-config="${escape(p.name)}">Edit configuration</button></article>`).join('') || '<p>No configurations yet. Create one to get started.</p>');
+    html('config-list', projects.map((p) => `<article class="config-card ds-card ds-aero-surface ds-stack"><h3>${escape(p.name)}</h3><button class="ds-button button-secondary" type="button" data-config="${escape(p.name)}">Edit configuration</button></article>`).join('') || '<p class="empty-state">No configurations yet. Use Set up from folder or New configuration to add one.</p>');
     html('project', projects.map((p) => `<option>${escape(p.name)}</option>`).join(''));
     if (projects.some((p) => p.name === previousProject)) $('project').value = previousProject;
     updateBranches($('project').value === previousProject ? previousBranch : '');
-    html('runs', runs.map((run) => `<tr><td><strong>${escape(run.project)}</strong><br>${escape(run.branch)}</td><td>${badge(run.status)}</td><td>${escape(run.current.at(-1)?.activity ?? (run.report ? 'Report ready' : run.error ?? 'Preparing'))}</td><td><a href="${link(run)}">${run.status === 'running' ? 'Follow activity' : 'View run'} →</a><br><small>${escape(time(run.startedAt))}</small></td></tr>`).join(''));
+    html('runs', runs.map((run) => {
+      const text = escape(run.current.at(-1)?.activity ?? (run.report ? 'Report ready' : run.error ?? 'Preparing'));
+      return `<tr><td><strong>${escape(run.project)}</strong><br><span class="branch">${escape(run.branch)}</span></td><td>${badge(run.status)}</td><td><span class="activity-text" title="${text}">${text}</span></td><td><a href="${link(run)}">${run.status === 'running' ? 'Follow activity' : 'View run'} →</a><br><small>${escape(time(run.startedAt))}</small></td></tr>`;
+    }).join(''));
     $('empty').hidden = runs.length > 0;
     html('projects', projects.map((project) => {
       const latest = runs.find((run) => run.project === project.name);
-      return `<article class="project-card ds-card ds-aero-surface"><h3>${escape(project.name)}</h3>${latest ? `${badge(latest.status)}<p>${escape(latest.branch)}</p><a href="${link(latest)}">Open latest run →</a>` : '<p class="muted">No runs yet</p>'}</article>`;
-    }).join(''));
+      return `<article class="project-card ds-card ds-aero-surface ds-stack"><h3>${escape(project.name)}</h3>${latest ? `${badge(latest.status)}<p class="branch">${escape(latest.branch)}</p><a href="${link(latest)}">Open latest run →</a>` : '<p class="muted">No runs yet</p>'}</article>`;
+    }).join('') || '<p class="empty-state">No projects configured yet. <a href="#configs">Add a configuration</a> to start running checks.</p>');
     $('synced').textContent = `Refreshed ${new Date().toLocaleTimeString()} · every 2s`;
+    $('synced').classList.remove('is-paused');
     const match = /^#run\/([^/]+)\/([^/]+)$/.exec(location.hash);
     $('detail').hidden = !match;
     if (match) {
@@ -74,11 +135,17 @@ async function refresh() {
       $('identity').textContent = `${run.project} / ${run.branch} · ${run.id}`;
       html('status', badge(run.status));
       $('updated').textContent = `Last runner update: ${time(run.updatedAt)} · Checked ${new Date().toLocaleTimeString()}`;
-      html('current', run.current.map((e) => `<li>${escape(e.side)} · ${escape(e.activity)}</li>`).join('') || (run.status === 'running' ? '' : '<li>Run finished</li>'));
+      html('current', run.current.map((e) => `<li><span class="side">${escape(e.side)}</span> ${escape(e.activity)}</li>`).join('') || (run.status === 'running' ? '' : '<li>Run finished</li>'));
       $('run-error').textContent = run.error ?? '';
+      const steps = sections(run.events, 'head');
+      const active = [...steps.values()].filter((s) => !s.end).at(-1);
+      html('now-step', run.status === 'running' ? (active ? `${mark('running')}${escape(active.label)}` : 'Preparing run…') : badge(run.status));
+      html('now-detail', now(run, steps));
+      html('checklist', checklist(run, steps));
+      $('current').parentElement.hidden = run.status !== 'running';
       const history = $('events');
       const atBottom = history.scrollTop + history.clientHeight >= history.scrollHeight - 30;
-      html('events', run.events.map((e) => `<li>${escape(time(e.at))} · ${escape(e.side)} · ${e.state === 'done' ? '✓ Completed' : '→ Started'} ${escape(e.activity)}</li>`).join('') || '<li>Preparing run…</li>');
+      html('events', run.events.map((e) => `<li><time>${escape(time(e.at))}</time> <span class="side">${escape(e.side)}</span> ${e.state === 'done' ? '✓ Completed' : '→ Started'} ${escape(e.activity)}</li>`).join('') || '<li>Preparing run…</li>');
       if (atBottom) history.scrollTop = history.scrollHeight;
       $('report-section').hidden = !run.report;
       if (run.report && $('report').getAttribute('src') !== run.report) {
@@ -87,7 +154,7 @@ async function refresh() {
       }
       if (key !== selected) { $('detail').scrollIntoView({ block: 'start' }); selected = key; }
     } else selected = '';
-  } catch (error) { $('synced').textContent = `Updates paused: ${error.message}`; }
+  } catch (error) { $('synced').textContent = `Updates paused: ${error.message}`; $('synced').classList.add('is-paused'); }
   finally { refreshing = false; }
 }
 let originalSource = null;
@@ -150,8 +217,8 @@ async function openEditor(name = '', generated = null) {
     $('setup-details').hidden = !generated;
     if (generated) {
       $('setup-details').open = true;
-      html('setup-coverage', (generated.coverage ?? []).map((item) => `<tr><td>${escape(item.field)}</td><td>${escape(item.status)}</td><td>${escape(item.evidence)}</td></tr>`).join(''));
-      html('setup-existing', (generated.existingConfigs ?? []).map((existing) => `<button class="ds-button" type="button" data-existing="${escape(existing)}" ${existing === generated.existingName ? 'disabled' : ''}>Reuse ${escape(existing)}</button>`).join(''));
+      html('setup-coverage', (generated.coverage ?? []).map((item) => `<tr><td>${escape(item.field)}</td><td><span class="ds-chip ${({ preserved: 'ds-chip-success', detected: 'ds-chip-success', review: 'ds-chip-warning', inferred: 'ds-chip-primary' })[item.status] ?? ''}">${escape(item.status)}</span></td><td>${escape(item.evidence)}</td></tr>`).join(''));
+      html('setup-existing', (generated.existingConfigs ?? []).map((existing) => `<button class="ds-button button-secondary" type="button" data-existing="${escape(existing)}" ${existing === generated.existingName ? 'disabled' : ''}>Reuse ${escape(existing)}</button>`).join(''));
     }
     for (const [key] of guided) $(`field-${key}`).value = '';
     try { await draft(); } catch (error) { message(`Repair the YAML below: ${error.message}`); }
@@ -166,7 +233,7 @@ async function browseFolders(next) {
     const result = await api(`/api/project-folders${next ? `?folder=${encodeURIComponent(next)}` : ''}`);
     folder = result.folder;
     $('folder-path').textContent = folder;
-    html('folder-list', `${result.parent ? `<button class="ds-button" type="button" data-folder="${escape(result.parent)}">↑ Parent folder</button>` : ''}${result.folders.map((entry) => `<button class="ds-button" type="button" data-folder="${escape(entry.path)}">${escape(entry.name)} →</button>`).join('') || '<p>No subfolders</p>'}`);
+    html('folder-list', `${result.parent ? `<button class="ds-button button-secondary folder-button" type="button" data-folder="${escape(result.parent)}">↑ Parent folder</button>` : ''}${result.folders.map((entry) => `<button class="ds-button button-secondary folder-button" type="button" data-folder="${escape(entry.path)}">${escape(entry.name)} →</button>`).join('') || '<p class="muted">No subfolders</p>'}`);
     $('folder-message').textContent = '';
     $('detect-project').disabled = false;
   } catch (error) { $('folder-message').textContent = error.message; }

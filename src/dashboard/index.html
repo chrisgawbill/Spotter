@@ -7,36 +7,42 @@
 <script type="module" src="/dashboard.js"></script>
 </head>
 <body class="ds-page-shell ds-scrollbar">
-<header class="ds-container ds-cluster"><a class="brand ds-focus-outline" href="#">◉ Spotter</a><nav class="ds-cluster" aria-label="Dashboard"><a href="#">Runs</a><a href="#configs">Configurations</a></nav><span>Independent QA</span><span class="ds-chip ds-chip-primary">Tailscale</span></header>
+<header class="app-bar ds-aero-glass"><div class="ds-container ds-cluster"><a class="brand ds-focus-outline" href="#"><span aria-hidden="true">◉</span> Spotter</a><nav class="ds-cluster" aria-label="Dashboard"><a class="nav-link ds-focus-outline" href="#">Runs</a><a class="nav-link ds-focus-outline" href="#configs">Configurations</a></nav><span class="ds-chip ds-chip-primary" title="Served only on the Tailscale network">Tailscale only</span></div></header>
 <main class="ds-container ds-stack">
-<div><p class="eyebrow">PROJECT CONTROL</p><h1 id="page-title">See what changed.</h1><p id="page-description" class="muted">Start a check, follow the work, and review what Spotter found.</p></div>
+<div class="page-intro"><h1 id="page-title">See what changed.</h1><p id="page-description" class="muted">Start a check, follow the work, and review what Spotter found.</p></div>
 <p id="error" role="alert" hidden></p>
 <div id="run-page" class="ds-stack">
-<section class="ds-card ds-aero-surface"><h2>Start a run</h2>
+<section class="ds-card ds-aero-surface ds-stack"><h2>Start a run</h2>
 <form id="start" class="ds-cluster">
 <label class="ds-field">Project<select id="project" class="ds-input" required></select></label>
 <label class="ds-field">Branch<select id="branch" class="ds-input" required></select></label>
-<button id="submit" class="ds-button" type="submit">Run checks →</button>
-</form><p id="project-info" class="muted"></p></section>
+<button id="submit" class="ds-button" type="submit" disabled>Run checks →</button>
+</form><p id="project-info" class="muted">Loading projects…</p></section>
 <section id="detail" class="ds-stack" hidden aria-labelledby="detail-title">
-<div class="ds-cluster"><h2 id="detail-title" tabindex="-1">Run activity</h2><span id="status" class="ds-chip"></span><a href="#">Close run</a></div>
-<p id="identity"></p><p id="updated" class="muted"></p>
-<div class="ds-card ds-aero-surface"><h3>Current activity</h3><ul id="current" aria-live="polite"></ul><p id="run-error" role="status"></p></div>
-<details class="ds-card ds-aero-surface" open><summary>Activity history</summary><ol id="events"></ol></details>
-<section id="report-section" hidden><h3>Report & visual review</h3><p><a id="report-link" target="_blank" rel="noopener">Open report in a new tab ↗</a></p><iframe id="report" title="Spotter report and visual evidence" sandbox="allow-same-origin"></iframe></section>
+<div class="section-head"><h2 id="detail-title" tabindex="-1">Run activity</h2><span id="status" role="status"></span><a class="ds-button button-secondary" href="#">Close run</a></div>
+<div class="run-meta"><p id="identity"></p><p id="updated" class="muted"></p></div>
+<div class="run-layout">
+<section class="ds-card ds-aero-surface ds-stack checklist-card" aria-labelledby="checklist-title"><h3 id="checklist-title">Checklist</h3><ol id="checklist" class="checklist" tabindex="0" aria-labelledby="checklist-title"></ol></section>
+<div class="ds-stack">
+<section class="ds-card ds-aero-surface ds-stack" aria-labelledby="now-title"><h3 id="now-title">Now</h3><p id="now-step" aria-live="polite"></p><div id="now-detail" class="ds-stack"></div><p id="run-error" role="status"></p>
+<details><summary>All active steps</summary><ul id="current" class="scroll-region" tabindex="0" aria-label="All active steps"></ul></details></section>
+<details class="ds-card ds-aero-surface"><summary>Activity log</summary><ol id="events" class="scroll-region" tabindex="0" aria-label="Activity log"></ol></details>
+</div>
+</div>
+<section id="report-section" class="ds-stack" hidden><div class="section-head"><h3>Report &amp; visual review</h3><a id="report-link" target="_blank" rel="noopener">Open in a new tab ↗</a></div><iframe id="report" title="Spotter report and visual evidence" sandbox="allow-same-origin"></iframe></section>
 </section>
-<section><div class="ds-cluster"><h2>Projects</h2><span class="muted">Latest result per project</span></div><div id="projects" class="ds-grid"></div></section>
-<section><div class="ds-cluster"><h2>Recent runs</h2><span id="synced" class="muted" role="status"></span></div><div class="ds-table-wrap"><table class="ds-table"><thead><tr><th>Project / branch</th><th>Result</th><th>Activity</th><th>Run</th></tr></thead><tbody id="runs"></tbody></table></div><p id="empty" hidden>No runs yet. Select a project and branch to start.</p></section>
+<section class="ds-stack"><div class="section-head"><h2>Projects</h2><span class="muted">Latest result per project</span></div><div id="projects" class="ds-grid"><p class="muted">Loading projects…</p></div></section>
+<section class="ds-stack"><div class="section-head"><h2>Recent runs</h2><span id="synced" class="muted" role="status">Loading runs…</span></div><div class="ds-table-wrap"><table class="ds-table runs-table"><thead><tr><th>Project / branch</th><th>Result</th><th>Activity</th><th>Run</th></tr></thead><tbody id="runs"></tbody></table></div><p id="empty" class="empty-state" hidden>No runs yet. Select a project and branch to start.</p></section>
 </div>
 <section id="config-page" class="ds-stack" hidden aria-labelledby="config-title">
-<div class="ds-cluster"><h2 id="config-title">Configurations</h2><button id="setup-project" class="ds-button" type="button">Set up from folder</button><button id="new-config" class="ds-button" type="button">New configuration</button></div>
+<div class="section-head"><h2 id="config-title">Configurations</h2><div class="ds-cluster"><button id="setup-project" class="ds-button button-secondary" type="button">Set up from folder</button><button id="new-config" class="ds-button" type="button">New configuration</button></div></div>
 <p class="muted">Create and edit project YAML. Changes apply to future runs.</p>
 <section id="folder-picker" class="ds-card ds-aero-surface ds-stack" hidden aria-labelledby="folder-title">
 <h3 id="folder-title">Choose a project folder on the server</h3>
 <p class="muted">Open the folder containing the app’s package.json. Generate a draft, review it, then save.</p>
-<p id="folder-path"></p><div id="folder-list" class="ds-stack"></div>
+<p id="folder-path" class="path"></p><div id="folder-list" class="ds-stack"></div>
 <p id="folder-message" role="status"></p>
-<div class="ds-cluster"><button id="detect-project" class="ds-button" type="button">Generate configuration</button><button id="close-folders" class="ds-button" type="button">Cancel</button></div>
+<div class="ds-cluster"><button id="detect-project" class="ds-button" type="button">Generate configuration</button><button id="close-folders" class="ds-button button-secondary" type="button">Cancel</button></div>
 </section>
 <div id="config-list" class="ds-grid"></div>
 <form id="config-editor" class="ds-card ds-aero-surface ds-stack" hidden>
@@ -48,15 +54,15 @@
 <div class="ds-table-wrap"><table class="ds-table"><thead><tr><th>Option</th><th>Source</th><th>Evidence / next step</th></tr></thead><tbody id="setup-coverage"></tbody></table></div>
 </details>
 <div class="config-layout"><div class="ds-stack"><div id="config-fields" class="ds-grid"></div>
-<button id="apply-fields" type="button" class="ds-button">Apply fields to YAML</button>
+<button id="apply-fields" type="button" class="ds-button button-secondary">Apply fields to YAML</button>
 <label class="ds-field">Full configuration (YAML)<textarea id="config-source" class="ds-input" rows="22" spellcheck="false" required aria-describedby="yaml-help"></textarea></label>
 <p id="yaml-help" class="muted">Edit every option directly here. Changed basic fields are applied when you save; use Apply fields to preview them first.</p>
-<button id="read-fields" type="button" class="ds-button">Read basic fields from YAML</button></div>
+<button id="read-fields" type="button" class="ds-button button-secondary">Read basic fields from YAML</button></div>
 <aside class="ds-card ds-stack suggestions" aria-labelledby="suggestion-title"><h3 id="suggestion-title">Field suggestions</h3>
 <label class="ds-field">Configuration dictionary<select id="field-reference" class="ds-input"></select></label>
 <div id="field-suggestion" aria-live="polite"></div></aside></div>
 <p id="config-message" role="status"></p>
-<div class="ds-cluster"><button id="save-config" type="submit" class="ds-button">Save configuration</button><button id="delete-config" type="button" class="ds-button">Delete configuration</button><button id="close-config" type="button" class="ds-button">Close editor</button></div>
+<div class="ds-cluster editor-actions"><button id="save-config" type="submit" class="ds-button">Save configuration</button><button id="close-config" type="button" class="ds-button button-secondary">Close editor</button><button id="delete-config" type="button" class="ds-button button-danger">Delete configuration</button></div>
 </form>
 </section>
 </main>
