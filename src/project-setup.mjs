@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import YAML from 'yaml';
+import { discoverBackend } from './backend-discovery.mjs';
 import { discoverRoutes } from './route-discovery.mjs';
 import { discoverOptions, projectText } from './project-options.mjs';
 import { existingSettings, projectSettings, mergeSettings } from './setup-configs.mjs';
@@ -65,6 +66,7 @@ export async function detectProject(root, requested, { configsDir = path.join(sp
   let config = { repo, baseBranch, workdir: path.relative(repo, folder) || '.', checks: [] };
   const evidence = { repo: 'Git checkout', workdir: 'Selected app folder', baseBranch: 'Git default branch or local main/master' };
   const files = await readdir(folder);
+  let name = path.basename(repo).toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'my-app';
   if (files.includes('package.json')) {
     const pkg = await readPackage(root, folder);
     const parentPkg = folder !== repo ? JSON.parse(await projectText(repo, 'package.json') || '{}') : {};
@@ -137,6 +139,15 @@ export async function detectProject(root, requested, { configsDir = path.join(sp
       config.web = { ...WEB_DEFAULTS, faultInjection: { delayMs: 2000, timeoutMs: 5000, loadingSelector: '[aria-busy="true"], [role="progressbar"]' }, build: { run: `${manager} run ${buildScript}`, outDir: discovered.outDir ?? output }, base: discovered.base,
         routes: discovered.routes, viewports: [375, 1280], colorSchemes: ['light', 'dark'] };
       config.web = mergeSettings(config.web, options.web);
+      if (config.web.api) {
+        const repoFiles = (await exec('git', ['-C', repo, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], { timeout: 5000, maxBuffer: 16 * 1024 * 1024 })).stdout.split('\0').filter(Boolean);
+        const found = await discoverBackend(repo, repoFiles, { recordFrom: config.web.api.recordFrom, name, workdir: config.workdir });
+        if (found.backend) {
+          config.web.api = { ...config.web.api, backend: found.backend };
+          evidence['web.api'] = `${evidence['web.api']}; ${found.evidence}`;
+        }
+        notes.push(...found.notes);
+      }
       evidence['web.build'] = 'Build script, frontend configuration and static output layout';
       evidence['web.base'] = 'Frontend build/router configuration (or / when unspecified)';
       evidence['web.routes'] ??= 'Frontend router definitions and file-based pages';
@@ -147,7 +158,6 @@ export async function detectProject(root, requested, { configsDir = path.join(sp
     }
   } else notes.push('No package.json in this folder. Select the app subfolder for script detection, or add install/check/build commands manually.');
   if (!config.checks.length) notes.push('No supported check scripts found; add checks manually.');
-  let name = path.basename(repo).toLowerCase().replace(/[^a-z0-9_-]+/g, '-') || 'my-app';
   const candidates = await existingSettings(configsDir, repo, folder);
   const portable = await projectSettings(repo, folder);
   if (portable) { config = mergeSettings(config, portable.config); notes.push(`Applied project-owned settings from ${portable.evidence}.`); }

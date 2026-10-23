@@ -88,7 +88,7 @@ const apiMessages = {
   paths: '`web.api.paths` must list unique same-origin path prefixes such as /api (no trailing slash, query or wildcard)',
   recordFrom: '`web.api.recordFrom` must be an http(s) URL',
   headers: '`web.api.headers` must map header names to strings; use ${NAME} for environment values',
-  backend: '`web.api.backend` needs a `run` command, an http(s) `readyUrl` and optional positive `timeoutMs`',
+  backend: '`web.api.backend` needs a `run` command, an http(s) `readyUrl`, optional positive `timeoutMs` and optional `stop` command',
   apiHeaders: '`web.sessions[].apiHeaders` must map header names to strings; use ${NAME} for environment values',
 };
 
@@ -100,8 +100,9 @@ test('web.api accepts envVar-only and paths-only and fills defaults', () => {
   assert.deepEqual([paths.envVar, paths.paths], [null, ['/api', '/admin/v1']]);
   assert.equal(withApi(undefined).web.api, null);
   const backend = withApi({ paths: ['/api'], backend: { run: 'node server.mjs', readyUrl: 'http://localhost:4010/health' } }).web.api.backend;
-  assert.deepEqual(backend, { run: 'node server.mjs', readyUrl: 'http://localhost:4010/health', timeoutMs: 60_000 });
+  assert.deepEqual(backend, { run: 'node server.mjs', readyUrl: 'http://localhost:4010/health', timeoutMs: 60_000, stop: null });
   assert.equal(withApi({ paths: ['/api'], backend: { run: 'x', readyUrl: 'http://localhost:1/', timeoutMs: 500 } }).web.api.backend.timeoutMs, 500);
+  assert.equal(withApi({ paths: ['/api'], backend: { run: 'x', readyUrl: 'http://localhost:1/', stop: 'docker compose down' } }).web.api.backend.stop, 'docker compose down');
 });
 
 test('web.api rejects each invalid shape with its message', () => {
@@ -113,7 +114,7 @@ test('web.api rejects each invalid shape with its message', () => {
   for (const paths of [[], '/api', ['api'], ['/api/'], ['/'], ['/a?b'], ['/a#b'], ['/a*'], ['/a b'], ['/api', '/api'], [1]]) bad({ paths }, apiMessages.paths);
   for (const recordFrom of ['nope', 'ftp://x', 5, 'http://u:p@host']) bad({ paths: ['/api'], recordFrom }, apiMessages.recordFrom);
   for (const headers of [[], null, 'x', { 'bad name': 'v' }, { a: 1 }, { a: '${' }, { a: '${1X}' }, { a: '${OK} ${' }]) bad({ paths: ['/api'], headers }, apiMessages.headers);
-  for (const backend of [null, 'x', [], { readyUrl: 'http://x/' }, { run: ' ', readyUrl: 'http://x/' }, { run: 'x', readyUrl: 'nope' }, { run: 'x', readyUrl: 'http://x/', timeoutMs: 0 }, { run: 'x', readyUrl: 'http://x/', timeoutMs: 1.5 }, { run: 'x', readyUrl: 'http://x/', extra: 1 }]) {
+  for (const backend of [null, 'x', [], { readyUrl: 'http://x/' }, { run: ' ', readyUrl: 'http://x/' }, { run: 'x', readyUrl: 'nope' }, { run: 'x', readyUrl: 'http://x/', timeoutMs: 0 }, { run: 'x', readyUrl: 'http://x/', timeoutMs: 1.5 }, { run: 'x', readyUrl: 'http://x/', extra: 1 }, { run: 'x', readyUrl: 'http://x/', stop: ' ' }, { run: 'x', readyUrl: 'http://x/', stop: 5 }]) {
     bad({ paths: ['/api'], backend }, apiMessages.backend);
   }
   withApi({ paths: ['/api'], headers: { 'X-Dev-Role': 'Admin', Authorization: 'Bearer ${API_TOKEN}' } });

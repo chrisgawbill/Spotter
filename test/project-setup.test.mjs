@@ -157,3 +157,19 @@ test('relative requests alongside an env-var API add no relative-request note', 
     assert.doesNotMatch(result.notes.join(' '), /Relative API requests/);
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
+
+test('a proxy frontend in a subfolder links to a Node backend elsewhere in the repository', async () => {
+  const f = await fixture();
+  try {
+    await f.write('web/package.json', JSON.stringify({ scripts: { build: 'vite build' }, devDependencies: { vite: '*' } }));
+    await f.write('web/vite.config.js', "export default { server: { proxy: { '/api': 'http://localhost:4020' } } };");
+    await f.write('web/src/main.js', "fetch('/api/items');");
+    await f.write('services/server/package.json', JSON.stringify({ scripts: { start: 'node index.js', seed: 'node seed.js' }, dependencies: { express: '*' } }));
+    await f.write('services/server/package-lock.json', '{}');
+    await f.write('services/server/index.js', "app.get('/healthz', ok); app.listen(4020);");
+    const result = await detectProject(f.root, f.repo, { configsDir: f.configsDir });
+    const api = YAML.parse(result.source).web.api;
+    assert.deepEqual(api.backend, { run: 'cd services/server && npm ci && npm run seed && exec npm run start', readyUrl: 'http://localhost:4020/healthz', timeoutMs: 300000 });
+    assert.match(result.coverage.find((entry) => entry.field === 'web.api').evidence, /dev-server proxy for \/api to a literal target.*; backend inferred from services\/server\/package\.json with health route \/healthz, seed script services\/server\/package\.json seed; review the command/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});

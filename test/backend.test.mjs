@@ -89,3 +89,51 @@ test('SIGTERM while running stops the backend group and exits 143', async () => 
   assert.equal(await exit, 143);
   assert.ok(await waitGone(sleeper));
 });
+
+const readStopped = async (dir) => (await readFile(path.join(dir, 'stopped'), 'utf8')).trim();
+
+test('the stop command runs after the group is gone and is logged', async () => {
+  const dir = await tempDir();
+  const port = await freePort();
+  const logFile = path.join(dir, 'backend.log');
+  const run = await serverCommand(dir, port);
+  const backend = await startBackend({ run, readyUrl: `http://127.0.0.1:${port}/`, timeoutMs: 5000, stop: 'kill -0 $(cat pid) 2>/dev/null && echo alive > stopped || echo gone > stopped', cwd: dir, logFile });
+  await backend.stop();
+  assert.equal(await readStopped(dir), 'gone');
+  assert.match(await readFile(logFile, 'utf8'), /\[spotter\] stop: kill -0/);
+});
+
+test('the stop command also runs on readiness timeout and on startup failure', async () => {
+  const dir = await tempDir();
+  const port = await freePort();
+  await assert.rejects(startBackend({ run: await serverCommand(dir, port, 500), readyUrl: `http://127.0.0.1:${port}/`, timeoutMs: 800, stop: 'kill -0 $(cat pid) 2>/dev/null && echo alive > stopped || echo gone > stopped', cwd: dir, logFile: path.join(dir, 'backend.log') }));
+  assert.equal(await readStopped(dir), 'gone');
+  const failed = await tempDir();
+  await assert.rejects(startBackend({ run: 'exit 1', readyUrl: `http://127.0.0.1:${await freePort()}/`, timeoutMs: 5000, stop: 'echo ran > stopped', cwd: failed, logFile: path.join(failed, 'backend.log') }));
+  assert.equal(await readStopped(failed), 'ran');
+});
+
+test('a failing stop command does not throw and is reported', async () => {
+  const dir = await tempDir();
+  const port = await freePort();
+  const backend = await startBackend({ run: await serverCommand(dir, port), readyUrl: `http://127.0.0.1:${port}/`, timeoutMs: 5000, stop: 'exit 7', cwd: dir, logFile: path.join(dir, 'backend.log') });
+  await backend.stop();
+});
+
+test('SIGTERM runs the stop command after the group is gone and exits 143', async () => {
+  const dir = await tempDir();
+  const port = await freePort();
+  const helper = path.join(dir, 'helper.mjs');
+  await writeFile(helper, `
+    import { startBackend } from ${JSON.stringify(backendUrl)};
+    await startBackend({ run: ${JSON.stringify(await serverCommand(dir, port))}, readyUrl: 'http://127.0.0.1:${port}/', timeoutMs: 5000, stop: 'kill -0 $(cat pid) 2>/dev/null && echo alive > stopped || echo gone > stopped', cwd: ${JSON.stringify(dir)}, logFile: ${JSON.stringify(path.join(dir, 'backend.log'))} });
+    console.log('ready');
+    setInterval(() => {}, 1000);
+  `);
+  const child = spawn(process.execPath, [helper], { stdio: ['ignore', 'pipe', 'inherit'] });
+  const exit = new Promise((resolve) => child.once('exit', (code) => resolve(code)));
+  await new Promise((resolve) => child.stdout.on('data', (chunk) => String(chunk).includes('ready') && resolve()));
+  child.kill('SIGTERM');
+  assert.equal(await exit, 143);
+  assert.equal(await readStopped(dir), 'gone');
+});

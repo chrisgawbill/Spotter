@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Host backend example</title>
+</head>
+<body>
+  <main aria-busy="true">
+    <h1>Items</h1>
+    <p id="status" role="status">Loading…</p>
+    <ul id="items"></ul>
+  </main>
+  <script>
+    fetch('/api/items', { headers: { Accept: 'application/json' } })
+      .then((response) => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); })
+      .then((items) => {
+        document.getElementById('items').replaceChildren(...items.map((item) => Object.assign(document.createElement('li'), { textContent: item.name })));
+        document.getElementById('status').textContent = `${items.length} items`;
+      })
+      .catch(() => { document.getElementById('status').textContent = "Couldn't load items"; })
+      .finally(() => document.querySelector('main').removeAttribute('aria-busy'));
+  </script>
+</body>
+</html>

@@ -13,6 +13,10 @@ mkdir -p "$spotter_home"
 if [[ ${1:-} == build-image ]]; then
   exec docker build -t "$image" "$spotter_dir"
 fi
+# Backends needing host tools: start them here, record in the container (src/host-record.mjs).
+if [[ ${1:-} == record && " ${*:2} " == *' --host-backend '* ]]; then
+  exec node "$spotter_dir/src/host-record.mjs" "${@:2}"
+fi
 if ! docker image inspect "$image" >/dev/null 2>&1; then
   echo "Building $image (first run)..." >&2
   docker build -q -t "$image" "$spotter_dir" >/dev/null

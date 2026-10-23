@@ -10,6 +10,7 @@ bin/spotter run my-app --ref feature/my-change      # writes report.md; exit 1 =
 bin/spotter run my-app --repo ~/worktrees/x --working-tree   # another clone, uncommitted changes included
 bin/spotter run my-app --ref feature/x --level low         # testing level: low, medium or high
 bin/spotter record my-app                           # (re)record API fixtures from the live API (or web.api.backend)
+bin/spotter record my-app --host-backend            # start web.api.backend on this host (tools the image lacks)
 bin/spotter prune my-app --dry-run                  # list old runs and cache entries that cleanup would delete
 bin/spotter list
 SPOTTER_TAILSCALE_IP="$(tailscale ip -4)" bin/spotter dashboard # Tailscale-only dashboard
@@ -51,7 +52,7 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `rules.importBoundaries[]` | `id`, `root` (slices directory), `aliases`, `allow[]` of `{ from, to }` (`to` may be a path inside a slice; `*` = any) |
 | `web.build` | `run`, `outDir`, `env` |
 | `web.base` | Base path the app is served under |
-| `web.api` | `envVar` the build reads the API origin from and/or `paths` (same-origin prefixes such as `/api`, intercepted in the browser); `recordFrom` live API for `record`; optional record-only `headers` (`${NAME}` = environment value) and `backend` `{ run, readyUrl, timeoutMs }`. See [same-origin APIs](docs/browser-checks.md#same-origin-apis-and-recording) |
+| `web.api` | `envVar` the build reads the API origin from and/or `paths` (same-origin prefixes such as `/api`, intercepted in the browser); `recordFrom` live API for `record`; optional record-only `headers` (`${NAME}` = environment value) and `backend` `{ run, readyUrl, timeoutMs, stop }` (`record --host-backend` starts it on the host). See [same-origin APIs](docs/browser-checks.md#same-origin-apis-and-recording) |
 | `web.routes[]` | `{ name, path }` (hash routes include `#/`) |
 | `web.viewports`, `web.colorSchemes` | Widths (or `{ width, height }`) and `light`/`dark` |
 | `web.sessions` | Additional `{ name, localStorage }` or `{ name, storageState, storageOrigin }` sessions; anonymous visits always run. Optional `expectSelector` must match on every sweep visit of that session, proving it reached its signed-in state; optional `apiHeaders` override `web.api.headers` while recording that session |

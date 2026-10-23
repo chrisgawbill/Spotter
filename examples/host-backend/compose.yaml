@@ -1,0 +1,10 @@
+# Data service the example API reads from. Docker is not in the Spotter image,
+# so this backend can only start on the host: bin/spotter record <name> --host-backend.
+services:
+  data:
+    image: python:3.12-slim
+    command: python -m http.server 8000 -d /data
+    volumes:
+      - ./data:/data:ro
+    ports:
+      - "127.0.0.1:4021:8000"

@@ -1,0 +1,23 @@
+# Example config for an API that needs a host-only service (Docker Compose).
+# Copy to projects/<name>.yml, set repo to the checkout, then:
+#   bin/spotter record <name> --host-backend
+repo: /home/user/projects/Spotter
+baseBranch: main
+workdir: examples/host-backend
+web:
+  build:
+    run: mkdir -p dist && cp index.html dist/index.html
+    outDir: dist
+  api:
+    paths: [/api]
+    recordFrom: http://127.0.0.1:4020
+    # Run on the host from the recorded ref's checkout root; stop runs after the process group is gone.
+    backend:
+      run: docker compose -p spotter-host-backend-example -f examples/host-backend/compose.yaml up -d --wait && exec node examples/host-backend/server.mjs
+      readyUrl: http://127.0.0.1:4020/health
+      timeoutMs: 60000
+      stop: docker compose -p spotter-host-backend-example -f examples/host-backend/compose.yaml down -v
+  routes:
+    - { name: home, path: / }
+  viewports: [375]
+  errorText: ["Couldn't load"]

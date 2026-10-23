@@ -29,10 +29,11 @@ const USAGE = `Spotter — automatic QA that reports what is new on a branch.
       --working-tree includes uncommitted changes. Prints report.md; exit 1 if anything new is high
       or medium, 3 if coverage is incomplete, 2 if Spotter itself failed.
       --level picks a testing level (default: the project's levels.default).
-  spotter record <project> [--ref <ref>] [--repo <path>] [--merge]
+  spotter record <project> [--ref <ref>] [--repo <path>] [--merge] [--host-backend]
       Visit every route against the live API (starting web.api.backend first when
       configured) and store its responses as the fixtures runs replay. --merge keeps
-      existing entries and adds new ones.
+      existing entries and adds new ones. --host-backend (bin/spotter) starts the
+      backend on this machine instead of in the container.
   spotter prune [<project>] [--dry-run] [--keep-runs <n>] [--keep-baselines <n>]
       Delete older runs, unused baseline cache entries and leftover work folders.
       In-progress runs and runs/latest are kept. Defaults come from
@@ -64,6 +65,7 @@ export function parseArguments(argv) {
     else if (flag === '--no-baseline') options.noBaseline = true;
     else if (flag === '--live-auth') options.liveAuth = true;
     else if (flag === '--merge') options.merge = true;
+    else if (flag === '--backend-running') options.backendRunning = true;
     else if (flag === '--dry-run') options.dryRun = true;
     else if (flag === '--keep-runs') options.keepRuns = flags[++index];
     else if (flag === '--keep-baselines') options.keepBaselines = flags[++index];
@@ -269,7 +271,8 @@ async function recordProject(config, options) {
     const backendConfig = config.web.api.backend;
     const backendLog = path.join(logDir, 'backend.log');
     let backend = null;
-    if (backendConfig) {
+    if (backendConfig && options.backendRunning) log('using the backend started on the host');
+    else if (backendConfig) {
       log(`starting backend: ${backendConfig.run}`);
       backend = await startBackend({ ...backendConfig, cwd: exportDir, logFile: backendLog })
         .catch((error) => { throw new Error(`${error.message}; see ${toHostPath(backendLog)}`); });

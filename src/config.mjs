@@ -134,7 +134,7 @@ function normalizeWebConfig(web) {
       fakeOrigin: 'http://api.spotter.test', envVar: null, recordFrom: null, headers: {},
       ...web.api,
       paths: web.api.paths ?? [],
-      backend: web.api.backend ? { timeoutMs: 60_000, ...web.api.backend } : null,
+      backend: web.api.backend ? { timeoutMs: 60_000, stop: null, ...web.api.backend } : null,
     } : null,
     routes: web.routes.map((route) => (typeof route === 'string' ? { name: route, path: route } : route)),
   };
@@ -166,10 +166,11 @@ function apiProblems(api) {
   if (api.recordFrom !== undefined && !isHttpUrl(api.recordFrom)) problems.push('`web.api.recordFrom` must be an http(s) URL');
   if (api.headers !== undefined && !validHeaders(api.headers)) problems.push(`\`web.api.headers\` ${HEADERS_MESSAGE}`);
   const backend = api.backend;
-  if (backend !== undefined && !(isPlainObject(backend) && Object.keys(backend).every((key) => ['run', 'readyUrl', 'timeoutMs'].includes(key))
+  if (backend !== undefined && !(isPlainObject(backend) && Object.keys(backend).every((key) => ['run', 'readyUrl', 'timeoutMs', 'stop'].includes(key))
     && typeof backend.run === 'string' && backend.run.trim() && isHttpUrl(backend.readyUrl)
-    && (backend.timeoutMs === undefined || (Number.isSafeInteger(backend.timeoutMs) && backend.timeoutMs > 0)))) {
-    problems.push('`web.api.backend` needs a `run` command, an http(s) `readyUrl` and optional positive `timeoutMs`');
+    && (backend.timeoutMs === undefined || (Number.isSafeInteger(backend.timeoutMs) && backend.timeoutMs > 0))
+    && (backend.stop === undefined || (typeof backend.stop === 'string' && backend.stop.trim())))) {
+    problems.push('`web.api.backend` needs a `run` command, an http(s) `readyUrl`, optional positive `timeoutMs` and optional `stop` command');
   }
   return problems;
 }

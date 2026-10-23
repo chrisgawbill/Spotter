@@ -95,6 +95,20 @@ Seeding and reset belong in the command. Its output is in
 `<fixtures>/logs/backend.log`. Sweeps never start it. The Spotter image provides
 Node only, and the container shares the host network.
 
+Optional `stop` runs after the process tree is gone, from the same folder, on
+every exit path (limit 120 s), for services that outlive it, such as
+`docker compose -p spotter-my-app -f api/compose.yaml down -v`. A failing stop
+command is reported on stderr with the log path.
+
+A backend that needs tools the image lacks (.NET, Docker Compose, databases) is
+started on the host instead: `bin/spotter record my-app --host-backend`. The
+host exports the ref with `git archive`, prints the `run` and `stop` commands,
+starts the backend with the host's Node (18+; run `npm ci` in the Spotter
+checkout once), records in the container against it, and stops it on success,
+failure, timeout and Ctrl-C. Only this command-line flag enables host
+execution; no configuration field (and so no dashboard edit) can, and the
+dashboard never records. See [`examples/host-backend`](../examples/host-backend/project.yml).
+
 A same-origin request that asks for data (fetch/XHR or `Accept: …json`) and
 receives the app's HTML page means the API was neither replayed nor recorded.
 Each such endpoint is a high `api-not-replayed` finding, and the run is
@@ -103,6 +117,15 @@ the base has the same problem. Configure `web.api.paths` and record, or add an
 intended request to `web.ignoreRequests`. Generated setups propose `paths` and
 `recordFrom` from a Vite `server.proxy`, and note relative request paths when no
 API was found.
+
+Generated setups also propose `backend` when exactly one backend in the
+repository serves `recordFrom`: a .NET web project (its launch-profile URL) or a
+Node package with a `start`/`dev` script and a server framework. They add a
+literal `/health` route as `readyUrl`, the nearest Compose file's image-only
+services (`up -d --wait`, with `down -v` as `stop`, under project name
+`spotter-<name>`), EF migrations when a `dotnet-ef` tool manifest exists, and a
+`seed`/`reset` script when one is found; otherwise a note says recordings will
+reflect an empty database. Detection only reads files. Headers are never inferred.
 
 See [`examples/same-origin-api`](../examples/same-origin-api/project.yml) for a
 complete example.

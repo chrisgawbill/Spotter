@@ -34,7 +34,7 @@ ticket.
 | [QA-24](#qa-24--project-started-backend-for-recording) | ACTIVE | Local recording source |
 | [QA-25](#qa-25--recording-request-headers) | ACTIVE | Recording protected APIs |
 | [QA-26](#qa-26--incomplete-when-api-traffic-is-not-replayed) | ACTIVE | Trustworthy pass without fixtures |
-| [QA-27](#qa-27--host-started-recording-backend-and-backend-detection) | IDEA | Recording backends with their own toolchain |
+| [QA-27](#qa-27--host-started-recording-backend-and-backend-detection) | ACTIVE | Recording backends with their own toolchain |
 
 Statuses and acceptance below are recorded decisions. Historical test output is
 in [ticket evidence](ticket-evidence.md); usage instructions are in the [README](../README.md).
@@ -893,7 +893,7 @@ independent.
 
 ## QA-27 — Host-started recording backend and backend detection
 
-**Status:** IDEA
+**Status:** ACTIVE — started by Product Owner 2026-10-23 (alone).
 
 **Goal:** Let `spotter record` start a project's real API when it needs a
 toolchain or services the Spotter image lacks (for example .NET with Postgres in
