@@ -1,7 +1,7 @@
 import { summarizeCompleteness } from './completeness.mjs';
 import { SEVERITIES } from './findings.mjs';
 
-const STAGE_ORDER = ['static', 'rules', 'web'];
+const STAGE_ORDER = ['static', 'rules', 'web', 'config'];
 const MAX_GROUPS_SHOWN = 25;
 const MAX_DETAIL_LINES = 3;
 const MAX_PLACES_SHOWN = 6;
@@ -127,6 +127,8 @@ function renderStageSummary(run) {
       lines.push(`- static: ${summary.map((check) => `${check.name} ${check.status}${check.count ? ` (${check.count})` : ''}`).join(' · ') || 'no checks'}`);
     } else if (stage === 'rules') {
       lines.push(`- rules: ${summary.ruleCount} text rules, ${summary.boundaryCount} import boundaries`);
+    } else if (stage === 'config') {
+      lines.push(`- config: ${summary.error ? `setup inference failed: ${summary.error}` : summary.missing ? `${summary.missing} inferred settings missing from the configuration` : 'matches setup inference'}`);
     } else if (stage === 'web') {
       if (summary.specs?.mode === 'live') {
         lines.push(`- live authentication: ${summary.specs.passed} passed, ${summary.specs.failed} failed, ${summary.specs.skipped} skipped (deployed app; no sweep)`);

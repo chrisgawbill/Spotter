@@ -62,7 +62,7 @@ test('low narrows checks, routes, matrix, faults and specs without mutating the 
   assert.equal(JSON.stringify(config), before);
   assert.notEqual(plan.config, config);
   assert.deepEqual(plan.config.checks.map((c) => c.name), ['typecheck']);
-  assert.deepEqual([...plan.skip], ['rules']);
+  assert.deepEqual([...plan.skip], ['rules', 'config']);
   assert.deepEqual(plan.config.web.routes.map((r) => r.name), ['home', 'more']);
   assert.deepEqual(plan.config.web.viewports, [375]);
   assert.deepEqual(plan.config.web.colorSchemes, ['light']);
@@ -70,7 +70,7 @@ test('low narrows checks, routes, matrix, faults and specs without mutating the 
   assert.equal(plan.config.web.specs, undefined);
   assert.equal(plan.config.web.sessions, config.web.sessions);
   assert.deepEqual(plan.record.exclusions, [
-    E('unit', 'check'), E('format', 'check'), E('rules', 'stage'), E('about', 'route'),
+    E('unit', 'check'), E('format', 'check'), E('rules', 'stage'), E('config', 'stage'), E('about', 'route'),
     E('1280', 'viewport'), E('dark', 'colorScheme'), E('fault visits', 'faults'), E('specs', 'specs'),
   ]);
   assert.deepEqual(plan.record.unsupported, []);
@@ -78,7 +78,7 @@ test('low narrows checks, routes, matrix, faults and specs without mutating the 
 
 test('required items survive low and narrowed specs drop minSpecs', () => {
   const kept = resolvePlan(make({ required: ['rules', 'specs'], minSpecs: 2 }), 'low');
-  assert.deepEqual(kept.skip.size, 0);
+  assert.deepEqual([...kept.skip], ['config']);
   assert.deepEqual(kept.config.web.specs, { files: ['a.spec.mjs'], grep: 'all' });
   assert.equal(kept.config.coverage.minSpecs, 2);
   assert.ok(!kept.record.exclusions.some((e) => ['rules', 'specs', 'minSpecs'].includes(e.name)));
@@ -102,7 +102,7 @@ test('plan hash is stable and differs between levels', () => {
 test('summarizePlan renders low and no-level lines', () => {
   const config = make({ levels: { low: { routes: ['home'] } } });
   assert.equal(summarizePlan(resolvePlan(config, 'low')),
-    'level low (selected) · 1 checks · no rules · 1 routes × 1 viewports × 1 schemes × 1 sessions · excluded: unit, format, rules, about, more, 1280, dark, fault visits, specs');
+    'level low (selected) · 1 checks · no rules · 1 routes × 1 viewports × 1 schemes × 1 sessions · excluded: unit, format, rules, config, about, more, 1280, dark, fault visits, specs');
   assert.equal(summarizePlan(resolvePlan(config, undefined)),
     'no level · 3 checks · rules · 3 routes × 2 viewports × 2 schemes × 1 sessions + fault visits · specs (grep all)');
   assert.match(summarizePlan(resolvePlan(config, 'high')), /unsupported: browser matrix \(QA-12\), .*performance budgets \(QA-15\)$/);

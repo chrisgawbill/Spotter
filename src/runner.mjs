@@ -1,12 +1,13 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { compareWithInference, inferWebSettings } from './config-drift.mjs';
 import { dedupeFindings } from './findings.mjs';
 import { exportCommit, exportWorkingTree } from './git.mjs';
 import { runRulesStage } from './stages/rules.mjs';
 import { runStaticStage } from './stages/static.mjs';
 import { runWebStage } from './stages/web.mjs';
 
-export const STAGES = ['static', 'rules', 'web'];
+export const STAGES = ['static', 'rules', 'web', 'config'];
 
 /**
  * Runs every enabled stage on one side of the comparison (the branch head or
@@ -27,6 +28,21 @@ export async function runSide({ config, sha, sideDir, workRoot, fixtures, change
   const findings = [];
   const stages = {};
   try {
+    if (config.web && config.web.specs?.mode !== 'live') {
+      if (skip.has('config')) stages.config = 'skipped';
+      else {
+        log('config inference');
+        try {
+          const drift = compareWithInference(config.web, await inferWebSettings(exportDir, workdir));
+          findings.push(...drift);
+          stages.config = { missing: drift.length };
+        } catch (error) {
+          stages.config = { error: error.message };
+        }
+        log('config inference', 'done');
+      }
+    }
+
     log('static checks');
     if (skip.has('static')) stages.static = 'skipped';
     const staticResult = await runStaticStage({ config: skip.has('static') ? { ...config, checks: [] } : config, workdir, logDir, log });

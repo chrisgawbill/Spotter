@@ -37,7 +37,7 @@ ticket.
 | [QA-27](#qa-27--host-started-recording-backend-and-backend-detection) | ACTIVE | Recording backends with their own toolchain |
 | [QA-28](#qa-28--detect-hand-written-hash-routes-in-setup) | ACTIVE | Setup inference for custom hash routing |
 | [QA-29](#qa-29--report-fixtures-recorded-from-an-empty-backend) | IDEA | Trustworthy pass with empty fixtures |
-| [QA-30](#qa-30--stale-project-configuration-warning) | IDEA | Config drift from the tested branch |
+| [QA-30](#qa-30--stale-project-configuration-warning) | ACTIVE | Config drift from the tested branch |
 | [QA-31](#qa-31--consistent-report-counts) | ACTIVE | Report accuracy |
 | [QA-32](#qa-32--expected-api-statuses) | IDEA | Fewer false API-error findings |
 
@@ -1031,7 +1031,7 @@ and listed four expected "no document yet" 404s as new API errors.
 
 ## QA-30 — Stale project configuration warning
 
-**Status:** IDEA — proposed 2026-10-23 from the triple-crown `creature-bench`
+**Status:** ACTIVE — proposed 2026-10-23 from the triple-crown `creature-bench`
 report review.
 
 **Goal:** A run warns when setup inference on the tested head would propose web

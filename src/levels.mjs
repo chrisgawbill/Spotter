@@ -72,6 +72,8 @@ function narrowToLow(config, skip, exclusions) {
     skip.add('rules');
     exclude('rules', 'stage');
   }
+  skip.add('config');
+  exclude('config', 'stage');
   const narrowed = { ...config, checks };
   const web = config.web;
   if (!web) return narrowed;

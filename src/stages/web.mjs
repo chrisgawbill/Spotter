@@ -5,6 +5,7 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { lastLines, runCommand } from '../exec.mjs';
+import { findIneffectiveSchemes } from '../config-drift.mjs';
 import { createFinding } from '../findings.mjs';
 import { apiRequestMatcher, recordFixtures, recordingHeaders, replayFixtures } from '../fixtures.mjs';
 import { startStaticServer } from '../staticServer.mjs';
@@ -70,7 +71,8 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
     if (mode === 'sweep' && web.specs) log('project specs');
     const specs = mode === 'sweep' && web.specs ? await runSpecsStage({ config, workdir, logDir, fixtures, appOrigin: server.origin }) : null;
     if (specs) log('project specs', 'done');
-    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
+    const schemeFindings = mode === 'sweep' ? await findIneffectiveSchemes(web, results) : [];
+    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(schemeFindings, specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
   } finally {
     await browser?.close();
     await server.close();
@@ -131,6 +133,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
   let loading = [];
   let blank = false;
   let sessionCheck = null;
+  let screenshot = null;
   const storageState = await sessionStorageState(session, appOrigin, web.colorSchemeStorage?.[colorScheme]);
   const secrets = session.storageState ? [...storageState.cookies.map((cookie) => cookie.value), ...storageState.origins.flatMap((origin) => origin.localStorage.map((entry) => entry.value))] : [];
   const sessionFixtures = session.name === 'anonymous' ? fixtures : { ...fixtures, entries: fixtures?.sessions?.[session.name] ?? {} };
@@ -210,7 +213,10 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
         if (web.accessibility) await runAccessibility(page, axePath, report);
       }
       const screenshotFile = path.join(screenshotDir, `${screenshotName}.png`);
-      if (!session.storageState) await page.screenshot({ path: screenshotFile, fullPage: true, animations: 'disabled' });
+      if (!session.storageState) {
+        await page.screenshot({ path: screenshotFile, fullPage: true, animations: 'disabled' });
+        screenshot = screenshotFile;
+      }
       if (!fault && web.keyboard) await runKeyboardSmoke(page, report);
       problems.forEach((problem) => (problem.artifacts = session.storageState ? [] : [screenshotFile]));
     }
@@ -225,7 +231,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
 
   if (mode === 'record') return { findings: [] };
   return {
-    requests: [...requests], apiNotReplayed: [...notReplayed], job, loading, blank, where, sessionCheck,
+    requests: [...requests], apiNotReplayed: [...notReplayed], job, loading, blank, where, sessionCheck, screenshot,
     findings: redactSecrets(problems, secrets).map((problem) =>
       createFinding({
         stage: 'web',

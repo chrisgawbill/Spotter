@@ -23,7 +23,7 @@ import { runWebStage } from './stages/web.mjs';
 
 const USAGE = `Spotter — automatic QA that reports what is new on a branch.
 
-  spotter run <project> [--ref <ref>] [--repo <path>] [--working-tree] [--no-baseline] [--live-auth] [--skip static,rules,web] [--level low|medium|high]
+  spotter run <project> [--ref <ref>] [--repo <path>] [--working-tree] [--no-baseline] [--live-auth] [--skip static,rules,web,config] [--level low|medium|high]
       Check <ref> (default: the checkout's HEAD) against its merge base with
       the base branch. --repo checks another clone or worktree of the project;
       --working-tree includes uncommitted changes. Prints report.md; exit 1 if anything new is high
