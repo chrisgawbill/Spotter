@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 import { mkdir, readFile, readdir, realpath, stat, writeFile, lstat, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { browseProjects, detectProject } from './project-setup.mjs';
 import { listProjectNames, loadProjectConfig, normalizeConfig } from './config.mjs';
 import { spotterHome, spotterRoot } from './paths.mjs';
@@ -221,10 +221,13 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
           metadata.pid = process.pid;
           await writeFile(path.join(directory, 'activity.json'), JSON.stringify(metadata));
           const output = openSync(path.join(directory, 'runner.log'), 'a');
+          // HOME may be the read-only SSH home used for fetches; runs need a writable one (Firefox profiles).
+          const runHome = path.join(tmpdir(), 'home');
+          await mkdir(runHome, { recursive: true });
           let child;
           try {
             child = launch(process.execPath, [path.join(spotterRoot, 'src/cli.mjs'), 'run', project, '--ref', branch, ...(level ? ['--level', level] : [])], {
-              env: { ...process.env, SPOTTER_HOME: home, SPOTTER_RUN_ID: id }, stdio: ['ignore', output, output],
+              env: { ...process.env, HOME: runHome, SPOTTER_HOME: home, SPOTTER_RUN_ID: id }, stdio: ['ignore', output, output],
             });
           } finally { closeSync(output); }
           children.add(child);

@@ -35,6 +35,7 @@ test('dashboard launches only listed branches, follows activity and confines rep
     assert.equal(response.status, 202);
     const { id } = await response.json();
     assert.deepEqual(launched[1].slice(-4), ['run', 'demo', '--ref', branch]);
+    assert.equal(launched[2].env.HOME, path.join(tmpdir(), 'home'), 'runs get a writable HOME, not the SSH home');
     assert.equal((await post({ project: 'demo', branch })).status, 409);
     const directory = path.join(home, 'demo/runs', id);
     const activity = createActivity(directory, { project: 'demo', branch });
