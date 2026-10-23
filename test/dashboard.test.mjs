@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, writeFile, symlink, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, symlink, rm, readdir, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -14,7 +14,8 @@ test('dashboard launches only listed branches, follows activity and confines rep
   const home = await mkdtemp(path.join(tmpdir(), 'spotter-dashboard-'));
   let launched;
   let child;
-  const server = createDashboardServer({ branchRefreshMs: 0, home, projectNames: async () => ['demo'],
+  const pdfCalls = [];
+  const server = createDashboardServer({ branchRefreshMs: 0, home, renderPdf: async (file, root) => { pdfCalls.push([file, root]); return Buffer.from('%PDF-fake'); }, projectNames: async () => ['demo'],
     loadConfig: async () => ({ repo: path.resolve('.'), baseBranch: 'main' }),
     launch: (...args) => { launched = args; child = new EventEmitter(); child.pid = process.pid; return child; },
   });
@@ -70,6 +71,19 @@ test('dashboard launches only listed branches, follows activity and confines rep
     await writeFile(path.join(home, 'outside.log'), 'private');
     assert.equal((await get(completed.report.replace('report.html', 'escape.log'))).status, 404);
     assert.equal((await get('/artifacts/demo/latest/report.html')).status, 404);
+    const pdf = await get(completed.report.replace('report.html', 'report.pdf'));
+    assert.equal(pdf.status, 200);
+    assert.equal(pdf.headers.get('content-type'), 'application/pdf');
+    assert.equal(pdf.headers.get('content-disposition'), `attachment; filename="spotter-demo-${id}.pdf"`);
+    assert.match(pdf.headers.get('content-security-policy'), /sandbox/);
+    assert.equal(await pdf.text(), '%PDF-fake');
+    const realRoot = await realpath(directory);
+    assert.deepEqual(pdfCalls, [[path.join(realRoot, 'report.html'), realRoot]]);
+    await mkdir(path.join(home, 'demo/runs/bare'));
+    assert.equal((await get('/artifacts/demo/bare/report.pdf')).status, 404);
+    assert.equal((await get('/artifacts/demo/latest/report.pdf')).status, 404);
+    assert.equal((await get('/artifacts/demo/../report.pdf')).status, 404);
+    assert.equal(pdfCalls.length, 1);
     assert.equal((await get('/demo/fixtures/api.json')).status, 404);
     assert.equal((await get('/core.css')).status, 200);
     assert.match(await (await get('/')).text(), /Spotter/);

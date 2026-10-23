@@ -39,7 +39,8 @@ test('report leads with the result and lists new findings with place and repro',
 test('HTML escapes report content and keeps image URLs relative', async () => {
   const { renderHtmlReport } = await import('../src/htmlReport.mjs');
   const html = renderHtmlReport({
-    project: '<script>bad</script>', comparison: { newFindings: [] },
+    project: '<script>bad</script>', head: { label: 'x', shortSha: 'abc', stages: {} }, base: null, durationMs: 1000,
+    comparison: { newFindings: [], existingFindings: [], fixedFindings: [] },
     visual: { status: 'compared', unchanged: 1, changes: [{ name: 'a & b.png', status: 'added', after: 'screenshots/a & b.png' }] },
   }, '<img src=x onerror=bad>');
   assert.ok(!html.includes('<script>'));
@@ -151,4 +152,24 @@ test('coverage notes follow the RESULT line in markdown and appear in the HTML c
   assert.ok(renderHtmlReport(run, markdown).includes(`<h2>Coverage</h2><p>COMPLETE`));
   assert.ok(renderHtmlReport(run, markdown).includes(`<p>Note: ${note}</p>`));
   assert.doesNotMatch(renderMarkdownReport(coverageRun(completeness('complete', []))), /coverage note/);
+});
+
+test('HTML report shows the result banner, findings table, evidence and links', async () => {
+  const { renderHtmlReport } = await import('../src/htmlReport.mjs');
+  const finding = (severity, extra = {}) => createFinding({ stage: 'static', check: 'typecheck', severity, title: '<b>bad</b> type', file: 'a.ts', line: 3, repro: 'tsc', ...extra });
+  const render = (comparison, completeness) => renderHtmlReport({ ...countsRun(comparison), completeness }, 'md');
+  assert.match(render({}), /<p class="result result-pass"><strong>PASS<\/strong> — nothing new/);
+  assert.match(render({ newFindings: [finding('high')] }), /<p class="result result-fail"><strong>FAIL<\/strong>/);
+  assert.match(render({}, completeness('incomplete', ['g'])), /<p class="result result-incomplete"><strong>INCOMPLETE<\/strong>/);
+  assert.match(render({}), /<h2>New on this branch<\/h2><p>Nothing new\.<\/p>/);
+  const html = render({ newFindings: [finding('high'), finding('low', { title: 'plain', file: 'b.ts', artifacts: ['/r/screenshots/s one.png'] })] });
+  assert.match(html, /<h2>New on this branch \(2\)<\/h2><div class="table-wrap"><table class="findings">/);
+  assert.match(html, /<span class="badge sev-high">high<\/span>/);
+  assert.match(html, /<strong>&lt;b&gt;bad&lt;\/b&gt; type<\/strong><div class="muted">static\/typecheck<\/div>/);
+  assert.match(html, /repro: <code>tsc<\/code>/);
+  assert.equal(html.match(/<h3>/g).length, 1);
+  assert.match(html, /<h3>plain<\/h3>.*screenshots\/s%20one\.png/);
+  assert.match(html, /<p><a href="report\.md">Markdown<\/a>.*?<\/p>\n?/);
+  assert.doesNotMatch(render({}), /<h3>/);
+  assert.match(html, /<details class="plain"><summary>Plain-text report/);
 });

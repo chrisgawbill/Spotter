@@ -196,6 +196,7 @@ async function refresh() {
       $('report-section').hidden = !run.report;
       if (run.report && $('report').dataset.report !== run.report) {
         $('report').dataset.report = run.report;
+        $('download-report').href = reportUrl('pdf');
         $('report').src = `${run.report}?embed`;
         void showFormat(format);
       }

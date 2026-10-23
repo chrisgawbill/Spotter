@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, writeFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -57,6 +57,9 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
       await page.waitForFunction((text) => document.querySelector('#copy-message').textContent === text, `Copied the full ${format} report.`);
       assert.match(await page.evaluate(() => navigator.clipboard.readText()), expected);
     }
+    const [download] = await Promise.all([page.waitForEvent('download'), page.click('#download-report')]);
+    assert.match(download.suggestedFilename(), /^spotter-dashboard-demo-.+\.pdf$/);
+    assert.equal((await readFile(await download.path())).subarray(0, 4).toString(), '%PDF');
     const first = page.url();
     await page.getByRole('link', { name: 'Configurations', exact: true }).click();
     await page.waitForSelector('#config-page:not([hidden])');

@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { mkdir, readFile, readdir, realpath, stat, writeFile, lstat, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { homedir, tmpdir } from 'node:os';
 import { browseProjects, detectProject } from './project-setup.mjs';
@@ -81,8 +82,22 @@ export async function fixtureAdvice(home, config, branch) {
   return { reason, command: `bin/spotter record ${config.name} --ref ${ref}${recorded ? ' --merge' : ''}${config.web.api.backend ? ' --host-backend' : ''}` };
 }
 
+// ponytail: each download launches its own Chromium; a shared browser or a cache is the upgrade if downloads become frequent.
+export async function renderReportPdf(file, root) {
+  const { chromium } = await import('playwright'); // loaded on demand: Playwright exits at import on Node < 20
+  const browser = await chromium.launch();
+  try {
+    const page = await (await browser.newContext({ javaScriptEnabled: false })).newPage();
+    const allowed = `${pathToFileURL(root).href}/`;
+    await page.route('**/*', (route) => route.request().url().startsWith(allowed) ? route.continue() : route.abort());
+    await page.goto(pathToFileURL(file).href);
+    await page.evaluate(() => Promise.all([...document.images].map((image) => { image.loading = 'eager'; return image.decode().catch(() => {}); })));
+    return await page.pdf({ format: 'A4', printBackground: true });
+  } finally { await browser.close(); }
+}
+
 /** No shell is involved in run control. Only configured projects and listed branches are accepted. */
-export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn, branchRefreshMs = 60_000, projectsRoot = process.env.SPOTTER_PROJECTS_ROOT ?? path.join(homedir(), 'projects'), configsDir = path.join(spotterRoot, 'projects'), env = process.env } = {}) {
+export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn, branchRefreshMs = 60_000, projectsRoot = process.env.SPOTTER_PROJECTS_ROOT ?? path.join(homedir(), 'projects'), configsDir = path.join(spotterRoot, 'projects'), env = process.env, renderPdf = renderReportPdf } = {}) {
   let starting = false;
   let editing = false;
   const children = new Set();
@@ -314,6 +329,14 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
         const root = await realpath(path.join(home, project, 'runs', id));
         const runsRoot = await realpath(path.join(home, project, 'runs'));
         if (!root.startsWith(`${runsRoot}${path.sep}`)) return send(404, { error: 'Artifact not found' });
+        if (parts.length === 1 && parts[0] === 'report.pdf') {
+          const html = await realpath(path.join(root, 'report.html')).catch((error) => { if (error.code !== 'ENOENT') throw error; return null; });
+          if (!html || !html.startsWith(`${root}${path.sep}`)) return send(404, { error: 'Artifact not found' });
+          const pdf = await renderPdf(html, root);
+          res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'");
+          res.setHeader('Content-Disposition', `attachment; filename="spotter-${project}-${id}.pdf"`);
+          return send(200, pdf, 'application/pdf');
+        }
         const file = await realpath(path.join(root, ...parts));
         if (!file.startsWith(`${root}${path.sep}`)) return send(404, { error: 'Artifact not found' });
         if ((await stat(file)).isDirectory()) {

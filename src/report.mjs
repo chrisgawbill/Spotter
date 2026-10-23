@@ -19,23 +19,27 @@ function notChecked(run) {
   return gaps;
 }
 
+/** 'INCOMPLETE' when coverage has gaps, 'FAIL' on any non-low new finding, else 'PASS'. */
+export function resultOf(run) {
+  if (run.completeness?.status === 'incomplete') return 'INCOMPLETE';
+  return run.comparison.newFindings.some((finding) => finding.severity !== 'low') ? 'FAIL' : 'PASS';
+}
+
 /**
  * Renders the agent-facing markdown report. `run` holds head/base labels,
  * the comparison split, stage summaries, timings and artifact paths.
  */
 export function renderMarkdownReport(run) {
   const { comparison } = run;
-  const incomplete = run.completeness?.status === 'incomplete';
-  const blocking = comparison.newFindings.filter((finding) => finding.severity !== 'low');
   const lines = [
     `# Spotter: ${run.project}`,
     '',
     `head: ${run.head.label} @ ${run.head.shortSha} · base: ${describeBase(run)} · ${formatDuration(run.durationMs)}`,
-    `RESULT: ${incomplete ? 'INCOMPLETE' : blocking.length ? 'FAIL' : 'PASS'} — ${describeCounts(comparison)}`,
+    `RESULT: ${resultOf(run)} — ${describeCounts(comparison)}`,
     ...(run.completeness?.notes ?? []).map((note) => `coverage note: ${note}`),
     '',
   ];
-  if (incomplete) lines.push(`## Incomplete coverage (${run.completeness.gaps.length})`, '', ...run.completeness.gaps.map((gap) => `- ${gap}`), '');
+  if (run.completeness?.status === 'incomplete') lines.push(`## Incomplete coverage (${run.completeness.gaps.length})`, '', ...run.completeness.gaps.map((gap) => `- ${gap}`), '');
 
   const groups = groupFindings(comparison.newFindings);
   if (groups.length) {
@@ -101,7 +105,7 @@ function renderGroup(group, number, variantCount) {
  * Where a group occurs: `file:lines` for code, `route @ variants` for pages
  * ("all" when every viewport × scheme is affected). Long lists are cut short.
  */
-function renderPlace(group, variantCount) {
+export function renderPlace(group, variantCount) {
   const places = new Map();
   for (const member of group.members) {
     const [place, detail] = member.file ? [member.file, member.line] : (member.where ?? '').split(' @');
@@ -119,7 +123,7 @@ function renderPlace(group, variantCount) {
   return rendered.length > MAX_PLACES_SHOWN ? `${shown} · +${rendered.length - MAX_PLACES_SHOWN} more` : shown;
 }
 
-function renderStageSummary(run) {
+export function renderStageSummary(run) {
   const lines = [];
   for (const [stage, summary] of Object.entries(run.head.stages)) {
     if (summary === 'skipped') {
@@ -146,7 +150,7 @@ function renderStageSummary(run) {
 }
 
 /** "3 new issues (1 high, 2 medium) · …" — counted per issue (group), not per occurrence. */
-function describeCounts({ newFindings, existingFindings, fixedFindings }) {
+export function describeCounts({ newFindings, existingFindings, fixedFindings }) {
   const newGroups = groupFindings(newFindings);
   const bySeverity = SEVERITIES.map((severity) => [severity, newGroups.filter((group) => group.first.severity === severity).length])
     .filter(([, count]) => count)
@@ -163,13 +167,13 @@ export function describeVisual(visual) {
   return Object.entries(counts).filter(([, count]) => count).map(([status, count]) => `${count} ${status}`).join(' · ') || 'no screenshots';
 }
 
-function describeBase(run) {
+export function describeBase(run) {
   if (!run.base) return 'none (every finding shown)';
   if (run.base.sha === run.head.sha) return 'same commit (every finding shown)';
   return `${run.base.label} @ ${run.base.shortSha}`;
 }
 
-function formatDuration(milliseconds) {
+export function formatDuration(milliseconds) {
   const seconds = Math.round(milliseconds / 1000);
   return seconds >= 60 ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : `${seconds}s`;
 }

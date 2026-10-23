@@ -18,6 +18,8 @@ Above the embedded report, **Report**, **Markdown** and **JSON** switch between
 `report.html`, `report.md` and `report.json`; the choice is kept across runs.
 **Copy** copies the whole report in the format shown, and **Open in a new tab**
 opens that format. Copying also works over the plain-http Tailscale address.
+**Download PDF** saves the HTML report as a PDF, rendered on the server with the
+image's Chromium (scripts off, only files from that run folder).
 The embedded HTML view omits the report's own Markdown · JSON · Logs links;
 the standalone `report.html` keeps them.
 
