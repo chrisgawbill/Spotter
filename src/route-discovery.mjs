@@ -17,7 +17,7 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
   const routes = new Set();
   const pending = new Set();
   const notes = [];
-  const evidence = { api: [], themeKeys: [], errorText: [], retryDelays: [], routeSamples: [], loadingSelectors: [], playwright: { viewports: [], colorSchemes: [] } };
+  const evidence = { api: [], themeKeys: [], errorText: [], retryDelays: [], routeSamples: [], loadingSelectors: [], proxy: [], relativeRequests: [], playwright: { viewports: [], colorSchemes: [] } };
   const cleanUrl = (value) => {
     try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash ? url.href.replace(/\/$/, '') : null; } catch { return null; }
   };
@@ -236,6 +236,12 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
         }
         if (name === 'BrowserRouter') { browser = true; frameworks.push('React Router'); }
       }
+      if (node.type === 'CallExpression' && /fetch|request|^(?:get|post|put|patch|delete)$/i.test(node.callee.name ?? (node.callee.type === 'MemberExpression' && !node.callee.computed ? node.callee.property.name : ''))) {
+        for (const arg of node.arguments.slice(0, 2)) {
+          const text = literal(arg) ?? (arg.type === 'TemplateLiteral' ? arg.quasis[0].value.cooked : undefined);
+          if (/^\/(?!\/)[\w-]/.test(text ?? '')) evidence.relativeRequests.push({ path: text.split(/[?#]/)[0], file });
+        }
+      }
       if (node.type === 'CallExpression' || node.type === 'NewExpression') {
         const name = imports.get(node.callee.name) ?? (node.callee.type === 'MemberExpression' && imports.get(node.callee.object.name) === '*' ? node.callee.property.name : undefined);
         if (name === 'createRouter' || name === 'VueRouter') {
@@ -279,6 +285,17 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
           ?? literal(prop(resolve(prop(resolve(prop(config, 'kit')), 'paths')), 'base'));
         if (detectedBase === '' || detectedBase?.startsWith('/')) base = detectedBase || '/';
         else if (detectedBase !== undefined || prop(config, 'base')) notes.push(`Review ${file} base: it is relative or computed.`);
+        if (/^vite\.config\.[cm]?[jt]s$/.test(file)) {
+          const proxy = resolve(prop(resolve(prop(config, 'server')), 'proxy'));
+          let unreadable = false;
+          if (proxy && proxy.type !== 'ObjectExpression') unreadable = true;
+          else for (const item of proxy?.properties ?? []) {
+            const key = item.type === 'ObjectProperty' && !item.computed ? (item.key.type === 'Identifier' ? item.key.name : item.key.type === 'StringLiteral' ? item.key.value : undefined) : undefined;
+            if (!key?.startsWith('/') || key === '/') { unreadable = true; continue; }
+            evidence.proxy.push({ path: key.replace(/\/+$/, ''), target: cleanUrl(literal(item.value) ?? literal(prop(item.value, 'target'))), file });
+          }
+          if (unreadable) notes.push(`Could not statically read server.proxy in ${file}; configure web.api.paths manually.`);
+        }
         outDir = literal(prop(resolve(prop(config, 'build')), 'outDir')) ?? literal(prop(config, 'outDir')) ?? outDir;
         if (file.startsWith('next.config') && literal(prop(config, 'output')) === 'export') staticExport = true;
         if (file.startsWith('astro.config') && ['server', 'hybrid'].includes(literal(prop(config, 'output')))) serverBuild = true;

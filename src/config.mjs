@@ -72,7 +72,10 @@ export function normalizeConfig(config, { projectName, source = '' }) {
     const sessions = config.web.sessions ?? [];
     if (!Array.isArray(sessions) || sessions.some((session) => !validSession(session))) {
       problems.push('`web.sessions` needs unique names, string localStorage entries and/or an absolute storageState file, and optional storageOrigin');
-    } else if (new Set(sessions.map((s) => s.name)).size !== sessions.length) problems.push('`web.sessions` names must be unique');
+    } else {
+      if (new Set(sessions.map((s) => s.name)).size !== sessions.length) problems.push('`web.sessions` names must be unique');
+      if (sessions.some((session) => session.apiHeaders !== undefined && !validHeaders(session.apiHeaders))) problems.push(`\`web.sessions[].apiHeaders\` ${HEADERS_MESSAGE}`);
+    }
     if (config.web.faultInjection) {
       if (typeof config.web.faultInjection !== 'object' || Array.isArray(config.web.faultInjection)) problems.push('`web.faultInjection` must be an object or false');
       const selector = config.web.faultInjection.loadingSelector;
@@ -82,6 +85,7 @@ export function normalizeConfig(config, { projectName, source = '' }) {
         if (value !== undefined && (!Number.isFinite(value) || value <= 0)) problems.push(`web.faultInjection.${field} must be positive`);
       }
     }
+    if (config.web.api !== undefined) problems.push(...apiProblems(config.web.api));
     if (!config.web.routes?.length) problems.push('`web.routes` needs at least one route');
   }
   const coverage = config.coverage;
@@ -126,9 +130,48 @@ function normalizeWebConfig(web) {
     faultInjection: web.faultInjection === false ? null : { delayMs: 2000, timeoutMs: 5000, loadingSelector: '[aria-busy="true"], [role="progressbar"]', ...web.faultInjection },
     base: web.base ?? '/',
     build: { outDir: 'dist', env: {}, ...web.build },
-    api: web.api ? { fakeOrigin: 'http://api.spotter.test', ...web.api } : null,
+    api: web.api ? {
+      fakeOrigin: 'http://api.spotter.test', envVar: null, recordFrom: null, headers: {},
+      ...web.api,
+      paths: web.api.paths ?? [],
+      backend: web.api.backend ? { timeoutMs: 60_000, ...web.api.backend } : null,
+    } : null,
     routes: web.routes.map((route) => (typeof route === 'string' ? { name: route, path: route } : route)),
   };
+}
+
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
+const API_PATH = /^\/[^\s?#*]*[^\s?#*/]$/;
+const HEADERS_MESSAGE = 'must map header names to strings; use ${NAME} for environment values';
+
+const isPlainObject = (value) => !!value && typeof value === 'object' && !Array.isArray(value);
+
+function validHeaders(map) {
+  return isPlainObject(map) && Object.entries(map).every(([name, value]) =>
+    HEADER_NAME.test(name) && typeof value === 'string' && !value.replace(/\$\{[A-Za-z_][A-Za-z0-9_]*\}/g, '').includes('${'));
+}
+
+function apiProblems(api) {
+  if (!isPlainObject(api) || Object.keys(api).some((key) => !['envVar', 'paths', 'recordFrom', 'headers', 'backend', 'fakeOrigin'].includes(key))) {
+    return ['`web.api` accepts envVar, paths, recordFrom, headers and backend'];
+  }
+  const problems = [];
+  if (api.envVar === undefined && api.paths === undefined) problems.push('`web.api` needs `envVar` or `paths`');
+  if (api.envVar !== undefined && (typeof api.envVar !== 'string' || !ENV_NAME.test(api.envVar))) problems.push('`web.api.envVar` must be an environment variable name');
+  if (api.paths !== undefined && (!Array.isArray(api.paths) || !api.paths.length || new Set(api.paths).size !== api.paths.length
+    || api.paths.some((item) => typeof item !== 'string' || !API_PATH.test(item)))) {
+    problems.push('`web.api.paths` must list unique same-origin path prefixes such as /api (no trailing slash, query or wildcard)');
+  }
+  if (api.recordFrom !== undefined && !isHttpUrl(api.recordFrom)) problems.push('`web.api.recordFrom` must be an http(s) URL');
+  if (api.headers !== undefined && !validHeaders(api.headers)) problems.push(`\`web.api.headers\` ${HEADERS_MESSAGE}`);
+  const backend = api.backend;
+  if (backend !== undefined && !(isPlainObject(backend) && Object.keys(backend).every((key) => ['run', 'readyUrl', 'timeoutMs'].includes(key))
+    && typeof backend.run === 'string' && backend.run.trim() && isHttpUrl(backend.readyUrl)
+    && (backend.timeoutMs === undefined || (Number.isSafeInteger(backend.timeoutMs) && backend.timeoutMs > 0)))) {
+    problems.push('`web.api.backend` needs a `run` command, an http(s) `readyUrl` and optional positive `timeoutMs`');
+  }
+  return problems;
 }
 
 function validSpecFiles(files) {

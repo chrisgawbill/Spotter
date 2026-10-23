@@ -65,6 +65,14 @@ test('incomplete runs lead with INCOMPLETE and list the gaps', () => {
   assert.match(markdown, /- coverage: INCOMPLETE ·/);
 });
 
+test('a not-replayed API gap renders as incomplete coverage', () => {
+  const gap = 'API traffic not replayed: GET /api/items; configure web.api.paths and run spotter record demo';
+  const markdown = renderMarkdownReport(coverageRun(completeness('incomplete', [gap])));
+  assert.match(markdown, /RESULT: INCOMPLETE/);
+  assert.match(markdown, /## Incomplete coverage \(1\)/);
+  assert.ok(markdown.includes(`- ${gap}`));
+});
+
 test('complete runs keep PASS and show the coverage line', () => {
   const markdown = renderMarkdownReport(coverageRun(completeness('complete', [])));
   assert.match(markdown, /RESULT: PASS/);

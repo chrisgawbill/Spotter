@@ -6,7 +6,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { lastLines, runCommand } from '../exec.mjs';
 import { createFinding } from '../findings.mjs';
-import { recordFixtures, replayFixtures } from '../fixtures.mjs';
+import { apiRequestMatcher, recordFixtures, recordingHeaders, replayFixtures } from '../fixtures.mjs';
 import { startStaticServer } from '../staticServer.mjs';
 import { findHorizontalOverflow, measureVisibleContent } from './pageProbes.mjs';
 import { runSpecsStage } from './specs.mjs';
@@ -70,7 +70,7 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
     if (mode === 'sweep' && web.specs) log('project specs');
     const specs = mode === 'sweep' && web.specs ? await runSpecsStage({ config, workdir, logDir, fixtures, appOrigin: server.origin }) : null;
     if (specs) log('project specs', 'done');
-    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
+    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
   } finally {
     await browser?.close();
     await server.close();
@@ -79,7 +79,7 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
 
 async function buildApp({ config, workdir, logDir }) {
   const web = config.web;
-  const env = { ...web.build.env, ...(web.api ? { [web.api.envVar]: web.api.fakeOrigin } : {}) };
+  const env = { ...web.build.env, ...(web.api?.envVar ? { [web.api.envVar]: web.api.fakeOrigin } : {}) };
   const result = await runCommand(web.build.run, { cwd: workdir, env, logFile: path.join(logDir, 'web-build.log') });
   if (result.exitCode === 0) return {};
   return {
@@ -127,6 +127,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
   const web = config.web;
   const { route, viewport, colorScheme, session } = job;
   const requests = new Set();
+  const notReplayed = new Set();
   let loading = [];
   let blank = false;
   let sessionCheck = null;
@@ -142,10 +143,11 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
   const context = await browser.newContext({ viewport, colorScheme, storageState, serviceWorkers: 'block', reducedMotion: 'reduce' });
   if (fixtures?.recordedAt) await context.clock.setFixedTime(new Date(fixtures.recordedAt));
   if (web.api && mode === 'record') {
-    await recordFixtures(context, { fakeOrigin: web.api.fakeOrigin, liveOrigin: web.api.recordFrom, appOrigin, entries: session.name === 'anonymous' ? recordedEntries.entries : (recordedEntries.sessions[session.name] ??= {}) });
+    await recordFixtures(context, { fakeOrigin: web.api.fakeOrigin, apiPaths: web.api.paths, ...recordingHeaders(web.api, session), liveOrigin: web.api.recordFrom, appOrigin, entries: session.name === 'anonymous' ? recordedEntries.entries : (recordedEntries.sessions[session.name] ??= {}) });
   } else if (web.api) {
     await replayFixtures(context, {
       fakeOrigin: web.api.fakeOrigin,
+      apiPaths: web.api.paths,
       appOrigin,
       fixtures: sessionFixtures,
       fault,
@@ -156,7 +158,17 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
 
   const page = await context.newPage();
   const network = trackNetwork(page);
-  watchPageProblems(page, { web, appOrigin, report: (problem) => {
+  watchPageProblems(page, { web, appOrigin, onNotReplayed: (endpoint, status) => {
+    if (fault || mode !== 'sweep' || notReplayed.has(endpoint)) return;
+    notReplayed.add(endpoint);
+    report({
+      check: 'api-not-replayed',
+      severity: 'high',
+      title: `API request answered with the app's HTML page: ${endpoint}`,
+      detail: `The app asked for data on its own origin and got its HTML page (HTTP ${status}).\nConfigure web.api.paths for this prefix and record fixtures, or add it to web.ignoreRequests if intended.`,
+      key: { route: null, viewport: null, colorScheme: null, session: null, endpoint },
+    });
+  }, report: (problem) => {
     if (!fault) report(problem);
     else if (problem.check === 'uncaught-error' && !healthy.findings.some((finding) => finding.check === 'uncaught-error' && finding.title === problem.title)) report({ ...problem, check: 'fault-crash', title: `page crashes during ${fault.kind} response` });
   } });
@@ -213,7 +225,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
 
   if (mode === 'record') return { findings: [] };
   return {
-    requests: [...requests], job, loading, blank, where, sessionCheck,
+    requests: [...requests], apiNotReplayed: [...notReplayed], job, loading, blank, where, sessionCheck,
     findings: redactSecrets(problems, secrets).map((problem) =>
       createFinding({
         stage: 'web',
@@ -256,7 +268,8 @@ function trackNetwork(page) {
 }
 
 /** Reports uncaught errors, console errors and failed requests as they happen. */
-function watchPageProblems(page, { web, appOrigin, report }) {
+function watchPageProblems(page, { web, appOrigin, report, onNotReplayed }) {
+  const isApi = web.api ? apiRequestMatcher({ fakeOrigin: web.api.fakeOrigin, apiPaths: web.api.paths, appOrigin }) : () => false;
   const isIgnored = (patterns, text) => patterns.some((pattern) => new RegExp(pattern, 'i').test(text));
 
   page.on('pageerror', (error) =>
@@ -276,10 +289,16 @@ function watchPageProblems(page, { web, appOrigin, report }) {
   });
   page.on('response', (response) => {
     const url = response.url();
+    const parsed = new URL(url);
+    const request = response.request();
+    if (parsed.origin === appOrigin && !isApi(parsed)
+      && (['fetch', 'xhr'].includes(request.resourceType()) || /json/i.test(request.headers().accept ?? ''))
+      && /text\/html/i.test(response.headers()['content-type'] ?? '')
+      && !isIgnored(web.ignoreRequests, url)) onNotReplayed(`${request.method()} ${parsed.pathname}`, response.status());
     if (response.status() < 400 || isIgnored(web.ignoreRequests, url)) return;
-    if (web.api && url.startsWith(web.api.fakeOrigin)) {
+    if (isApi(parsed)) {
       // Unrecorded requests are already reported by the replay handler.
-      if (!response.headers()['x-spotter-unrecorded'] && !response.headers()['x-spotter-injected']) report(apiErrorProblem(response, web.api.fakeOrigin));
+      if (!response.headers()['x-spotter-unrecorded'] && !response.headers()['x-spotter-injected']) report(apiErrorProblem(response));
       return;
     }
     report(requestProblem(response.request(), `HTTP ${response.status()}`, appOrigin));
@@ -304,12 +323,13 @@ function requestProblem(request, reason, appOrigin) {
 }
 
 /** A recorded API error replayed to the app: 5xx is worth a look, 4xx is usually deliberate (signed out). */
-function apiErrorProblem(response, fakeOrigin) {
+function apiErrorProblem(response) {
   const request = response.request();
+  const { pathname, search } = new URL(request.url());
   return {
     check: 'api-error',
     severity: response.status() >= 500 ? 'medium' : 'low',
-    title: `API answered ${response.status()}: ${request.method()} ${truncate(request.url().slice(fakeOrigin.length), 140)}`,
+    title: `API answered ${response.status()}: ${request.method()} ${truncate(pathname + search, 140)}`,
   };
 }
 

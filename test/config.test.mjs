@@ -76,3 +76,54 @@ test('levels block is validated and normalized', () => {
     { default: 'low', low: { routes: ['about'], specs: { grep: '@smoke' } } });
   assert.deepEqual(make({ low: { routes: ['home'] } }).levels, { default: null, low: { routes: ['home'], specs: null } });
 });
+
+const withApi = (api, web = {}) => normalizeConfig({
+  repo: '/tmp/app',
+  web: { build: { run: 'true' }, routes: ['/'], api, ...web },
+}, { projectName: 'demo' });
+const apiMessages = {
+  shape: '`web.api` accepts envVar, paths, recordFrom, headers and backend',
+  needs: '`web.api` needs `envVar` or `paths`',
+  envVar: '`web.api.envVar` must be an environment variable name',
+  paths: '`web.api.paths` must list unique same-origin path prefixes such as /api (no trailing slash, query or wildcard)',
+  recordFrom: '`web.api.recordFrom` must be an http(s) URL',
+  headers: '`web.api.headers` must map header names to strings; use ${NAME} for environment values',
+  backend: '`web.api.backend` needs a `run` command, an http(s) `readyUrl` and optional positive `timeoutMs`',
+  apiHeaders: '`web.sessions[].apiHeaders` must map header names to strings; use ${NAME} for environment values',
+};
+
+test('web.api accepts envVar-only and paths-only and fills defaults', () => {
+  assert.deepEqual(withApi({ envVar: 'VITE_API_URL' }).web.api, {
+    fakeOrigin: 'http://api.spotter.test', envVar: 'VITE_API_URL', recordFrom: null, headers: {}, paths: [], backend: null,
+  });
+  const paths = withApi({ paths: ['/api', '/admin/v1'] }).web.api;
+  assert.deepEqual([paths.envVar, paths.paths], [null, ['/api', '/admin/v1']]);
+  assert.equal(withApi(undefined).web.api, null);
+  const backend = withApi({ paths: ['/api'], backend: { run: 'node server.mjs', readyUrl: 'http://localhost:4010/health' } }).web.api.backend;
+  assert.deepEqual(backend, { run: 'node server.mjs', readyUrl: 'http://localhost:4010/health', timeoutMs: 60_000 });
+  assert.equal(withApi({ paths: ['/api'], backend: { run: 'x', readyUrl: 'http://localhost:1/', timeoutMs: 500 } }).web.api.backend.timeoutMs, 500);
+});
+
+test('web.api rejects each invalid shape with its message', () => {
+  const bad = (api, message) => assert.throws(() => withApi(api), (error) => error.message.includes(`- ${message}`), JSON.stringify(api));
+  for (const api of [null, 'x', [], { paths: ['/api'], extra: 1 }]) bad(api, apiMessages.shape);
+  bad({}, apiMessages.needs);
+  bad({ recordFrom: 'http://localhost:1' }, apiMessages.needs);
+  for (const envVar of ['', '1X', 'A-B', 5, null]) bad({ envVar }, apiMessages.envVar);
+  for (const paths of [[], '/api', ['api'], ['/api/'], ['/'], ['/a?b'], ['/a#b'], ['/a*'], ['/a b'], ['/api', '/api'], [1]]) bad({ paths }, apiMessages.paths);
+  for (const recordFrom of ['nope', 'ftp://x', 5, 'http://u:p@host']) bad({ paths: ['/api'], recordFrom }, apiMessages.recordFrom);
+  for (const headers of [[], null, 'x', { 'bad name': 'v' }, { a: 1 }, { a: '${' }, { a: '${1X}' }, { a: '${OK} ${' }]) bad({ paths: ['/api'], headers }, apiMessages.headers);
+  for (const backend of [null, 'x', [], { readyUrl: 'http://x/' }, { run: ' ', readyUrl: 'http://x/' }, { run: 'x', readyUrl: 'nope' }, { run: 'x', readyUrl: 'http://x/', timeoutMs: 0 }, { run: 'x', readyUrl: 'http://x/', timeoutMs: 1.5 }, { run: 'x', readyUrl: 'http://x/', extra: 1 }]) {
+    bad({ paths: ['/api'], backend }, apiMessages.backend);
+  }
+  withApi({ paths: ['/api'], headers: { 'X-Dev-Role': 'Admin', Authorization: 'Bearer ${API_TOKEN}' } });
+});
+
+test('session apiHeaders are accepted when valid and rejected otherwise', () => {
+  const session = (apiHeaders) => ({ sessions: [{ name: 'member', localStorage: { a: 'b' }, apiHeaders }] });
+  const accepted = withApi({ paths: ['/api'] }, session({ 'X-Dev-User': 'member', Authorization: '${TOKEN}' }));
+  assert.deepEqual(accepted.web.sessions[1].apiHeaders, { 'X-Dev-User': 'member', Authorization: '${TOKEN}' });
+  for (const apiHeaders of [[], null, 'x', { 'bad name': 'v' }, { a: 5 }, { a: '${' }]) {
+    assert.throws(() => withApi({ paths: ['/api'] }, session(apiHeaders)), (error) => error.message.includes(`- ${apiMessages.apiHeaders}`));
+  }
+});

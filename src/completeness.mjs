@@ -120,6 +120,8 @@ export function assessCompleteness({ config, skip, stages, fixtures, baseline, l
   const gaps = items.filter((item) => item.status === 'missing').map((item) => `${item.name}: ${item.reason}`);
   for (const item of items) if (item.required && item.status === 'skipped') gaps.push(`${item.name}: required but skipped (${item.reason})`);
   if (counts.pages?.failed > 0) gaps.push(`${counts.pages.failed} of ${counts.pages.expected} page visits failed to load`);
+  const notReplayed = Array.isArray(stages.web?.apiNotReplayed) ? stages.web.apiNotReplayed : [];
+  if (notReplayed.length) gaps.push(`API traffic not replayed: ${notReplayed.slice(0, 3).join(', ')}${notReplayed.length > 3 ? ` and ${notReplayed.length - 3} more` : ''}; configure web.api.paths and run spotter record ${config.name}`);
   if (counts.faultVisits?.failed > 0) gaps.push(`${counts.faultVisits.failed} fault visits failed to load`);
   const min = config.coverage?.minSpecs ?? null;
   const specsExecuted = counts.specs?.executed ?? 0;

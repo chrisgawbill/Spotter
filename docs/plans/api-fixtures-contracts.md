@@ -174,7 +174,8 @@ export async function startBackend({ run, readyUrl, timeoutMs, cwd, logFile }) â
 - Spawn: `spawn('bash', ['-c', run], { cwd, detached: true, stdio: ['ignore', fd, fd] })` with
   `fd` from `openSync(logFile, 'a')`.
 - `stop()`: idempotent; `process.kill(-pid, 'SIGTERM')` (ignore ESRCH), wait up to 5000 ms for
-  the child's exit, then `process.kill(-pid, 'SIGKILL')`; removes the signal handlers; closes fd.
+  the child's exit, then `process.kill(-pid, 'SIGKILL')` (always, so a group member that outlived the shell is
+  also removed; amended by the coordinator after review); removes the signal handlers; closes fd.
 - Error texts (exact): `backend exited with code ${code} before ${readyUrl} was ready` and
   `backend not ready at ${readyUrl} after ${timeoutMs / 1000}s`.
 

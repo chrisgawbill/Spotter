@@ -28,6 +28,21 @@ export async function discoverOptions(folder, files, discovered) {
     if (api.urls.length === 1) web.api.recordFrom = api.urls[0];
     evidence['web.api'] = `${api.file}: ${api.envVar}${api.urls.length === 1 ? ' and a literal API URL fallback; verify the recording target' : '; supply the recording URL'}`;
   } else if (facts.api.length > 1) notes.push(`Multiple API variables found (${facts.api.map((item) => item.envVar).join(', ')}); select the API to record.`);
+  if (facts.proxy.length) {
+    const paths = [...new Set(facts.proxy.map((item) => item.path))];
+    const targets = [...new Set(facts.proxy.map((item) => item.target).filter(Boolean))];
+    const files = [...new Set(facts.proxy.map((item) => item.file))];
+    web.api = { ...web.api, paths };
+    const fromProxy = !web.api.recordFrom && targets.length === 1 && facts.proxy.every((item) => item.target);
+    if (fromProxy) web.api.recordFrom = targets[0];
+    if (targets.length > 1) notes.push(`Multiple API proxy targets found (${targets.join(', ')}); select the API to record.`);
+    const proxyEvidence = `${files.join(', ')}: dev-server proxy for ${paths.join(', ')}${fromProxy ? ' to a literal target; verify the recording target' : '; supply the recording URL'}`;
+    evidence['web.api'] = evidence['web.api'] ? `${evidence['web.api']}; ${proxyEvidence}` : proxyEvidence;
+  }
+  if (!web.api && facts.relativeRequests.length) {
+    const shown = [...new Set(facts.relativeRequests.map((item) => item.path))].slice(0, 3).join(', ');
+    notes.push(`Relative API requests found in ${facts.relativeRequests[0].file} (${shown}) but no API was detected; their traffic will not be replayed. Configure web.api.paths and recordFrom.`);
+  }
   const themes = [...new Set(facts.themeKeys.map((item) => item.key))];
   if (themes.length === 1) {
     web.colorSchemeStorage = { light: { [themes[0]]: 'light' }, dark: { [themes[0]]: 'dark' } };

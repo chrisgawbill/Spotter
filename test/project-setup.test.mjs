@@ -113,3 +113,47 @@ test('generated collection layouts come from dictionary examples and round-trip 
   assert.match(source, /aliases: \{/);
   assert.match(source, /allow: \[ \{ from: a, to: b \} \]/);
 });
+
+async function viteApp(f, viteConfig, app) {
+  await f.write('package.json', JSON.stringify({ scripts: { build: 'vite build' }, devDependencies: { vite: '*' } }));
+  await f.write('vite.config.js', viteConfig);
+  await f.write('src/main.js', app);
+  const result = await detectProject(f.root, f.repo, { configsDir: f.configsDir });
+  return { result, config: YAML.parse(result.source) };
+}
+
+test('a Vite proxy proposes web.api paths and a single literal target as recordFrom', async () => {
+  const f = await fixture();
+  try {
+    const { result, config } = await viteApp(f, "export default { server: { proxy: { '/api': 'http://127.0.0.1:4010' } } };", "fetch('/api/items');");
+    assert.deepEqual(config.web.api, { paths: ['/api'], recordFrom: 'http://127.0.0.1:4010' });
+    assert.match(result.coverage.find((entry) => entry.field === 'web.api').evidence, /vite\.config\.js: dev-server proxy for \/api to a literal target/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('two proxy targets propose both paths, no recordFrom and a selection note', async () => {
+  const f = await fixture();
+  try {
+    const { result, config } = await viteApp(f, "export default { server: { proxy: { '/api': 'http://127.0.0.1:4010', '/admin': 'http://127.0.0.1:5209' } } };", 'export {};');
+    assert.deepEqual(config.web.api, { paths: ['/api', '/admin'] });
+    assert.match(result.notes.join(' '), /Multiple API proxy targets found \(http:\/\/127\.0\.0\.1:4010, http:\/\/127\.0\.0\.1:5209\)/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('relative requests without a proxy or env var add a note and no web.api', async () => {
+  const f = await fixture();
+  try {
+    const { result, config } = await viteApp(f, 'export default {};', "fetch('/api/items');");
+    assert.equal(config.web?.api, undefined);
+    assert.match(result.notes.join(' '), /Relative API requests found in src\/main\.js \(\/api\/items\) but no API was detected/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('relative requests alongside an env-var API add no relative-request note', async () => {
+  const f = await fixture();
+  try {
+    const { result, config } = await viteApp(f, 'export default {};', "const api = import.meta.env.VITE_API_URL; fetch('/api/items');");
+    assert.equal(config.web.api.envVar, 'VITE_API_URL');
+    assert.doesNotMatch(result.notes.join(' '), /Relative API requests/);
+  } finally { await rm(f.root, { recursive: true, force: true }); }
+});

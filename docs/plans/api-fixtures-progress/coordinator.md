@@ -43,4 +43,10 @@ triple-crown evidence: `card-lab/src/lib/libraryUrl.ts` `LIBRARY_URL = "/admin/l
 
 | Wave | Agent | Status |
 | --- | --- | --- |
-| 1 | replay, setup, backend, coverage (parallel) | dispatched |
+| 1 | replay, setup, backend, coverage (parallel) | Landed; diffs read and tests re-run by the coordinator |
+
+Coordinator interventions:
+- Accepted backend's extra SIGKILL to the group after a clean exit (safer); contract C5 amended.
+- Wrote README/docs, the example app and the evidence; ran all verification (see docs/ticket-evidence.md#qa-22-to-qa-26).
+
+No outstanding caller integrations. Ownership held: each agent changed only its allow-list.

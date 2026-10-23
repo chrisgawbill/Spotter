@@ -159,3 +159,29 @@ test('an excluded route does not hide a coverage item with the same name', () =>
   const c = assess({ level });
   assert.equal(c.items.find((i) => i.name === 'web' && i.kind === 'stage').status, 'executed');
 });
+
+test('API traffic that was not replayed is an incomplete-coverage gap', () => {
+  const c = assess({ stages: stages(web({ apiNotReplayed: ['GET /api/items'] })) });
+  assert.equal(c.status, 'incomplete');
+  assert.deepEqual(c.gaps, ['API traffic not replayed: GET /api/items; configure web.api.paths and run spotter record demo']);
+});
+
+test('more than three not-replayed endpoints are summarised', () => {
+  const list = ['GET /a', 'GET /b', 'GET /c', 'GET /d', 'GET /e'];
+  const c = assess({ stages: stages(web({ apiNotReplayed: list })) });
+  assert.deepEqual(c.gaps, ['API traffic not replayed: GET /a, GET /b, GET /c and 2 more; configure web.api.paths and run spotter record demo']);
+});
+
+test('no not-replayed list, an empty one or skipped web adds no API gap', () => {
+  assert.deepEqual(assess({ stages: stages(web({ apiNotReplayed: [] })) }).gaps, []);
+  assert.deepEqual(assess().gaps, []);
+  assert.ok(!assess({ stages: stages('skipped') }).gaps.some((g) => g.startsWith('API traffic')));
+  assert.ok(!assess({ stages: stages(undefined) }).gaps.some((g) => g.startsWith('API traffic')));
+});
+
+test('the API gap does not depend on web.api being configured', () => {
+  const config = base();
+  delete config.web.api;
+  const c = assess({ config, stages: stages(web({ apiNotReplayed: ['POST /api/x'] })) });
+  assert.ok(c.gaps.includes('API traffic not replayed: POST /api/x; configure web.api.paths and run spotter record demo'));
+});

@@ -21,6 +21,12 @@ web:
   # specs:
   #   files: [qa/sign-in.spec.mjs]
   #   workers: 2 # Opt into independent parallel tests; default 1, live always 1.
+  # Optional recorded API: envVar the build reads the API origin from, and/or
+  # same-origin path prefixes the app calls (see examples/same-origin-api).
+  # api:
+  #   envVar: VITE_API_URL
+  #   paths: [/api]
+  #   recordFrom: https://api.example.com
   build:
     run: npm run build
     outDir: dist

@@ -11,6 +11,7 @@ import { compareContracts, snapshotContracts } from './contracts.mjs';
 import { exportCommit, findMergeBase, listAddedLines, listCommitMessages, resolveCommit } from './git.mjs';
 import { projectDirs, spotterCodeHash, spotterHome, toHostPath } from './paths.mjs';
 import { createActivity } from './activity.mjs';
+import { startBackend } from './backend.mjs';
 import { startDashboard } from './dashboard.mjs';
 import { loadSavedRetention, pruneProject, retentionSettings } from './prune.mjs';
 import { renderMarkdownReport } from './report.mjs';
@@ -29,8 +30,9 @@ const USAGE = `Spotter — automatic QA that reports what is new on a branch.
       or medium, 3 if coverage is incomplete, 2 if Spotter itself failed.
       --level picks a testing level (default: the project's levels.default).
   spotter record <project> [--ref <ref>] [--repo <path>] [--merge]
-      Visit every route against the live API and store its responses as the
-      fixtures runs replay. --merge keeps existing entries and adds new ones.
+      Visit every route against the live API (starting web.api.backend first when
+      configured) and store its responses as the fixtures runs replay. --merge keeps
+      existing entries and adds new ones.
   spotter prune [<project>] [--dry-run] [--keep-runs <n>] [--keep-baselines <n>]
       Delete older runs, unused baseline cache entries and leftover work folders.
       In-progress runs and runs/latest are kept. Defaults come from
@@ -264,9 +266,21 @@ async function recordProject(config, options) {
     log(`installing ${ref} @ ${sha.slice(0, 7)}`);
     const install = await runStaticStage({ config: { ...config, checks: [] }, workdir, logDir });
     if (!install.installed) throw new Error(`install failed; see ${toHostPath(logDir)}/install.log`);
-    log(`recording from ${config.web.api.recordFrom}`);
-    const result = await runWebStage({ config, workdir, logDir, screenshotDir: logDir, fixtures: { recordedAt }, mode: 'record', recordedEntries: { entries, sessions } });
-    if (!result.summary.built) throw new Error(`build failed; see ${toHostPath(logDir)}/web-build.log`);
+    const backendConfig = config.web.api.backend;
+    const backendLog = path.join(logDir, 'backend.log');
+    let backend = null;
+    if (backendConfig) {
+      log(`starting backend: ${backendConfig.run}`);
+      backend = await startBackend({ ...backendConfig, cwd: exportDir, logFile: backendLog })
+        .catch((error) => { throw new Error(`${error.message}; see ${toHostPath(backendLog)}`); });
+    }
+    try {
+      log(`recording from ${config.web.api.recordFrom}`);
+      const result = await runWebStage({ config, workdir, logDir, screenshotDir: logDir, fixtures: { recordedAt }, mode: 'record', recordedEntries: { entries, sessions } });
+      if (!result.summary.built) throw new Error(`build failed; see ${toHostPath(logDir)}/web-build.log`);
+    } finally {
+      await backend?.stop();
+    }
   } finally {
     await rm(exportDir, { recursive: true, force: true });
   }

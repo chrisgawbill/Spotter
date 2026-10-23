@@ -177,3 +177,31 @@ finding IDs to the accepted reports. Evidence:
   and `record --level` fail with exit 2. Runs: `~/spotter/qa08-levels/runs/`.
 - Not verified: `--level` with `--live-auth` rejection (code-reviewed only);
   a dashboard-started run with a non-default level (HTTP-tested with a mock launcher).
+
+## QA-22 to QA-26
+
+**Same-origin API fixtures evidence (2026-10-23, not yet accepted):**
+
+- `npm test`: 112 tests pass (86 before). Docker integration: all 7 files,
+  12 tests pass, including the new `integration/same-origin-api.test.mjs`
+  (record with a header, redaction, replay, 500/delay fault visits, unrecorded
+  call, unconfigured `api-not-replayed`, `ignoreRequests`).
+- `examples/same-origin-api` with `web.api.paths`, `headers` and `backend`:
+  `spotter record` started the example server, recorded 2×200 and stopped it;
+  the token appears in no saved artifact. Replay run COMPLETE, 4 fault visits:
+  `~/spotter/same-origin-example/runs/20261023-170721-same-origin-api-fixtures-2dc481e8/report.md`.
+  The same app without `web.api` is INCOMPLETE (exit 3) with two
+  `api-not-replayed` findings:
+  `~/spotter/same-origin-unconfigured/runs/20261023-170729-same-origin-api-fixtures-9df6e0dc/report.md`.
+- Setup inference proposes `paths: [/api]`, `recordFrom` for the example and
+  `paths: [/admin]`, `recordFrom: http://localhost:5209` for triple-crown
+  `card-lab` at `origin/creature-bench`.
+- HockeyStats main: the same 17 groups, COMPLETE 66/66, `apiNotReplayed: []`:
+  `~/spotter/hockeystats-webapp/runs/20261023-170706-main-f26ec169/report.md`.
+  Seeded: all 7 seeded groups new, 17 on base, COMPLETE:
+  `~/spotter/hockeystats-webapp/runs/20261023-170706-verify-browser-depth-defects-2c134acb/report.md`.
+- triple-crown with its unchanged config: INCOMPLETE (exit 3), six
+  `api-not-replayed` findings for `/admin/...`:
+  `~/spotter/triple-crown/runs/20261023-171857-origin-creature-bench-a92211aa/report.md`.
+- Not verified: SIGINT during a real `spotter record` (SIGTERM is covered by
+  `test/backend.test.mjs`); recording triple-crown (needs its API running).

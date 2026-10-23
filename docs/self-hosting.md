@@ -41,7 +41,8 @@ Projects outside `~/projects` need `SPOTTER_PROJECTS_ROOT` set to a common
 parent directory when starting the dashboard. Use `SPOTTER_HOME` to change
 the results directory (default `~/spotter`). These values are captured when
 the container is created. For projects with `web.api`, record their API
-fixtures with `bin/spotter record <project>` before running QA.
+fixtures with `bin/spotter record <project>` before running QA (it starts
+`web.api.backend` when configured).
 Old runs and baseline caches are deleted after each run; set `SPOTTER_KEEP_RUNS`,
 `SPOTTER_KEEP_BASELINES` and `SPOTTER_AUTO_PRUNE` on the dashboard service to
 change this (see [Disk usage](../README.md#disk-usage)).

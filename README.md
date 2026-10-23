@@ -9,7 +9,7 @@ for screenshots and visual review.
 bin/spotter run my-app --ref feature/my-change      # writes report.md; exit 1 = new high/medium findings, 3 = incomplete coverage
 bin/spotter run my-app --repo ~/worktrees/x --working-tree   # another clone, uncommitted changes included
 bin/spotter run my-app --ref feature/x --level low         # testing level: low, medium or high
-bin/spotter record my-app                           # (re)record API fixtures from the live API
+bin/spotter record my-app                           # (re)record API fixtures from the live API (or web.api.backend)
 bin/spotter prune my-app --dry-run                  # list old runs and cache entries that cleanup would delete
 bin/spotter list
 SPOTTER_TAILSCALE_IP="$(tailscale ip -4)" bin/spotter dashboard # Tailscale-only dashboard
@@ -28,7 +28,7 @@ Before the first run, create a project config and record fixtures if it uses an 
 1. **Export** the ref with `git archive` (the project's checkout is never touched; `--working-tree` copies uncommitted files instead).
 2. **Static:** install, then each configured check. Parsers turn `tsc`, Vitest JSON and Prettier output into findings with file and line; anything else reports exit code and log tail.
 3. **Rules:** forbidden text in commit messages, added lines or files (e.g. "no AI mentions", "no `../../` imports"), and import boundaries between slices with an allowlist.
-4. **Web:** builds the app with its API URL pointed at a fake origin, serves it, and visits every route × viewport × colour scheme in Chromium with the recorded API responses and the clock frozen at record time. Reports uncaught errors, console errors, failed requests, API errors, requests missing from the fixtures, pages that scroll sideways or cut content off at the right edge (naming the elements), blank pages and configured error text. Saves a full-page screenshot of each.
+4. **Web:** builds the app with its API URL pointed at a fake origin (and intercepts same-origin `web.api.paths`), serves it, and visits every route × viewport × colour scheme in Chromium with the recorded API responses and the clock frozen at record time. Reports uncaught errors, console errors, failed requests, API errors, requests missing from the fixtures, same-origin data requests answered by the app's HTML page, pages that scroll sideways or cut content off at the right edge (naming the elements), blank pages and configured error text. Saves a full-page screenshot of each.
 5. **Compare:** the same run on the merge base (cached by commit, config, fixtures and Spotter version) splits findings into new / already on base / fixed. Only new ones are listed.
 6. **Completeness:** records what the head side actually executed (checks, rules, page visits, specs, session assertions), fixture identity and age, and whether the baseline comparison succeeded. Missing coverage makes the run INCOMPLETE even when the same gap exists on the base. See [Coverage and completeness](#coverage-and-completeness).
 
@@ -51,10 +51,10 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `rules.importBoundaries[]` | `id`, `root` (slices directory), `aliases`, `allow[]` of `{ from, to }` (`to` may be a path inside a slice; `*` = any) |
 | `web.build` | `run`, `outDir`, `env` |
 | `web.base` | Base path the app is served under |
-| `web.api` | `envVar` the build reads the API origin from; `recordFrom` live API for `record` |
+| `web.api` | `envVar` the build reads the API origin from and/or `paths` (same-origin prefixes such as `/api`, intercepted in the browser); `recordFrom` live API for `record`; optional record-only `headers` (`${NAME}` = environment value) and `backend` `{ run, readyUrl, timeoutMs }`. See [same-origin APIs](docs/browser-checks.md#same-origin-apis-and-recording) |
 | `web.routes[]` | `{ name, path }` (hash routes include `#/`) |
 | `web.viewports`, `web.colorSchemes` | Widths (or `{ width, height }`) and `light`/`dark` |
-| `web.sessions` | Additional `{ name, localStorage }` or `{ name, storageState, storageOrigin }` sessions; anonymous visits always run. Optional `expectSelector` must match on every sweep visit of that session, proving it reached its signed-in state |
+| `web.sessions` | Additional `{ name, localStorage }` or `{ name, storageState, storageOrigin }` sessions; anonymous visits always run. Optional `expectSelector` must match on every sweep visit of that session, proving it reached its signed-in state; optional `apiHeaders` override `web.api.headers` while recording that session |
 | `web.specs` | See [spec options](docs/project-specs.md); optional `{ files: ['qa/ticket.spec.mjs'], grep: 'Verify' }`; project-owned Playwright tests run against the same build and recorded fixtures |
 | `web.settleMs`, `web.pageTimeoutMs`, `web.concurrency` | Healthy-page settling delay, navigation timeout and parallel visits |
 | `web.accessibility`, `web.keyboard` | Enable axe and advisory Tab/focus checks (both default true) |
@@ -88,7 +88,8 @@ override the variables; `--dry-run` only lists what would be removed.
 A run is INCOMPLETE when configured work did not execute without an intentional
 reason: install or build failed, a check did not run, specs selected zero tests
 or their runner failed, a page visit failed to load, a session's
-`expectSelector` was not found, no fixtures are recorded, a `coverage.required`
+`expectSelector` was not found, no fixtures are recorded, a same-origin data
+request got the app's HTML page instead of replayed data, a `coverage.required`
 item was skipped, fewer than `coverage.minSpecs` specs ran, or the baseline
 failed (the base run threw, or did not run a check or stage the head ran).
 Completeness is judged on the head side only; baseline suppression never hides

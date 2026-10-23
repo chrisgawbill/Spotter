@@ -21,7 +21,7 @@ export const test = base.extend({
     if (!spotterLive && settings.fixtures?.recordedAt) await context.clock.setFixedTime(new Date(settings.fixtures.recordedAt));
     const missing = [];
     if (!spotterLive && settings.web.api) await replayFixtures(context, {
-      fakeOrigin: settings.web.api.fakeOrigin, appOrigin: settings.appOrigin,
+      fakeOrigin: settings.web.api.fakeOrigin, apiPaths: settings.web.api.paths ?? [], appOrigin: settings.appOrigin,
       fixtures: spotterSession === 'anonymous' ? settings.fixtures : { ...settings.fixtures, entries: settings.fixtures?.sessions?.[spotterSession] ?? {} },
       onUnrecorded: (key) => missing.push(key),
     });

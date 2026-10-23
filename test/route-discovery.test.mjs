@@ -86,3 +86,44 @@ test('file routers find pages while excluding layouts, API endpoints and private
     }
   } finally { await rm(folder, { recursive: true, force: true }); }
 });
+
+async function discoverFiles(files, names = Object.keys(files)) {
+  const folder = await mkdtemp(path.join(tmpdir(), 'spotter-proxy-'));
+  try {
+    for (const [file, source] of Object.entries(files)) await writeFile(path.join(folder, file), source);
+    return await discoverRoutes(folder, names);
+  } finally { await rm(folder, { recursive: true, force: true }); }
+}
+const unreadable = (file) => `Could not statically read server.proxy in ${file}; configure web.api.paths manually.`;
+
+test('Vite string and object proxies become paths with clean literal targets', async () => {
+  const one = await discoverFiles({ 'vite.config.js': "export default { server: { proxy: { '/api/': 'http://127.0.0.1:4010', '/admin': { target: 'http://localhost:5209', changeOrigin: true } } } };" });
+  assert.deepEqual(one.evidence.proxy, [{ path: '/api', target: 'http://127.0.0.1:4010', file: 'vite.config.js' }, { path: '/admin', target: 'http://localhost:5209', file: 'vite.config.js' }]);
+  assert.ok(!one.notes.includes(unreadable('vite.config.js')));
+});
+
+test('computed or unreadable proxy entries add one note per file and are skipped', async () => {
+  for (const proxy of ['makeProxy()', "{ [key]: 'http://a.test' }", "{ '^/api': 'http://a.test' }", "{ ...shared }", "{ '/': 'http://a.test' }"]) {
+    const result = await discoverFiles({ 'vite.config.js': `export default { server: { proxy: ${proxy} } };` });
+    assert.deepEqual(result.evidence.proxy, [], proxy);
+    assert.equal(result.notes.filter((note) => note === unreadable('vite.config.js')).length, 1, proxy);
+  }
+  const mixed = await discoverFiles({ 'vite.config.js': "export default { server: { proxy: { '/ok': 'http://a.test', ...shared, '^/x': 'http://b.test' } } };" });
+  assert.deepEqual(mixed.evidence.proxy.map((item) => item.path), ['/ok']);
+  assert.equal(mixed.notes.filter((note) => note === unreadable('vite.config.js')).length, 1);
+});
+
+test('proxies in non-Vite config files are ignored', async () => {
+  const result = await discoverFiles({ 'next.config.js': "module.exports = { server: { proxy: { '/api': 'http://a.test' } } };" });
+  assert.deepEqual(result.evidence.proxy, []);
+});
+
+test('relative API requests are collected from fetch-like calls and templates only', async () => {
+  const result = await discoverFiles({ 'api.js': `
+    fetch('/api/items?x=1'); apiFetch('GET', '/admin/collections'); http.get(\`/api/items/\${id}\`);
+    navigate('/teams'); fetch('//cdn.example.test/x'); fetch('https://api.example.test/y');
+  ` });
+  assert.deepEqual(result.evidence.relativeRequests, [
+    { path: '/api/items', file: 'api.js' }, { path: '/admin/collections', file: 'api.js' }, { path: '/api/items/', file: 'api.js' },
+  ]);
+});
