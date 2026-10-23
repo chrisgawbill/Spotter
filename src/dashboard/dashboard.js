@@ -142,7 +142,7 @@ async function refresh() {
       $('run-error').textContent = run.error ?? '';
       $('coverage').textContent = run.coverage ?? '';
       $('coverage').hidden = !run.coverage;
-      html('coverage-gaps', run.gaps.map((gap) => `<li>${escape(gap)}</li>`).join(''));
+      html('coverage-gaps', (run.gaps ?? []).map((gap) => `<li>${escape(gap)}</li>`).join(''));
       const steps = sections(run.events, 'head');
       const active = [...steps.values()].filter((s) => !s.end).at(-1);
       html('now-step', run.status === 'running' ? (active ? `${mark('running')}${escape(active.label)}` : 'Preparing run…') : badge(run.status));
