@@ -1,0 +1,23 @@
+# Example config for an app that calls its API with relative /api paths.
+# Copy to projects/<name>.yml and set repo/workdir to the checkout.
+repo: /home/user/projects/Spotter
+baseBranch: main
+workdir: examples/same-origin-api
+web:
+  build:
+    run: mkdir -p dist && cp index.html dist/index.html
+    outDir: dist
+  api:
+    paths: [/api]
+    recordFrom: http://127.0.0.1:4010
+    # Sent only while recording; pass EXAMPLE_API_TOKEN into the container with SPOTTER_AUTH_ENV.
+    headers: { x-api-token: '${EXAMPLE_API_TOKEN}' }
+    # Started by `spotter record` from the recorded ref's checkout root, stopped afterwards.
+    backend:
+      run: PORT=4010 node examples/same-origin-api/server.mjs
+      readyUrl: http://127.0.0.1:4010/health
+      timeoutMs: 20000
+  routes:
+    - { name: home, path: / }
+  viewports: [375]
+  errorText: ["Couldn't load"]

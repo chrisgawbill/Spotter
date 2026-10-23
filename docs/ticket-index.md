@@ -29,6 +29,11 @@ ticket.
 | [QA-19](#qa-19--structured-security-scanner-findings) | IDEA | Security tool integration |
 | [QA-20](#qa-20--runner-lifecycle-and-artifact-retention) | IDEA | Runner reliability |
 | [QA-21](#qa-21--scheduled-deep-runs) | IDEA | Scheduled coverage |
+| [QA-22](#qa-22--same-origin-api-fixtures-by-path-prefix) | ACTIVE | Same-origin API fixtures |
+| [QA-23](#qa-23--infer-same-origin-apis-from-dev-server-proxies) | ACTIVE | Setup inference for proxied APIs |
+| [QA-24](#qa-24--project-started-backend-for-recording) | ACTIVE | Local recording source |
+| [QA-25](#qa-25--recording-request-headers) | ACTIVE | Recording protected APIs |
+| [QA-26](#qa-26--incomplete-when-api-traffic-is-not-replayed) | ACTIVE | Trustworthy pass without fixtures |
 
 Statuses and acceptance below are recorded decisions. Historical test output is
 in [ticket evidence](ticket-evidence.md); usage instructions are in the [README](../README.md).
@@ -730,3 +735,156 @@ configured coverage on a schedule.
   high run; verify its matrix and report metadata.
 - Overlapping triggers follow the documented queue policy and failures retain
   artifacts. Document any unavailable live scheduler verification explicitly.
+
+---
+
+## QA-22 — Same-origin API fixtures by path prefix
+
+**Status:** ACTIVE — started by Product Owner 2026-10-23 with QA-23–QA-26.
+
+**Goal:** Record and replay APIs that the app calls on its own origin (for
+example `/admin/...` behind a dev-server proxy), not only APIs whose origin the
+build reads from an environment variable.
+
+**Context:** A triple-crown `card-lab` run (2026-10-23) passed as COMPLETE
+while every API call reached Spotter's static server, received the SPA
+`index.html` with HTTP 200, and the app rendered "Library is malformed". The
+app uses relative `/admin` paths, so `web.api.envVar` cannot redirect it.
+
+**Scope:**
+
+- Add `web.api.paths` (list of same-origin path prefixes). Matching requests
+  are intercepted in the browser context, recorded from `recordFrom` by
+  `spotter record`, and replayed in sweeps, fault visits and specs exactly like
+  fake-origin requests (fixture keys, unrecorded 404 finding, fault injection,
+  frozen clock, per-session maps).
+- `envVar` becomes optional when `paths` is set; at least one of the two is
+  required. No build-time environment change is needed for `paths`.
+- Keep fixture keys stable and independent of the app origin and port so
+  recorded maps replay on any Spotter server.
+- Document the option in the README config table and browser-check docs.
+
+**Out of scope:** starting a backend (QA-24), recording headers (QA-25).
+
+**Verify:**
+
+- Unit tests for config validation and key normalisation of same-origin paths.
+- Browser regression with a generic example app that fetches `/api/...`
+  relatively: record, replay, an unrecorded call is reported, a 500/delay fault
+  visit runs per endpoint, and the static SPA fallback is never reached for a
+  configured prefix.
+- Existing env-var projects (HockeyStatsWebApp main and seeded runs per
+  AGENTS.md) are unchanged.
+
+---
+
+## QA-23 — Infer same-origin APIs from dev-server proxies
+
+**Status:** ACTIVE — started by Product Owner 2026-10-23 with QA-22–QA-26.
+
+**Goal:** Let project setup propose `web.api.paths` and `recordFrom` when an
+app reaches its API through a dev-server proxy.
+
+**Scope:**
+
+- Read `server.proxy` from Vite config syntax (literal keys and string or
+  `{ target }` values) without importing the config; propose `paths` from the
+  keys and `recordFrom` from a single literal target, with evidence naming the
+  file.
+- Multiple targets produce a note asking which API to record, matching the
+  existing multiple-env-var behaviour.
+- When literal `fetch`/client calls use relative paths and no API is inferred,
+  add a setup note that API traffic will not be replayed.
+
+**Depends on:** QA-22.
+
+**Verify:**
+
+- Route-discovery/project-setup unit tests for string, object, multiple and
+  computed proxy configurations, and for the relative-fetch note.
+- Generated config for a generic proxied example validates and records.
+
+---
+
+## QA-24 — Project-started backend for recording
+
+**Status:** ACTIVE — started by Product Owner 2026-10-23 with QA-22–QA-26.
+
+**Goal:** Record fixtures from a backend the project starts locally when there
+is no shared live API, so recordings come from reproducible seeded data.
+
+**Scope:**
+
+- Add `web.api.backend: { run, readyUrl, timeoutMs }` used only by
+  `spotter record`: start the command in the project checkout, wait for
+  `readyUrl`, record from `recordFrom`, then stop the process tree on success,
+  failure, timeout and cancellation.
+- Seeding and reset stay in the project's command; Spotter runs it and reports
+  its log path on failure.
+- Sweeps keep replaying fixtures and never start the backend. Running API or
+  browser tests against a live server remains QA-18.
+
+**Verify:**
+
+- Integration test with a tiny generic server: ready, record, shutdown; startup
+  failure, readiness timeout and interrupted record leave no child process.
+- Recorded fixtures from the started backend replay in a normal run.
+
+---
+
+## QA-25 — Recording request headers
+
+**Status:** ACTIVE — started by Product Owner 2026-10-23 with QA-22–QA-26.
+
+**Goal:** Record APIs that require request headers the production build does
+not send (for example dev-only identity headers or a test token).
+
+**Scope:**
+
+- Add `web.api.headers` (map) and per-session overrides, applied only to
+  requests Spotter forwards to `recordFrom` while recording; values may use
+  `${ENV}` references resolved at record time.
+- Never write header values into fixtures, reports or logs; redact them using
+  the existing secret redaction.
+- Replay ignores these headers so fixture keys stay unchanged.
+
+**Depends on:** QA-22 for same-origin recording; works with env-var APIs too.
+
+**Verify:**
+
+- Unit tests for header merging, environment resolution and redaction.
+- Recording against a generic server that rejects requests without the header
+  succeeds, and the header value appears in no saved artifact.
+
+---
+
+## QA-26 — Incomplete when API traffic is not replayed
+
+**Status:** ACTIVE — started by Product Owner 2026-10-23 with QA-22–QA-25.
+
+**Goal:** A run must not report COMPLETE when the app called an API that Spotter
+neither replayed nor recorded.
+
+**Context:** `completeness.mjs` requires fixtures only when `web.api` is set,
+so an app with an unconfigured API passes with "no fixtures recorded".
+
+**Scope:**
+
+- During sweeps, record same-origin requests that ask for JSON (`Accept` or
+  `fetch`/XHR resource type) and receive `text/html` or the SPA fallback, and
+  report each endpoint once as a high finding naming the path.
+- If any such request occurs, mark the run INCOMPLETE with a gap
+  "API traffic not replayed" and a hint to configure `web.api` (QA-22).
+- `web.ignoreRequests` suppresses intended cases. Findings use stable keys
+  without ports or query values.
+
+**Depends on:** QA-22 for the remediation it points to; detection is
+independent.
+
+**Verify:**
+
+- Completeness and report unit tests for the new gap and its hint.
+- Browser regression: a generic app with an unconfigured relative JSON call is
+  INCOMPLETE with the finding; the same app with `web.api.paths` and fixtures is
+  COMPLETE; HockeyStatsWebApp main stays COMPLETE with no new findings.
+

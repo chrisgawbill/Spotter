@@ -1,0 +1,12 @@
+{
+  "name": "same-origin-api-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "mkdir -p dist && cp index.html dist/index.html",
+    "api": "node server.mjs"
+  },
+  "devDependencies": {
+    "vite": "*"
+  }
+}
