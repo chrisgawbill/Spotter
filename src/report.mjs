@@ -1,3 +1,4 @@
+import { summarizeCompleteness } from './completeness.mjs';
 import { SEVERITIES } from './findings.mjs';
 
 const STAGE_ORDER = ['static', 'rules', 'web'];
@@ -24,14 +25,16 @@ function notChecked(run) {
  */
 export function renderMarkdownReport(run) {
   const { comparison } = run;
+  const incomplete = run.completeness?.status === 'incomplete';
   const blocking = comparison.newFindings.filter((finding) => finding.severity !== 'low');
   const lines = [
     `# Spotter: ${run.project}`,
     '',
     `head: ${run.head.label} @ ${run.head.shortSha} · base: ${describeBase(run)} · ${formatDuration(run.durationMs)}`,
-    `RESULT: ${blocking.length ? 'FAIL' : 'PASS'} — ${describeCounts(comparison)}`,
+    `RESULT: ${incomplete ? 'INCOMPLETE' : blocking.length ? 'FAIL' : 'PASS'} — ${describeCounts(comparison)}`,
     '',
   ];
+  if (incomplete) lines.push(`## Incomplete coverage (${run.completeness.gaps.length})`, '', ...run.completeness.gaps.map((gap) => `- ${gap}`), '');
 
   const groups = groupFindings(comparison.newFindings);
   if (groups.length) {
@@ -132,6 +135,7 @@ function renderStageSummary(run) {
       if (summary.specs) lines.push(`- project specs${summary.specs.mode ? ` (${summary.specs.mode})` : ''}: ${summary.specs.passed} passed, ${summary.specs.failed} failed, ${summary.specs.skipped} skipped`);
     }
   }
+  if (run.completeness) lines.push(`- coverage: ${summarizeCompleteness(run.completeness)}`);
   return lines;
 }
 

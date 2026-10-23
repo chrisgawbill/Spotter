@@ -33,7 +33,7 @@ PR comments are not configured by Spotter; PR comments remain disabled.
 ## Read build artifacts
 
 Each completed run archives the whole `spotter-report/` directory, even when
-findings fail the build. Open `report.md` for action and `report.html` for visual
+findings (exit 1) or incomplete coverage (exit 3) fail the build. Open `report.md` for action and `report.html` for visual
 review; extract the entire archive to retain relative image links. Visual
 changes are advisory and never change the exit code. Pixel comparisons include
 all saved visits (including session/fault variants); additions, removals and

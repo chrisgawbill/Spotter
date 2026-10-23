@@ -1,0 +1,136 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { assessBaseline, assessCompleteness, describeFixtures, requirableNames, summarizeCompleteness } from '../src/completeness.mjs';
+
+const DAY = 86_400_000;
+const NOW = Date.parse('2026-10-23T00:00:00Z');
+const fixtures = { recordedAt: '2026-10-20T00:00:00Z', hash: 'a1b2c3d4e5', ref: 'main', sha: '0123456789abcdef' };
+const base = (extra = {}) => ({
+  name: 'demo',
+  checks: [{ name: 'typecheck' }, { name: 'test' }],
+  coverage: { required: [], minSpecs: null },
+  web: {
+    routes: [{ name: 'a' }, { name: 'b' }, { name: 'c' }], viewports: [375, 1280], colorSchemes: ['light'],
+    sessions: [{ name: 'anonymous' }, { name: 'member', expectSelector: '#me' }],
+    api: {}, specs: { files: ['x'] },
+  },
+  ...extra,
+});
+const web = (extra = {}, specs = {}) => ({
+  built: true, pages: 12, faultVisits: 0, pagesFailed: 0, faultVisitsFailed: 0,
+  sessionChecks: { member: { checked: 6, failed: 0, examples: [] } },
+  specs: { mode: 'replay', passed: 24, failed: 0, skipped: 0, flaky: 0, selected: 24, completed: true, ...specs },
+  ...extra,
+});
+const stages = (w = web()) => ({ static: [{ name: 'typecheck', status: 'PASS' }, { name: 'test', status: 'PASS' }], rules: [], web: w });
+const none = { status: 'cached', reason: null };
+const assess = (o = {}) => assessCompleteness({ config: base(), skip: new Set(), stages: stages(), fixtures, baseline: none, liveAuth: false, now: NOW, ...o });
+const item = (c, name) => c.items.find((i) => i.name === name);
+
+test('healthy run is complete with a C7 summary', () => {
+  const c = assess({ config: base({ coverage: { required: [], minSpecs: 20 } }) });
+  assert.equal(c.status, 'complete');
+  assert.deepEqual(c.gaps, []);
+  assert.deepEqual(c.counts.pages, { expected: 12, executed: 12, failed: 0, skipped: 0 });
+  assert.equal(c.counts.faultVisits, null);
+  assert.equal(c.level, null);
+  assert.equal(summarizeCompleteness(c), 'COMPLETE · 12/12 configured page visits loaded · specs 24 of 24 executed (min 20) · baseline cached · fixtures 2026-10-20 (3d old, a1b2c3d4e5)');
+});
+
+test('install failure leaves checks and web missing', () => {
+  const s = { static: [{ name: 'install', status: 'FAIL' }], rules: [], web: 'skipped' };
+  const c = assess({ stages: s });
+  assert.equal(c.status, 'incomplete');
+  for (const name of ['typecheck', 'test', 'web', 'specs', 'member']) assert.deepEqual([item(c, name).status, item(c, name).reason], ['missing', 'dependency install failed']);
+  assert.deepEqual(c.counts.pages, { expected: 12, executed: 0, failed: 0, skipped: 12 });
+  assert.equal(c.counts.specs, null);
+});
+
+test('web build failure marks web and specs missing', () => {
+  const c = assess({ stages: stages({ built: false, pages: 0 }) });
+  assert.equal(item(c, 'web').reason, 'build failed');
+  assert.equal(item(c, 'specs').reason, 'build failed');
+  assert.ok(c.gaps.includes('web: build failed') && c.gaps.includes('specs: build failed'));
+});
+
+test('specs problems are missing', () => {
+  assert.equal(item(assess({ stages: stages(web({}, { selected: 0, completed: true })) }), 'specs').reason, 'selected zero tests');
+  const c = assess({ stages: stages(web({}, { selected: 3, completed: false })) });
+  assert.equal(item(c, 'specs').reason, 'runner could not complete');
+  assert.ok(c.gaps.includes('specs: runner could not complete'));
+  const old = web(); delete old.specs;
+  assert.equal(item(assess({ stages: stages(old) }), 'specs').reason, 'did not run');
+});
+
+test('session expectSelector failures give the exact reason', () => {
+  const c = assess({ stages: stages(web({ sessionChecks: { member: { checked: 4, failed: 2, examples: [] } } })) });
+  assert.equal(item(c, 'member').reason, 'expected state not reached on 2/4 visits (#me not found)');
+  assert.equal(c.gaps[0], 'member: expected state not reached on 2/4 visits (#me not found)');
+  assert.equal(item(assess({ stages: stages(web({ sessionChecks: {} })) }), 'member').reason, 'not visited');
+});
+
+test('--skip static skips checks; required skipped is a gap', () => {
+  const skip = new Set(['static']);
+  const c = assess({ skip });
+  assert.equal(item(c, 'typecheck').status, 'skipped');
+  assert.equal(c.status, 'complete');
+  assert.match(summarizeCompleteness(c), /skipped: typecheck \(--skip static\), test \(--skip static\)$/);
+  const r = assess({ skip, config: base({ coverage: { required: ['typecheck'], minSpecs: null } }) });
+  assert.equal(r.status, 'incomplete');
+  assert.deepEqual(r.gaps, ['typecheck: required but skipped (--skip static)']);
+  assert.ok(!summarizeCompleteness(r).includes('typecheck ('));
+});
+
+test('minSpecs above executed is a gap', () => {
+  const c = assess({ config: base({ coverage: { required: [], minSpecs: 30 } }) });
+  assert.deepEqual(c.gaps, ['specs: 24 executed, minimum 30']);
+  const skipped = assess({ config: base({ coverage: { required: [], minSpecs: 30 } }), stages: stages(web({}, { skipped: 4 })) });
+  assert.equal(skipped.counts.specs.executed, 20);
+});
+
+test('failed page and fault visits are counted', () => {
+  const c = assess({ stages: stages(web({ pagesFailed: 2, faultVisits: 4, faultVisitsFailed: 1 })) });
+  assert.deepEqual(c.counts.pages, { expected: 12, executed: 10, failed: 2, skipped: 0 });
+  assert.deepEqual(c.counts.faultVisits, { executed: 3, failed: 1 });
+  assert.deepEqual(c.gaps, ['2 of 12 page visits failed to load', '1 fault visits failed to load']);
+});
+
+test('missing fixtures with web.api is a gap', () => {
+  const c = assess({ fixtures: null });
+  assert.equal(item(c, 'fixtures').reason, 'no fixtures recorded; run spotter record demo');
+  assert.equal(c.fixtures, null);
+  assert.equal(c.status, 'incomplete');
+});
+
+test('live authentication skips web and drops fixtures', () => {
+  const s = { static: [], rules: 'skipped', web: { pages: 0, specs: web().specs } };
+  const c = assess({ liveAuth: true, stages: s, skip: new Set(), baseline: assessBaseline({ config: base(), skip: new Set(), liveAuth: true }) });
+  assert.equal(item(c, 'web').status, 'skipped');
+  assert.equal(item(c, 'fixtures'), undefined);
+  assert.equal(item(c, 'member').reason, 'live authentication');
+  assert.equal(c.baseline.status, 'none');
+  assert.equal(c.counts.pages, null);
+});
+
+test('assessBaseline outcomes', () => {
+  const config = base();
+  const o = { config, skip: new Set(), headStages: stages(), baseStages: stages(), baseSha: 'b', headSha: 'h', workingTree: false, cached: false };
+  assert.deepEqual(assessBaseline({ ...o, baseSha: null }), { status: 'none', reason: 'disabled by --no-baseline' });
+  assert.deepEqual(assessBaseline({ ...o, baseSha: 'h' }), { status: 'same-commit', reason: null });
+  assert.equal(assessBaseline({ ...o, baseSha: 'h', workingTree: true }).status, 'compared');
+  assert.deepEqual(assessBaseline({ ...o, error: new Error('boom\nstack') }), { status: 'failed', reason: 'base run failed: boom' });
+  assert.deepEqual(assessBaseline({ ...o, baseStages: stages('skipped') }), { status: 'failed', reason: 'base did not run: web' });
+  assert.deepEqual(assessBaseline({ ...o, baseStages: { ...stages(), static: [{ name: 'test' }] } }), { status: 'failed', reason: 'base did not run: typecheck' });
+  const noSpecs = web(); delete noSpecs.specs; delete noSpecs.sessionChecks;
+  assert.deepEqual(assessBaseline({ ...o, baseStages: stages(noSpecs), cached: true }), { status: 'cached', reason: null });
+  assert.deepEqual(assessBaseline(o), { status: 'compared', reason: null });
+  assert.equal(assess({ baseline: { status: 'failed', reason: 'base did not run: web' } }).gaps.at(-1), 'baseline: base did not run: web');
+});
+
+test('describeFixtures and requirableNames', () => {
+  assert.equal(describeFixtures(null), null);
+  assert.deepEqual(describeFixtures({ recordedAt: '2026-10-20T00:00:00Z', hash: 'h', sha: '0123456789' }, NOW + DAY / 2), { recordedAt: '2026-10-20T00:00:00Z', hash: 'h', ref: null, sha: '0123456', ageDays: 3 });
+  assert.equal(describeFixtures(fixtures, NOW).ageDays, 3);
+  assert.deepEqual(requirableNames({ checks: [{ name: 'a' }], web: { routes: ['/'], api: {}, specs: {}, sessions: [{ name: 'm', expectSelector: 'x' }, { name: 'n' }] } }), ['a', 'rules', 'web', 'fixtures', 'specs', 'm']);
+  assert.deepEqual(requirableNames({}), ['rules']);
+});

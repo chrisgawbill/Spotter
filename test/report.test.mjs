@@ -48,6 +48,39 @@ test('HTML escapes report content and keeps image URLs relative', async () => {
   assert.match(html, /1 unchanged/);
 });
 
+const completeness = (status, gaps) => ({
+  status, gaps, counts: { pages: { expected: 4, executed: 2, failed: 2, skipped: 0 }, faultVisits: null, specs: null },
+  baseline: { status: 'compared', reason: null }, fixtures: null,
+  items: [{ name: 'web', kind: 'stage', required: true, status: 'missing', reason: '<b>x</b> & more' }],
+});
+const coverageRun = (value) => ({
+  project: 'demo', head: { label: 'x', shortSha: 'abc', stages: { rules: { ruleCount: 1, boundaryCount: 0 } } }, base: null, fixtures: null,
+  comparison: { newFindings: [], existingFindings: [], fixedFindings: [] }, durationMs: 1000, paths: {}, completeness: value,
+});
+
+test('incomplete runs lead with INCOMPLETE and list the gaps', () => {
+  const markdown = renderMarkdownReport(coverageRun(completeness('incomplete', ['web: build failed', '2 of 4 page visits failed to load'])));
+  assert.match(markdown, /RESULT: INCOMPLETE — nothing new/);
+  assert.match(markdown, /## Incomplete coverage \(2\)\n\n- web: build failed\n- 2 of 4 page visits failed to load/);
+  assert.match(markdown, /- coverage: INCOMPLETE ·/);
+});
+
+test('complete runs keep PASS and show the coverage line', () => {
+  const markdown = renderMarkdownReport(coverageRun(completeness('complete', [])));
+  assert.match(markdown, /RESULT: PASS/);
+  assert.match(markdown, /- coverage: COMPLETE/);
+  assert.doesNotMatch(markdown, /Incomplete coverage/);
+});
+
+test('HTML coverage section escapes reasons and lists gaps', async () => {
+  const { renderHtmlReport } = await import('../src/htmlReport.mjs');
+  const html = renderHtmlReport(coverageRun(completeness('incomplete', ['web: build failed'])), 'md');
+  assert.match(html, /<h2>Coverage<\/h2>/);
+  assert.match(html, /<li>web: build failed<\/li>/);
+  assert.match(html, /&lt;b&gt;x&lt;\/b&gt; &amp; more/);
+  assert.ok(!html.includes('<b>x'));
+});
+
 test('live authentication is identified without claiming a failed build or branch comparison', () => {
   const markdown = renderMarkdownReport({
     project: 'demo', head: { label: 'auth (live authentication)', shortSha: 'abc', stages: { web: { pages: 0, specs: { mode: 'live', passed: 2, failed: 0, skipped: 0 } } } },

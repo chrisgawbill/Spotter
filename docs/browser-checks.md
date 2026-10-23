@@ -14,6 +14,7 @@ web:
   sessions:
     - name: signed-in
       localStorage: { session: '{"userId":"fixture-user","token":"test-token"}' }
+      expectSelector: '[data-account-menu]'
   faultInjection:
     delayMs: 2000
     timeoutMs: 5000
@@ -26,6 +27,12 @@ re-record after adding a session. Fixtures and storage values may contain
 sensitive test data; keep them private. Session names must be unique letters,
 numbers, underscores or hyphens, excluding `anonymous` and object prototype
 property names (such as `constructor`).
+
+Optional `expectSelector` is a project-owned session assertion: every healthy
+sweep visit of that session must contain a matching element. Use something
+only the signed-in state renders, so a silent redirect to sign-in is caught.
+A miss does not create a finding; it makes the run incomplete and the report
+names the session and how many visits failed.
 
 Fault injection revisits each route/session at the first viewport and scheme.
 Each API request observed there gets its own fresh visit returning 500, then a

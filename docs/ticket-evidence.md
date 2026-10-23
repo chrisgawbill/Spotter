@@ -124,6 +124,29 @@ theme follows time of day, so the config seeds the saved theme per scheme.
   Product Owner accepted the sample report 2026-10-22. No real provider credentials
   were used; backend security and a human screen-reader pass are not claimed.
 
+## QA-09
+
+**QA-09 evidence (2026-10-23):**
+
+- `npm test`: 71 tests pass. Docker integrations pass: specs 3/3 (including a
+  grep that selects zero tests), browser-depth 2/2 (session `expectSelector`
+  matched and missed, no finding added), dashboard 1/1 (INCOMPLETE badge,
+  coverage line and gap list).
+- Real seeded runs against a scratch HockeyStatsWebApp clone with a temporary
+  config (`coverage.required: [format, specs]`, `minSpecs: 1`, member
+  `expectSelector`): unchanged branch with optional `--skip rules` passes (exit 0,
+  COMPLETE); renamed session key exits 3 (`member: expected state not reached on
+  4/4 visits`); required `format` skipped exits 3; zero selected specs exits 3
+  although the runner failure is also on base (previously a PASS); a broken-build
+  base exits 3 (`baseline: base did not run: web`). Runs:
+  `~/spotter/qa09-seed/runs/`.
+- HockeyStats main: the same 17 known finding groups, coverage COMPLETE
+  (66/66 page visits), exit 1. Report:
+  `~/spotter/hockeystats-webapp/runs/20261023-035544-main-c8d7c7f7/report.md`.
+- Dashboard checked at 1280 and 375 px for INCOMPLETE and PASS runs; no horizontal
+  overflow. Not verified: a base side that throws (code-reviewed only).
+  Product Owner accepted the sample report 2026-10-23.
+
 ## Configuration editor
 
 Configuration editor verification (2026-10-22): all 32 unit/HTTP tests pass.

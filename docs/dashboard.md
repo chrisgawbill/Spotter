@@ -87,6 +87,9 @@ the chosen SSH directory and host user/group definitions read-only; use a
 dedicated directory with a read-only deploy key and trusted `known_hosts` where
 possible. The key must work without an interactive passphrase prompt. Dashboard containers require a writable projects mount for Git refs;
 recreate older containers with the updated startup template (or CLI wrapper).
+A finished run is PASS, FAIL or INCOMPLETE; INCOMPLETE runs list the coverage
+gaps beside the status, and every run shows the same one-line coverage summary
+as `report.md` (see [coverage and completeness](../README.md#coverage-and-completeness)).
 Dashboard runs execute the normal CLI inside the same container, using
 the same mounted repositories, fixtures and output directory. Preparation and
 runner failures show an error and the final log tail even without a report.

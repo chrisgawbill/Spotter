@@ -45,13 +45,14 @@ pipeline {
       steps {
         script {
           def status = sh(returnStatus: true, script: '"$SPOTTER_CHECKOUT/bin/spotter" run "$PROJECT" --repo "$SPOTTER_CHECKOUT/target-project" --ref HEAD')
-          if (status > 1) error('Spotter could not finish; see console log')
+          if (status == 2 || status > 3) error('Spotter could not finish; see console log')
           dir('spotter-report') { deleteDir() }
           sh '''
             mkdir -p spotter-report
             cp -R "${SPOTTER_HOME:-$HOME/spotter}/$PROJECT/runs/latest/." spotter-report/
           '''
           archiveArtifacts artifacts: 'spotter-report/**', fingerprint: true
+          if (status == 3) error('Spotter coverage is incomplete; see report.md in artifacts')
           if (status == 1) error('Spotter found new blocking issues; see report.md in artifacts')
         }
       }

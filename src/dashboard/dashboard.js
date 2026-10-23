@@ -1,7 +1,7 @@
 import { configFields } from '/config-fields.mjs';
 const $ = (id) => document.getElementById(id);
 const escape = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const statuses = { pass: ['success', '✓'], fail: ['danger', '✕'], running: ['primary', '●'], error: ['warning', '!'] };
+const statuses = { pass: ['success', '✓'], fail: ['danger', '✕'], running: ['primary', '●'], error: ['warning', '!'], incomplete: ['warning', '◐'] };
 const badge = (status) => {
   const [tone, icon] = statuses[status] ?? ['danger', '!'];
   return `<span class="ds-chip ds-chip-${tone} status status-${escape(status)}"><span aria-hidden="true">${icon}</span>${escape(status.toUpperCase())}</span>`;
@@ -140,6 +140,9 @@ async function refresh() {
       $('updated').textContent = `Last runner update: ${time(run.updatedAt)} · Checked ${new Date().toLocaleTimeString()}`;
       html('current', run.current.map((e) => `<li><span class="side">${escape(e.side)}</span> ${escape(e.activity)}</li>`).join('') || (run.status === 'running' ? '' : '<li>Run finished</li>'));
       $('run-error').textContent = run.error ?? '';
+      $('coverage').textContent = run.coverage ?? '';
+      $('coverage').hidden = !run.coverage;
+      html('coverage-gaps', run.gaps.map((gap) => `<li>${escape(gap)}</li>`).join(''));
       const steps = sections(run.events, 'head');
       const active = [...steps.values()].filter((s) => !s.end).at(-1);
       html('now-step', run.status === 'running' ? (active ? `${mark('running')}${escape(active.label)}` : 'Preparing run…') : badge(run.status));

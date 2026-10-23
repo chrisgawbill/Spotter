@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
+import { requirableNames } from './completeness.mjs';
 import { spotterRoot } from './paths.mjs';
 import { readSessionState } from './sessions.mjs';
 
@@ -82,6 +83,19 @@ export function normalizeConfig(config, { projectName, source = '' }) {
     }
     if (!config.web.routes?.length) problems.push('`web.routes` needs at least one route');
   }
+  const coverage = config.coverage;
+  if (coverage !== undefined) {
+    if (!coverage || typeof coverage !== 'object' || Array.isArray(coverage)) problems.push('`coverage` must be an object');
+    else {
+      const names = requirableNames(config);
+      if (coverage.required !== undefined && (!Array.isArray(coverage.required) || coverage.required.some((name) => typeof name !== 'string' || !names.includes(name)))) {
+        problems.push('`coverage.required` must list configured checks, rules, web, specs, fixtures or session names');
+      }
+      if (coverage.minSpecs !== undefined && (!Number.isSafeInteger(coverage.minSpecs) || coverage.minSpecs < 1 || !config.web?.specs)) {
+        problems.push('`coverage.minSpecs` must be a positive integer and requires `web.specs`');
+      }
+    }
+  }
   if (problems.length) throw new Error(`Invalid projects/${projectName}.yml:\n- ${problems.join('\n- ')}`);
 
   return {
@@ -96,6 +110,7 @@ export function normalizeConfig(config, { projectName, source = '' }) {
       importBoundaries: config.rules?.importBoundaries ?? [],
     },
     web: config.web ? normalizeWebConfig(config.web) : null,
+    coverage: { required: coverage?.required ?? [], minSpecs: coverage?.minSpecs ?? null },
     configHash: createHash('sha1').update(source).digest('hex').slice(0, 10),
   };
 }
@@ -125,6 +140,7 @@ function validSession(session) {
   if (session.localStorage !== undefined && (!session.localStorage || typeof session.localStorage !== 'object'
     || Array.isArray(session.localStorage) || Object.values(session.localStorage).some((value) => typeof value !== 'string'))) return false;
   if (session.storageState !== undefined && (typeof session.storageState !== 'string' || !path.isAbsolute(session.storageState))) return false;
+  if (session.expectSelector !== undefined && (typeof session.expectSelector !== 'string' || !session.expectSelector.trim())) return false;
   return session.storageOrigin === undefined || isOrigin(session.storageOrigin);
 }
 

@@ -16,7 +16,7 @@ ticket.
 | [QA-06](#qa-06--spotter-dashboard) | ACTIVE | Dashboard |
 | [QA-07](#qa-07--generic-authentication-flow-testing) | DONE | Authentication |
 | [QA-08](#qa-08--configurable-low-medium-and-high-testing-levels) | IDEA | Testing levels |
-| [QA-09](#qa-09--coverage-and-run-completeness) | IDEA | Trustworthy pass results |
+| [QA-09](#qa-09--coverage-and-run-completeness) | DONE | Trustworthy pass results |
 | [QA-10](#qa-10--critical-interaction-journeys) | IDEA | Interaction testing |
 | [QA-11](#qa-11--fault-recovery-and-response-ordering) | IDEA | Recovery testing |
 | [QA-12](#qa-12--cross-browser-and-device-matrix) | IDEA | Browser compatibility |
@@ -66,6 +66,7 @@ an agent should be able to act on `report.md` without opening anything else.
 | QA-05 | Workflow documentation accepted by Product Owner 2026-10-22. |
 | QA-06 | Dashboard implementation and hosting checks ready for review; sample acceptance and persistent service activation pending. |
 | QA-07 | Generic auth support and sample report accepted 2026-10-22. |
+| QA-09 | Sample report accepted 2026-10-23; exit 3 = incomplete. QA-08 level integration deferred. |
 
 ## Dependency outline
 
@@ -375,7 +376,10 @@ and dashboard controls. Testing level is independent of finding severity.
 
 ## QA-09 — Coverage and run completeness
 
-**Status:** IDEA
+**Status:** DONE — implemented, verified and sample report accepted by Product
+Owner 2026-10-23. QA-08 level integration is deferred (QA-08 is not implemented;
+`completeness.level` is `null`). Usage: [coverage and completeness](../README.md#coverage-and-completeness).
+Historical verification: [evidence](ticket-evidence.md#qa-09).
 
 **Goal:** Make it clear what a passing run establishes and prevent missing required
 coverage from producing a successful result.

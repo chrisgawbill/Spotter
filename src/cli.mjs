@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { listProjectNames, loadProjectConfig } from './config.mjs';
+import { assessBaseline, assessCompleteness, describeFixtures } from './completeness.mjs';
 import { compareWithBaseline, hasFailingFinding, sortFindings } from './findings.mjs';
 import { loadFixtures, saveFixtures } from './fixtures.mjs';
 import { compareContracts, snapshotContracts } from './contracts.mjs';
@@ -24,7 +25,7 @@ const USAGE = `Spotter — automatic QA that reports what is new on a branch.
       Check <ref> (default: the checkout's HEAD) against its merge base with
       the base branch. --repo checks another clone or worktree of the project;
       --working-tree includes uncommitted changes. Prints report.md; exit 1 if anything new is high
-      or medium, 2 if Spotter itself failed.
+      or medium, 3 if coverage is incomplete, 2 if Spotter itself failed.
   spotter record <project> [--ref <ref>] [--repo <path>] [--merge]
       Visit every route against the live API and store its responses as the
       fixtures runs replay. --merge keeps existing entries and adds new ones.
@@ -41,6 +42,7 @@ const USAGE = `Spotter — automatic QA that reports what is new on a branch.
 const EXIT_PASS = 0;
 const EXIT_FINDINGS = 1;
 const EXIT_ERROR = 2;
+const EXIT_INCOMPLETE = 3;
 
 const log = (message) => process.stderr.write(`[spotter] ${message}\n`);
 
@@ -144,13 +146,18 @@ async function runProject(config, options) {
       changes,
       log: (step, state) => { log(`head: ${step} (${state ?? 'started'})`); activity.event('head', step, state); },
     });
-    const basePromise = baseSha && (baseSha !== headSha || options.workingTree) ? loadOrRunBase({ ...sideArguments, baseSha, directories }) : null;
+    const basePromise = baseSha && (baseSha !== headSha || options.workingTree) ? loadOrRunBase({ ...sideArguments, baseSha, directories }).catch((error) => {
+      log(`base: failed — ${error.message}`);
+      activity.event('base', 'base run failed', 'done');
+      return { error };
+    }) : null;
     const [head, base] = await Promise.all([headPromise, basePromise]);
     await rm(workRoot, { recursive: true, force: true });
 
     activity.event('run', 'compare findings and screenshots');
-    const comparison = base
-      ? compareWithBaseline(head.findings, base.findings)
+    const baseline = assessBaseline({ config, skip: options.skip, headStages: head.stages, baseStages: base?.side?.stages, baseSha, headSha, workingTree: !!options.workingTree, cached: !!base?.cached, error: base?.error, liveAuth: !!options.liveAuth });
+    const comparison = base?.side && baseline.status !== 'failed'
+      ? compareWithBaseline(head.findings, base.side.findings)
       : { newFindings: head.findings, existingFindings: [], fixedFindings: [] };
     for (const category of Object.keys(comparison)) {
       comparison[category] = sortFindings(comparison[category], STAGES).map(withHostPaths);
@@ -160,9 +167,10 @@ async function runProject(config, options) {
       project: config.name,
       head: { label: `${options.workingTree ? `${headRef} + working tree` : headRef}${options.liveAuth ? ' (live authentication)' : ''}`, sha: headSha, shortSha: headSha.slice(0, 7), stages: head.stages },
       base: baseSha ? { label: `${config.baseBranch} merge base`, sha: baseSha, shortSha: baseSha.slice(0, 7) } : null,
-      fixtures: fixtures ? { recordedAt: fixtures.recordedAt, hash: fixtures.hash } : null,
+      fixtures: describeFixtures(fixtures),
+      completeness: assessCompleteness({ config, skip: options.skip, stages: head.stages, fixtures, baseline, liveAuth: !!options.liveAuth }),
       comparison,
-      visual: await compareScreenshots(path.join(runDir, 'screenshots'), base?.screenshotDir ?? (baseSha === headSha && !options.workingTree ? path.join(runDir, 'screenshots') : null), runDir),
+      visual: await compareScreenshots(path.join(runDir, 'screenshots'), base?.side?.screenshotDir ?? (baseSha === headSha && !options.workingTree ? path.join(runDir, 'screenshots') : null), runDir),
       durationMs: Date.now() - startedAt,
       paths: {
         reportHtml: toHostPath(path.join(runDir, 'report.html')),
@@ -177,9 +185,9 @@ async function runProject(config, options) {
     await writeFile(path.join(runDir, 'report.json'), JSON.stringify(run, null, 2));
     await pointLatestAt(directories.runs, runDir);
     process.stdout.write(markdown);
-    const exitCode = hasFailingFinding(comparison.newFindings) ? EXIT_FINDINGS : EXIT_PASS;
+    const exitCode = run.completeness.status === 'incomplete' ? EXIT_INCOMPLETE : hasFailingFinding(comparison.newFindings) ? EXIT_FINDINGS : EXIT_PASS;
     activity.event('run', 'compare findings and screenshots', 'done');
-    activity.finish(exitCode ? 'fail' : 'pass');
+    activity.finish(exitCode === EXIT_INCOMPLETE ? 'incomplete' : exitCode ? 'fail' : 'pass');
     try {
       const settings = retentionSettings(process.env, {}, await loadSavedRetention(spotterHome));
       if (settings.autoPrune) {
@@ -205,7 +213,7 @@ async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, direct
     log('base: reusing cached results');
     activity.event('base', 'reusing cached results', 'done');
     await utimes(cacheFile, new Date(), new Date()).catch(() => {});
-    return cached;
+    return { side: cached, cached: true };
   }
   const base = await runSide({
     config,
@@ -218,7 +226,7 @@ async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, direct
     log: (step, state) => { log(`base: ${step} (${state ?? 'started'})`); activity.event('base', step, state); },
   });
   await writeCachedSide(cacheFile, base);
-  return base;
+  return { side: base, cached: false };
 }
 
 /** `spotter record`: build <ref>, visit every route against the live API, save responses. */

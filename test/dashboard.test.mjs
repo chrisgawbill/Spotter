@@ -81,9 +81,23 @@ test('dashboard launches only listed branches, follows activity and confines rep
     await mkdir(stale);
     await writeFile(path.join(stale, 'activity.json'), JSON.stringify({ branch, status: 'running', updatedAt: '2000-01-01T00:00:00Z' }));
     assert.equal((await (await get('/api/runs/demo/stale')).json()).status, 'error');
+    for (const [id, status] of [['gap', 'incomplete'], ['whole', 'complete']]) {
+      const seeded = path.join(home, 'demo/runs', id);
+      await mkdir(seeded);
+      const completeness = { status, gaps: status === 'incomplete' ? ['specs: selected zero tests'] : [], items: [], counts: { pages: null, specs: null }, fixtures: null, baseline: { status: 'none' } };
+      await writeFile(path.join(seeded, 'report.json'), JSON.stringify({ head: { label: branch, stages: {} }, comparison: { newFindings: [] }, completeness }));
+    }
+    const gap = await (await get('/api/runs/demo/gap')).json();
+    assert.equal(gap.status, 'incomplete');
+    assert.match(gap.coverage, /^INCOMPLETE · baseline none/);
+    assert.deepEqual(gap.gaps, ['specs: selected zero tests']);
+    const whole = await (await get('/api/runs/demo/whole')).json();
+    assert.equal(whole.status, 'pass');
+    assert.match(whole.coverage, /^COMPLETE/);
+    assert.equal((await (await get(`/api/runs/demo/${id}`)).json()).gaps.length, 0);
     activity.finish('pass');
     const runs = await (await get('/api/runs')).json();
-    assert.equal(runs.length, 3);
+    assert.equal(runs.length, 5);
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));

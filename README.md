@@ -6,7 +6,7 @@ specs against recorded API responses. Start with `report.md`; use `report.html`
 for screenshots and visual review.
 
 ```bash
-bin/spotter run my-app --ref feature/my-change      # writes report.md; exit 1 = new high/medium findings
+bin/spotter run my-app --ref feature/my-change      # writes report.md; exit 1 = new high/medium findings, 3 = incomplete coverage
 bin/spotter run my-app --repo ~/worktrees/x --working-tree   # another clone, uncommitted changes included
 bin/spotter record my-app                           # (re)record API fixtures from the live API
 bin/spotter prune my-app --dry-run                  # list old runs and cache entries that cleanup would delete
@@ -29,6 +29,7 @@ Before the first run, create a project config and record fixtures if it uses an 
 3. **Rules:** forbidden text in commit messages, added lines or files (e.g. "no AI mentions", "no `../../` imports"), and import boundaries between slices with an allowlist.
 4. **Web:** builds the app with its API URL pointed at a fake origin, serves it, and visits every route × viewport × colour scheme in Chromium with the recorded API responses and the clock frozen at record time. Reports uncaught errors, console errors, failed requests, API errors, requests missing from the fixtures, pages that scroll sideways or cut content off at the right edge (naming the elements), blank pages and configured error text. Saves a full-page screenshot of each.
 5. **Compare:** the same run on the merge base (cached by commit, config, fixtures and Spotter version) splits findings into new / already on base / fixed. Only new ones are listed.
+6. **Completeness:** records what the head side actually executed (checks, rules, page visits, specs, session assertions), fixture identity and age, and whether the baseline comparison succeeded. Missing coverage makes the run INCOMPLETE even when the same gap exists on the base. See [Coverage and completeness](#coverage-and-completeness).
 
 ## Adding a project
 
@@ -52,13 +53,15 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `web.api` | `envVar` the build reads the API origin from; `recordFrom` live API for `record` |
 | `web.routes[]` | `{ name, path }` (hash routes include `#/`) |
 | `web.viewports`, `web.colorSchemes` | Widths (or `{ width, height }`) and `light`/`dark` |
-| `web.sessions` | Additional `{ name, localStorage }` or `{ name, storageState, storageOrigin }` sessions; anonymous visits always run |
+| `web.sessions` | Additional `{ name, localStorage }` or `{ name, storageState, storageOrigin }` sessions; anonymous visits always run. Optional `expectSelector` must match on every sweep visit of that session, proving it reached its signed-in state |
 | `web.specs` | See [spec options](docs/project-specs.md); optional `{ files: ['qa/ticket.spec.mjs'], grep: 'Verify' }`; project-owned Playwright tests run against the same build and recorded fixtures |
 | `web.settleMs`, `web.pageTimeoutMs`, `web.concurrency` | Healthy-page settling delay, navigation timeout and parallel visits |
 | `web.accessibility`, `web.keyboard` | Enable axe and advisory Tab/focus checks (both default true) |
 | `web.faultInjection` | `{ delayMs, timeoutMs, loadingSelector }`, or false to skip endpoint fault visits |
 | `web.colorSchemeStorage` | localStorage entries to seed per scheme, for apps with their own theme switch |
 | `web.errorText`, `web.ignoreConsole`, `web.ignoreRequests` | Visible text that means failure; regexes to ignore |
+| `coverage.required` | Item names that must run: check names, `rules`, `web`, `specs`, `fixtures`, or a session name with `expectSelector`. Skipping one (for example with `--skip`) makes the run incomplete |
+| `coverage.minSpecs` | Minimum number of executed (not skipped) project spec tests; requires `web.specs` |
 
 Projects under `~/projects` are mounted automatically; `--repo` paths elsewhere are mounted on demand.
 
@@ -78,14 +81,34 @@ flags, then environment variables, then saved settings, then the defaults.
 runs the same cleanup on demand for one project or all of them. The flags
 override the variables; `--dry-run` only lists what would be removed.
 
+## Coverage and completeness
+
+A run is INCOMPLETE when configured work did not execute without an intentional
+reason: install or build failed, a check did not run, specs selected zero tests
+or their runner failed, a page visit failed to load, a session's
+`expectSelector` was not found, no fixtures are recorded, a `coverage.required`
+item was skipped, fewer than `coverage.minSpecs` specs ran, or the baseline
+failed (the base run threw, or did not run a check or stage the head ran).
+Completeness is judged on the head side only; baseline suppression never hides
+it. Intentional `--skip` of a non-required item is listed with its reason and
+does not make a run incomplete. Coverage covers configured routes only.
+
+`report.md` shows `RESULT: INCOMPLETE`, an `## Incomplete coverage` list and a
+one-line `coverage:` summary; `report.html` adds an item table; `report.json`
+holds the full `completeness` record. The dashboard shows the same summary.
+Testing levels (QA-08) are not implemented yet, so `completeness.level` is
+always `null`.
+
 ## Severity and exit codes
 
 `high` (build/type/test failures, uncaught errors, blank pages) and `medium`
 (console errors, layout overflow, rule violations, API 5xx, unrecorded
 requests) fail the run (exit 1). `low` (formatting, external asset failures,
 recorded API 4xx) is reported but does not fail. Existing findings do not fail
-a baseline comparison. Exit 0 means no new blocking findings; exit 2 means
-Spotter itself failed.
+a baseline comparison. Exit 0 means complete coverage and no new blocking
+findings; exit 1 means new blocking findings; exit 3 means coverage is
+incomplete (findings are still listed); exit 2 means Spotter itself failed.
+When several apply, 2 wins over 3, and 3 over 1.
 
 ## Development
 

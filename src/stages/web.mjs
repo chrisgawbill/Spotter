@@ -58,11 +58,19 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
     const faultResults = await runPool(faultJobs, web.concurrency, ({ job, fault, healthy }) =>
       visitPage({ browser, job, config, fixtures, mode, appOrigin: server.origin, screenshotDir, fault, healthy, log }),
     );
+    const sessionChecks = {};
+    for (const result of results) {
+      if (result.sessionCheck == null) continue;
+      const entry = (sessionChecks[result.job.session.name] ??= { checked: 0, failed: 0, examples: [] });
+      entry.checked += 1;
+      if (!result.sessionCheck) { entry.failed += 1; if (entry.examples.length < 3) entry.examples.push(result.where); }
+    }
+    const countFailed = (list, check) => list.filter((result) => result.findings.some((finding) => finding.check === check)).length;
     const shape = `${web.routes.length} routes × ${web.viewports.length} viewports × ${mode === 'record' ? 1 : web.colorSchemes.length} schemes × ${web.sessions.length} sessions`;
     if (mode === 'sweep' && web.specs) log('project specs');
     const specs = mode === 'sweep' && web.specs ? await runSpecsStage({ config, workdir, logDir, fixtures, appOrigin: server.origin }) : null;
     if (specs) log('project specs', 'done');
-    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
+    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
   } finally {
     await browser?.close();
     await server.close();
@@ -121,6 +129,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
   const requests = new Set();
   let loading = [];
   let blank = false;
+  let sessionCheck = null;
   const storageState = await sessionStorageState(session, appOrigin, web.colorSchemeStorage?.[colorScheme]);
   const secrets = session.storageState ? [...storageState.cookies.map((cookie) => cookie.value), ...storageState.origins.flatMap((origin) => origin.localStorage.map((entry) => entry.value))] : [];
   const sessionFixtures = session.name === 'anonymous' ? fixtures : { ...fixtures, entries: fixtures?.sessions?.[session.name] ?? {} };
@@ -160,6 +169,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
       await page.waitForTimeout(web.settleMs);
     }
     if (mode === 'sweep') {
+      if (!fault && session.expectSelector) sessionCheck = (await page.locator(session.expectSelector).count()) > 0;
       const content = await page.evaluate(measureVisibleContent);
       blank = !content.textLength && !content.mediaCount;
       if (web.faultInjection) loading = await page.locator(web.faultInjection.loadingSelector).evaluateAll((elements) =>
@@ -194,6 +204,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
     }
   } catch (error) {
     if (mode === 'record') throw error;
+    if (!fault && mode === 'sweep' && session.expectSelector && sessionCheck === null) sessionCheck = false;
     report({ check: fault ? 'fault-navigation' : 'navigation', severity: 'high', title: `${fault ? `${fault.kind} ${fault.key}: ` : ''}page check failed: ${firstLine(error.message)}` });
   } finally {
     await context.close();
@@ -202,7 +213,7 @@ async function visitPage({ browser, job, config, fixtures, mode, recordedEntries
 
   if (mode === 'record') return { findings: [] };
   return {
-    requests: [...requests], job, loading, blank,
+    requests: [...requests], job, loading, blank, where, sessionCheck,
     findings: redactSecrets(problems, secrets).map((problem) =>
       createFinding({
         stage: 'web',

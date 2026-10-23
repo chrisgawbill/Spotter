@@ -154,6 +154,14 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     await page.reload();
     await page.waitForFunction(() => document.querySelector('#status').textContent.includes('FAIL'));
     await page.frameLocator('#report').getByRole('heading', { name: /uncaught Error: seeded dashboard failure/ }).waitFor();
+    const seeded = path.join(root, 'data/dashboard-demo/runs/incomplete-seed');
+    await mkdir(seeded, { recursive: true });
+    await writeFile(path.join(seeded, 'report.json'), JSON.stringify({ head: { label: 'seeded', stages: {} }, comparison: { newFindings: [] }, completeness: { status: 'incomplete', gaps: ['specs: selected zero tests'], items: [], counts: { pages: null, faultVisits: null, specs: null }, fixtures: null, baseline: { status: 'none', reason: null }, level: null } }));
+    await writeFile(path.join(seeded, 'activity.json'), JSON.stringify({ branch: 'seeded', status: 'incomplete', updatedAt: new Date().toISOString() }));
+    await page.goto(`${origin}/#run/dashboard-demo/incomplete-seed`);
+    await page.waitForFunction(() => document.querySelector('#status').textContent.includes('INCOMPLETE'));
+    await page.waitForFunction(() => /^INCOMPLETE · baseline none/.test(document.querySelector('#coverage').textContent));
+    await page.getByText('specs: selected zero tests').waitFor();
     await page.setViewportSize({ width: 375, height: 812 });
     await page.screenshot({ path: '/tmp/spotter-dashboard-mobile.png', fullPage: true });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));

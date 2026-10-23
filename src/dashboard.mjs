@@ -11,6 +11,7 @@ import { homedir } from 'node:os';
 import { browseProjects, detectProject } from './project-setup.mjs';
 import { listProjectNames, loadProjectConfig, normalizeConfig } from './config.mjs';
 import { spotterHome, spotterRoot } from './paths.mjs';
+import { summarizeCompleteness } from './completeness.mjs';
 import { hasFailingFinding } from './findings.mjs';
 import { configFields } from './config-fields.mjs';
 import { retentionSettings, lockedRetention, loadSavedRetention, saveRetention, storageSummary, pruneProject } from './prune.mjs';
@@ -36,7 +37,7 @@ async function readRun(home, project, id) {
   const events = (await readFile(path.join(directory, 'activity.jsonl'), 'utf8').catch(() => '')).split('\n').filter(Boolean).flatMap((line) => {
     try { return [JSON.parse(line)]; } catch { return []; }
   });
-  let status = report ? (hasFailingFinding(report.comparison.newFindings) ? 'fail' : 'pass') : activity.status;
+  let status = report ? (report.completeness?.status === 'incomplete' ? 'incomplete' : hasFailingFinding(report.comparison.newFindings) ? 'fail' : 'pass') : activity.status;
   if (activity?.status === 'error' || (status === 'running' && Date.now() - Date.parse(activity.updatedAt) > 30_000)) status = 'error';
   const current = new Map();
   for (const event of events) {
@@ -49,6 +50,7 @@ async function readRun(home, project, id) {
     error: activity?.error ?? (status === 'error' ? 'Runner heartbeat stopped. Inspect runner logs before restarting.' : null),
     current: status === 'running' ? [...current.values()] : [], events,
     report: report ? `/artifacts/${encodeURIComponent(project)}/${encodeURIComponent(id)}/report.html` : null,
+    coverage: report?.completeness ? summarizeCompleteness(report.completeness) : null, gaps: report?.completeness?.gaps ?? [],
     checks: report?.head.stages };
 }
 

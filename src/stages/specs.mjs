@@ -54,9 +54,17 @@ export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrig
     await rm(privateDir, { recursive: true, force: true });
   }
   const findings = report ? specFindings(redact(report), workdir) : [];
-  if (result.exitCode && !findings.length) findings.push(createFinding({ stage: 'web', check: 'project-spec', severity: 'high', title: 'project specs could not complete', detail: report?.errors?.map((error) => error.message).join('\n') || lastLines(result.output, 10), key: { reason: 'runner' } }));
+  const runnerFailed = Boolean(result.exitCode) && !findings.length;
+  if (runnerFailed) findings.push(createFinding({ stage: 'web', check: 'project-spec', severity: 'high', title: 'project specs could not complete', detail: report?.errors?.map((error) => error.message).join('\n') || lastLines(result.output, 10), key: { reason: 'runner' } }));
   for (const finding of findings) finding.detail = live ? 'Live authentication failed; inspect the named project spec. Raw output and browser artifacts are withheld.' : redact(finding.detail ?? '');
-  return { findings, summary: { mode: live ? 'live' : 'replay', passed: report?.stats?.expected ?? 0, failed: findings.length, skipped: report?.stats?.skipped ?? 0 } };
+  return { findings, summary: specSummary(report, runnerFailed, findings.length, live) };
+}
+
+/** Counts for the stage summary; `completed` means the runner produced a report and did not fail outright. */
+export function specSummary(report, runnerFailed, failed, live) {
+  const stats = report?.stats;
+  return { mode: live ? 'live' : 'replay', passed: stats?.expected ?? 0, failed, skipped: stats?.skipped ?? 0, flaky: stats?.flaky ?? 0,
+    selected: stats ? (stats.expected ?? 0) + (stats.unexpected ?? 0) + (stats.flaky ?? 0) + (stats.skipped ?? 0) : 0, completed: Boolean(report) && !runnerFailed };
 }
 
 /** Identify failures by file, test name and project, independently of source lines. */

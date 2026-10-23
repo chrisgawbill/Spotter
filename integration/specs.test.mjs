@@ -41,6 +41,7 @@ test('project specs share replay, clock, sessions and theme; failures use normal
     const fixtures = { recordedAt: '2026-01-02T00:00:00.000Z', entries: { 'GET /data': { status: 200, body: 'anonymous' } }, sessions: { member: { 'GET /data': { status: 200, body: 'member' } } } };
     const result = await runSpecsStage({ config, workdir: root, logDir: path.join(root, 'logs'), fixtures, appOrigin: server.origin });
     assert.equal(result.summary.passed, 1, JSON.stringify(result));
+    assert.deepEqual([result.summary.selected, result.summary.flaky, result.summary.completed], [3, 0, true]);
     assert.equal(result.findings.length, 2, JSON.stringify(result));
     assert(result.findings.every((finding) => finding.check === 'project-spec' && finding.severity === 'high'));
     assert(result.findings.some((finding) => finding.title.includes('Verify 2')));
@@ -80,6 +81,29 @@ test('two workers run same-file specs concurrently with isolated browser state',
     });
     assert.equal(result.summary.passed, 2, JSON.stringify(result));
     assert.deepEqual(result.findings, []);
+  } finally {
+    await server?.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a grep that matches nothing selects zero tests and is not complete', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'spotter-nomatch-specs-'));
+  let server;
+  try {
+    await mkdir(path.join(root, 'dist'));
+    await writeFile(path.join(root, 'dist/index.html'), '<h1>App</h1>');
+    await writeFile(path.join(root, 'one.spec.mjs'), `
+      const { test } = await import(process.env.SPOTTER_TEST_MODULE);
+      test('present', async ({ page }) => { await page.goto('./'); });
+    `);
+    server = await startStaticServer(path.join(root, 'dist'), '/');
+    const result = await runSpecsStage({
+      config: { web: { base: '/', specs: { files: ['one.spec.mjs'], grep: 'nothing-matches-this' }, sessions: [{ name: 'anonymous', localStorage: {} }] } },
+      workdir: root, logDir: path.join(root, 'logs'), fixtures: { entries: {} }, appOrigin: server.origin,
+    });
+    assert.equal(result.summary.selected, 0, JSON.stringify(result));
+    assert.equal(result.summary.completed, false, JSON.stringify(result));
   } finally {
     await server?.close();
     await rm(root, { recursive: true, force: true });

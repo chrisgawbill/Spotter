@@ -22,3 +22,32 @@ test('project spec workers must be positive integers', () => {
     assert.throws(() => config({ files: ['qa/test.mjs'], workers }), /workers/);
   }
 });
+
+const withCoverage = (coverage, web = {}) => normalizeConfig({
+  repo: '/tmp/app',
+  checks: [{ name: 'typecheck', run: 'true' }],
+  web: { build: { run: 'true' }, routes: ['/'], specs: { files: ['qa/a.spec.mjs'] }, sessions: [{ name: 'member', localStorage: { a: 'b' }, expectSelector: '#me' }], ...web },
+  coverage,
+}, { projectName: 'demo' });
+
+test('coverage defaults and accepts configured names', () => {
+  assert.deepEqual(config(undefined).coverage, { required: [], minSpecs: null });
+  const { coverage } = withCoverage({ required: ['typecheck', 'rules', 'web', 'specs', 'member'], minSpecs: 3 });
+  assert.deepEqual(coverage, { required: ['typecheck', 'rules', 'web', 'specs', 'member'], minSpecs: 3 });
+  assert.deepEqual(withCoverage({}).coverage, { required: [], minSpecs: null });
+});
+
+test('coverage rejects unknown names, bad shapes and minSpecs without specs', () => {
+  for (const coverage of [[], 'x', null]) assert.throws(() => withCoverage(coverage), /`coverage` must be an object/);
+  for (const required of ['web', [1], ['nope'], ['fixtures']]) assert.throws(() => withCoverage({ required }), /coverage\.required/);
+  for (const minSpecs of [0, 1.5, '2', -1]) assert.throws(() => withCoverage({ minSpecs }), /coverage\.minSpecs/);
+  assert.throws(() => withCoverage({ minSpecs: 1 }, { specs: undefined }), /coverage\.minSpecs/);
+  assert.equal(withCoverage({ minSpecs: 1 }).coverage.minSpecs, 1);
+});
+
+test('session expectSelector must be a nonempty string', () => {
+  for (const expectSelector of ['', '  ', 3, null]) {
+    assert.throws(() => withCoverage({}, { sessions: [{ name: 'm', localStorage: {}, expectSelector }] }), /web\.sessions/);
+  }
+  assert.equal(withCoverage({}).web.sessions[1].expectSelector, '#me');
+});

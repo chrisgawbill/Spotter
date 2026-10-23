@@ -19,6 +19,11 @@ is 1; live authentication always uses 1 worker. Explicit Playwright serial
 groups retain their ordering. Parallel tests must isolate shared files,
 accounts and other external state. This limit is separate from `web.concurrency`
 and applies to each branch/baseline side, which may run concurrently.
+A spec configuration that selects zero tests (files or `grep` match nothing) or
+whose runner cannot complete makes the run incomplete, even when the base has
+the same problem. Set top-level `coverage.minSpecs` to require a minimum number
+of executed tests, and list `specs` in `coverage.required` to make `--skip web`
+an incomplete run.
 Spotter supplies the Playwright runner;
 specs import its adapter as above. Each test gets isolated fixture replay and
 the recording's fixed clock. Use `test.use({ spotterSession: 'member',

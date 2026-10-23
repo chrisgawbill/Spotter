@@ -20,7 +20,7 @@ test('browser depth detects seeded defects as new, preserves session replay, and
     await mkdir(path.join(dir, 'logs'));
     const config = normalizeConfig({ repo: dir, web: {
       build: { run: 'true' }, api: { envVar: 'API_URL', recordFrom: `http://127.0.0.1:${api.address().port}` }, routes: ['/'], viewports: [375], colorSchemes: ['light'], settleMs: 0,
-      sessions: [{ name: 'member', localStorage: { session: 'member' } }],
+      sessions: [{ name: 'member', localStorage: { session: 'member' }, expectSelector: 'h1' }, { name: 'ghost', localStorage: { session: 'member' }, expectSelector: '#signed-in-only' }],
       faultInjection: { delayMs: 80, timeoutMs: 160 },
     } }, { projectName: 'depth' });
     const fixtures = { entries: { 'GET /data': { status: 200, body: 'anonymous' } }, sessions: { member: { 'GET /data': { status: 200, body: 'member' } } } };
@@ -40,8 +40,15 @@ test('browser depth detects seeded defects as new, preserves session replay, and
     const healthy = await run();
     assert.equal(healthy.findings.filter((f) => f.severity !== 'low').length, 0, JSON.stringify(healthy.findings));
     assert(!healthy.findings.some((f) => f.check === 'keyboard-reachability'));
-    assert.equal(healthy.summary.pages, 2);
-    assert.equal(healthy.summary.faultVisits, 4);
+    assert.equal(healthy.summary.pages, 3);
+    assert.equal(healthy.summary.faultVisits, 6);
+    assert.equal(healthy.summary.pagesFailed, 0);
+    assert.equal(healthy.summary.faultVisitsFailed, 0);
+    const { member, ghost } = healthy.summary.sessionChecks;
+    assert(member.checked > 0 && member.failed === 0, JSON.stringify(member));
+    assert(ghost.checked > 0 && ghost.failed === ghost.checked && ghost.examples.length > 0, JSON.stringify(ghost));
+    assert(ghost.examples[0].includes('[ghost]'));
+    assert(!healthy.findings.some((f) => f.where.includes('[ghost]') && f.severity !== 'low'));
     await writeFile(path.join(dir, 'dist/index.html'), shell(`<h1>Seeded</h1><button aria-label="Save"></button><img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="><button tabindex="-1">Unreachable</button><div role="button">Custom action</div><script>window.onFailure=()=>{ document.body.innerHTML=''; throw Error('seeded crash'); }</script>${script}`));
     const seeded = await run();
     const fresh = compareWithBaseline(seeded.findings, healthy.findings).newFindings;
