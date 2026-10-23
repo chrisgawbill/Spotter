@@ -16,11 +16,12 @@
 <form id="start" class="ds-cluster">
 <label class="ds-field">Project<select id="project" class="ds-input" required></select></label>
 <label class="ds-field">Branch<select id="branch" class="ds-input" required></select></label>
+<label class="ds-field">Level<select id="level" class="ds-input"><option value="">Project default</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
 <button id="submit" class="ds-button" type="submit" disabled>Run checks →</button>
-</form><p id="project-info" class="muted">Loading projects…</p></section>
+</form><p id="project-info" class="muted">Loading projects…</p><p id="plan" class="muted" role="status"></p></section>
 <section id="detail" class="ds-stack" hidden aria-labelledby="detail-title">
 <div class="section-head"><h2 id="detail-title" tabindex="-1">Run activity</h2><span id="status" role="status"></span><a class="ds-button button-secondary" href="#">Close run</a></div>
-<div class="run-meta"><p id="identity"></p><p id="updated" class="muted"></p><p id="coverage" class="muted" hidden></p></div>
+<div class="run-meta"><p id="identity"></p><p id="run-plan" class="muted" hidden></p><p id="updated" class="muted"></p><p id="coverage" class="muted" hidden></p></div>
 <div class="run-layout">
 <section class="ds-card ds-aero-surface ds-stack checklist-card" aria-labelledby="checklist-title"><h3 id="checklist-title">Checklist</h3><ol id="checklist" class="checklist" tabindex="0" aria-labelledby="checklist-title"></ol></section>
 <div class="ds-stack">

@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
 import { requirableNames } from './completeness.mjs';
+import { levelProblems, normalizeLevels } from './levels.mjs';
 import { spotterRoot } from './paths.mjs';
 import { readSessionState } from './sessions.mjs';
 
@@ -96,6 +97,7 @@ export function normalizeConfig(config, { projectName, source = '' }) {
       }
     }
   }
+  problems.push(...levelProblems(config));
   if (problems.length) throw new Error(`Invalid projects/${projectName}.yml:\n- ${problems.join('\n- ')}`);
 
   return {
@@ -111,6 +113,7 @@ export function normalizeConfig(config, { projectName, source = '' }) {
     },
     web: config.web ? normalizeWebConfig(config.web) : null,
     coverage: { required: coverage?.required ?? [], minSpecs: coverage?.minSpecs ?? null },
+    levels: normalizeLevels(config.levels),
     configHash: createHash('sha1').update(source).digest('hex').slice(0, 10),
   };
 }

@@ -93,8 +93,10 @@ export function assessBaseline({ config, skip, headStages, baseStages, baseSha, 
 }
 
 /** The completeness record stored as report.json `completeness`. */
-export function assessCompleteness({ config, skip, stages, fixtures, baseline, liveAuth, now = Date.now() }) {
-  const items = listItems({ config, skip, stages, fixtures, liveAuth });
+export function assessCompleteness({ config, skip, stages, fixtures, baseline, liveAuth, level = null, now = Date.now() }) {
+  const excluded = level?.exclusions ?? [];
+  const items = listItems({ config, skip, stages, fixtures, liveAuth }).filter((item) => !excluded.some((e) => e.name === item.name && e.kind === item.kind));
+  for (const { name, kind, reason } of excluded) items.push({ name, kind, required: false, status: 'excluded', reason });
   const web = items.find((item) => item.name === 'web');
   const summary = web?.status === 'executed' ? stages.web : null;
   const specsSummary = stages.web?.specs;
@@ -124,17 +126,20 @@ export function assessCompleteness({ config, skip, stages, fixtures, baseline, l
   if (min && specsExecuted < min) gaps.push(`specs: ${specsExecuted} executed, minimum ${min}`);
   if (baseline.status === 'failed') gaps.push(`baseline: ${baseline.reason}`);
 
-  return { status: gaps.length ? 'incomplete' : 'complete', gaps, items, counts, fixtures: describeFixtures(fixtures, now), baseline, level: null };
+  return { status: gaps.length ? 'incomplete' : 'complete', gaps, items, counts, fixtures: describeFixtures(fixtures, now), baseline, level };
 }
 
 /** One line shared by Markdown, HTML and dashboard. */
-export function summarizeCompleteness({ status, counts, baseline, fixtures, items }) {
+export function summarizeCompleteness({ status, counts, baseline, fixtures, items, level }) {
   const parts = [status === 'complete' ? 'COMPLETE' : 'INCOMPLETE'];
+  if (level) parts.push(`level ${level.name}`);
   if (counts.pages) parts.push(`${counts.pages.executed}/${counts.pages.expected} configured page visits loaded`);
   if (counts.specs) parts.push(`specs ${counts.specs.executed} of ${counts.specs.selected} executed${counts.specs.min ? ` (min ${counts.specs.min})` : ''}`);
   parts.push(`baseline ${baseline.status}`);
   if (fixtures) parts.push(`fixtures ${fixtures.recordedAt.slice(0, 10)} (${fixtures.ageDays}d old, ${fixtures.hash})`);
   const skipped = items.filter((item) => item.status === 'skipped' && !item.required);
   if (skipped.length) parts.push(`skipped: ${skipped.map((item) => `${item.name} (${item.reason})`).join(', ')}`);
+  const excluded = items.filter((item) => item.status === 'excluded');
+  if (excluded.length) parts.push(`${excluded.length} excluded by level`);
   return parts.join(' · ');
 }

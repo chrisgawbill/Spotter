@@ -157,3 +157,23 @@ branch retains seven new groups, 17 existing and zero fixed, with identical
 finding IDs to the accepted reports. Evidence:
 `~/spotter/hockeystats-webapp/runs/20261022-211425-main-aa4e17d8/report.md` and
 `~/spotter/hockeystats-webapp/runs/20261022-211426-verify-browser-depth-defects-3d99e273/report.md`.
+
+## QA-08
+
+**QA-08 evidence (2026-10-23, not yet accepted):**
+
+- `npm test`: 85 tests pass (71 before; levels, config, completeness, dashboard
+  and report tests added). Docker dashboard integration 1/1 (Level selector with
+  four options, `Plan: no level` preview).
+- HockeyStats main without levels: plan `no level`, the same 17 known finding
+  groups, COMPLETE 66/66, exit 1. Report:
+  `~/spotter/hockeystats-webapp/runs/20261023-042342-main-69026e16/report.md`.
+- Seeded scratch clone (type error, format error, overflow on `home` and
+  `schedule`) with a temporary config (`coverage.required: [typecheck]`,
+  `levels.low.routes: [home]`): low reports the type error and home overflow
+  only, COMPLETE with 17 exclusions; high reports all seeded defects, COMPLETE
+  66/66, lists the four unsupported capabilities and ran its own base side; a
+  repeat low run reused the low baseline cache. Unknown level, unconfigured low
+  and `record --level` fail with exit 2. Runs: `~/spotter/qa08-levels/runs/`.
+- Not verified: `--level` with `--live-auth` rejection (code-reviewed only);
+  a dashboard-started run with a non-default level (HTTP-tested with a mock launcher).

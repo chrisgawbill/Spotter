@@ -13,6 +13,7 @@ import { listProjectNames, loadProjectConfig, normalizeConfig } from './config.m
 import { spotterHome, spotterRoot } from './paths.mjs';
 import { summarizeCompleteness } from './completeness.mjs';
 import { hasFailingFinding } from './findings.mjs';
+import { resolvePlan, summarizePlan } from './levels.mjs';
 import { configFields } from './config-fields.mjs';
 import { retentionSettings, lockedRetention, loadSavedRetention, saveRetention, storageSummary, pruneProject } from './prune.mjs';
 
@@ -51,6 +52,7 @@ async function readRun(home, project, id) {
     current: status === 'running' ? [...current.values()] : [], events,
     report: report ? `/artifacts/${encodeURIComponent(project)}/${encodeURIComponent(id)}/report.html` : null,
     coverage: report?.completeness ? summarizeCompleteness(report.completeness) : null, gaps: report?.completeness?.gaps ?? [],
+    plan: activity?.plan ?? report?.plan ?? null,
     checks: report?.head.stages };
 }
 
@@ -175,11 +177,13 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
           body += chunk;
           if (body.length > 4096) return send(413, { error: 'Request too large' });
         }
-        const { project, branch } = JSON.parse(body);
+        const { project, branch, level } = JSON.parse(body);
         const names = await projectNames();
         if (!safeName(project) || !names.includes(project)) return send(400, { error: 'Unknown project' });
         const config = await loadConfig(project);
         if (typeof branch !== 'string' || !(await branches(config)).includes(branch)) return send(400, { error: 'Select a listed branch' });
+        if (level !== undefined && typeof level !== 'string') return send(400, { error: 'Level must be a string' });
+        try { resolvePlan(config, level); } catch (error) { return send(400, { error: error.message }); }
         // Serialize dashboard runs; add a queue only if concurrent runs are needed.
         if (editing || starting || children.size) return send(409, { error: 'A dashboard run is already active' });
         starting = true;
@@ -188,13 +192,13 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
           const directory = path.join(home, project, 'runs', id);
           await mkdir(directory, { recursive: true });
           const now = new Date().toISOString();
-          const metadata = { project, branch, status: 'running', startedAt: now, updatedAt: now };
+          const metadata = { project, branch, status: 'running', level: level || null, startedAt: now, updatedAt: now };
           metadata.pid = process.pid;
           await writeFile(path.join(directory, 'activity.json'), JSON.stringify(metadata));
           const output = openSync(path.join(directory, 'runner.log'), 'a');
           let child;
           try {
-            child = launch(process.execPath, [path.join(spotterRoot, 'src/cli.mjs'), 'run', project, '--ref', branch], {
+            child = launch(process.execPath, [path.join(spotterRoot, 'src/cli.mjs'), 'run', project, '--ref', branch, ...(level ? ['--level', level] : [])], {
               env: { ...process.env, SPOTTER_HOME: home, SPOTTER_RUN_ID: id }, stdio: ['ignore', output, output],
             });
           } finally { closeSync(output); }
@@ -243,9 +247,16 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
       if (url.pathname === '/api/projects') {
         const names = await projectNames();
         return send(200, await Promise.all(names.filter(safeName).map(async (name) => {
-          try { const config = await loadConfig(name); return { name, branches: await branches(config), baseBranch: config.baseBranch, error: fetchErrors.get(config.repo) }; }
+          try { const config = await loadConfig(name); return { name, branches: await branches(config), baseBranch: config.baseBranch, levels: { default: config.levels?.default ?? null, low: !!config.levels?.low }, error: fetchErrors.get(config.repo) }; }
           catch (error) { return { name, branches: [], error: error.message }; }
         })));
+      }
+      if (url.pathname === '/api/plan') {
+        const project = url.searchParams.get('project');
+        if (!safeName(project) || !(await projectNames()).includes(project)) return send(404, { error: 'Unknown project' });
+        let plan;
+        try { plan = resolvePlan(await loadConfig(project), url.searchParams.get('level')); } catch (error) { return send(400, { error: error.message }); }
+        return send(200, { level: plan.record?.name ?? null, source: plan.record?.source ?? null, summary: summarizePlan(plan), exclusions: plan.record?.exclusions ?? [], unsupported: plan.record?.unsupported ?? [] });
       }
       if (url.pathname === '/api/runs') {
         const runs = [];

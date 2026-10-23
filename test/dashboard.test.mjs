@@ -26,6 +26,7 @@ test('dashboard launches only listed branches, follows activity and confines rep
     const projects = await (await get('/api/projects')).json();
     const branch = projects[0].branches[0];
     assert.ok(branch);
+    assert.equal((await get('/api/plan?project=demo&level=low')).status, 400);
     assert.equal((await post({ project: 'demo', branch }, { Origin: 'http://outside.example' })).status, 403);
     assert.equal((await post({ project: '../demo', branch })).status, 400);
     assert.equal((await post({ project: 'demo', branch }, { Host: 'outside.example', Origin: 'http://outside.example' })).status, 403);
@@ -98,6 +99,37 @@ test('dashboard launches only listed branches, follows activity and confines rep
     activity.finish('pass');
     const runs = await (await get('/api/runs')).json();
     assert.equal(runs.length, 5);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test('dashboard validates levels, previews the plan and launches with --level', async () => {
+  const home = await mkdtemp(path.join(tmpdir(), 'spotter-levels-'));
+  const launched = [];
+  const server = createDashboardServer({ branchRefreshMs: 0, home, projectNames: async () => ['demo'],
+    loadConfig: async () => ({ name: 'demo', repo: path.resolve('.'), baseBranch: 'main', checks: [], coverage: { required: [] }, web: null, levels: { default: null, low: { routes: ['home'], specs: null } } }),
+    launch: (...args) => { launched.push(args); const child = new EventEmitter(); child.pid = process.pid; return child; },
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const get = (url) => fetch(`${origin}${url}`);
+  const post = (data) => fetch(`${origin}/api/runs`, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  try {
+    const plan = await get('/api/plan?project=demo&level=low');
+    assert.equal(plan.status, 200);
+    assert.match((await plan.json()).summary, /^level low \(selected\)/);
+    assert.equal((await get('/api/plan?project=demo&level=bogus')).status, 400);
+    assert.equal((await get('/api/plan?project=nope&level=low')).status, 404);
+    const [project] = await (await get('/api/projects')).json();
+    assert.deepEqual(project.levels, { default: null, low: true });
+    const branch = project.branches[0];
+    assert.equal((await post({ project: 'demo', branch, level: 'bogus' })).status, 400);
+    assert.equal(launched.length, 0);
+    assert.equal((await post({ project: 'demo', branch, level: 'low' })).status, 202);
+    assert.deepEqual(launched[0][1].slice(-4), ['--ref', branch, '--level', 'low']);
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));

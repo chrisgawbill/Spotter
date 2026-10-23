@@ -81,6 +81,14 @@ test('HTML coverage section escapes reasons and lists gaps', async () => {
   assert.ok(!html.includes('<b>x'));
 });
 
+test('reports show the plan line before coverage and list what high cannot add', async () => {
+  const { renderHtmlReport } = await import('../src/htmlReport.mjs');
+  const run = { ...coverageRun({ ...completeness('complete', []), level: { name: 'high', source: 'selected', exclusions: [], unsupported: [{ name: 'browser matrix', ticket: 'QA-12', reason: 'not implemented' }] } }), plan: 'level high (selected) · 2 checks' };
+  const markdown = renderMarkdownReport(run);
+  assert.match(markdown, /- plan: level high \(selected\) · 2 checks\n- coverage: /);
+  assert.match(renderHtmlReport(run, markdown), /<p>Not available at level high: browser matrix \(QA-12\)<\/p>/);
+});
+
 test('live authentication is identified without claiming a failed build or branch comparison', () => {
   const markdown = renderMarkdownReport({
     project: 'demo', head: { label: 'auth (live authentication)', shortSha: 'abc', stages: { web: { pages: 0, specs: { mode: 'live', passed: 2, failed: 0, skipped: 0 } } } },

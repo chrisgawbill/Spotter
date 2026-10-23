@@ -8,6 +8,7 @@ for screenshots and visual review.
 ```bash
 bin/spotter run my-app --ref feature/my-change      # writes report.md; exit 1 = new high/medium findings, 3 = incomplete coverage
 bin/spotter run my-app --repo ~/worktrees/x --working-tree   # another clone, uncommitted changes included
+bin/spotter run my-app --ref feature/x --level low         # testing level: low, medium or high
 bin/spotter record my-app                           # (re)record API fixtures from the live API
 bin/spotter prune my-app --dry-run                  # list old runs and cache entries that cleanup would delete
 bin/spotter list
@@ -62,6 +63,7 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `web.errorText`, `web.ignoreConsole`, `web.ignoreRequests` | Visible text that means failure; regexes to ignore |
 | `coverage.required` | Item names that must run: check names, `rules`, `web`, `specs`, `fixtures`, or a session name with `expectSelector`. Skipping one (for example with `--skip`) makes the run incomplete |
 | `coverage.minSpecs` | Minimum number of executed (not skipped) project spec tests; requires `web.specs` |
+| `levels` | Optional `default` (`low`, `medium`, `high`) and `low: { routes, specs: { grep } }`. See [Testing levels](#testing-levels) |
 
 Projects under `~/projects` are mounted automatically; `--repo` paths elsewhere are mounted on demand.
 
@@ -96,8 +98,33 @@ does not make a run incomplete. Coverage covers configured routes only.
 `report.md` shows `RESULT: INCOMPLETE`, an `## Incomplete coverage` list and a
 one-line `coverage:` summary; `report.html` adds an item table; `report.json`
 holds the full `completeness` record. The dashboard shows the same summary.
-Testing levels (QA-08) are not implemented yet, so `completeness.level` is
-always `null`.
+
+## Testing levels
+
+`--level low|medium|high` (or the dashboard's Level selector) chooses testing
+depth for one run; otherwise `levels.default` applies. Without either, a run
+behaves exactly as before and `completeness.level` is `null`.
+
+| Level | Runs |
+| --- | --- |
+| `low` | Only `coverage.required` checks (the rules stage only when `rules` is required), the `levels.low.routes` smoke set at the first viewport and colour scheme for every session, no fault visits; specs only when required or narrowed by `levels.low.specs.grep` (which also drops `coverage.minSpecs`) |
+| `medium` | The full configured run |
+| `high` | Currently the same as medium. Wider browser, data, recovery and performance scenarios are listed as unsupported until QA-11, QA-12, QA-13 and QA-15 add them |
+
+```yaml
+levels:
+  default: medium
+  low:
+    routes: [home, standings]
+    specs: { grep: '@smoke' }
+```
+
+`low` must be configured before it can be selected; unknown or unconfigured
+levels fail before a run starts (exit 2). Required items are never excluded.
+The branch and its merge base run the same plan, and the plan is part of the
+baseline cache key. The run prints its plan first; reports and the dashboard
+show a `plan:` line, and each exclusion appears as an `excluded` coverage item,
+which never makes a run incomplete.
 
 ## Severity and exit codes
 

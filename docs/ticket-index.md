@@ -15,7 +15,7 @@ ticket.
 | [QA-05](#qa-05--adopt-spotter-in-hockeystatswebapps-agent-workflow) | DONE | Consumer workflow |
 | [QA-06](#qa-06--spotter-dashboard) | ACTIVE | Dashboard |
 | [QA-07](#qa-07--generic-authentication-flow-testing) | DONE | Authentication |
-| [QA-08](#qa-08--configurable-low-medium-and-high-testing-levels) | IDEA | Testing levels |
+| [QA-08](#qa-08--configurable-low-medium-and-high-testing-levels) | ACTIVE | Testing levels |
 | [QA-09](#qa-09--coverage-and-run-completeness) | DONE | Trustworthy pass results |
 | [QA-10](#qa-10--critical-interaction-journeys) | IDEA | Interaction testing |
 | [QA-11](#qa-11--fault-recovery-and-response-ordering) | IDEA | Recovery testing |
@@ -342,7 +342,10 @@ level/completeness integration rather than claiming it is available.
 
 ## QA-08 — Configurable low, medium and high testing levels
 
-**Status:** IDEA
+**Status:** ACTIVE — started by Product Owner 2026-10-23. Decisions: low runs only
+`coverage.required` checks plus a configured smoke route set; high equals medium
+until the wider-scenario tickets land (listed as unsupported); unconfigured levels
+are rejected; the dashboard gets a level selector and plan preview.
 
 **Goal:** Let users choose testing depth per run through project configuration, CLI
 and dashboard controls. Testing level is independent of finding severity.

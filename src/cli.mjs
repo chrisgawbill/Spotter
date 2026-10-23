@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { listProjectNames, loadProjectConfig } from './config.mjs';
+import { LEVELS, resolvePlan, summarizePlan } from './levels.mjs';
 import { assessBaseline, assessCompleteness, describeFixtures } from './completeness.mjs';
 import { compareWithBaseline, hasFailingFinding, sortFindings } from './findings.mjs';
 import { loadFixtures, saveFixtures } from './fixtures.mjs';
@@ -21,11 +22,12 @@ import { runWebStage } from './stages/web.mjs';
 
 const USAGE = `Spotter — automatic QA that reports what is new on a branch.
 
-  spotter run <project> [--ref <ref>] [--repo <path>] [--working-tree] [--no-baseline] [--live-auth] [--skip static,rules,web]
+  spotter run <project> [--ref <ref>] [--repo <path>] [--working-tree] [--no-baseline] [--live-auth] [--skip static,rules,web] [--level low|medium|high]
       Check <ref> (default: the checkout's HEAD) against its merge base with
       the base branch. --repo checks another clone or worktree of the project;
       --working-tree includes uncommitted changes. Prints report.md; exit 1 if anything new is high
       or medium, 3 if coverage is incomplete, 2 if Spotter itself failed.
+      --level picks a testing level (default: the project's levels.default).
   spotter record <project> [--ref <ref>] [--repo <path>] [--merge]
       Visit every route against the live API and store its responses as the
       fixtures runs replay. --merge keeps existing entries and adds new ones.
@@ -63,7 +65,10 @@ export function parseArguments(argv) {
     else if (flag === '--dry-run') options.dryRun = true;
     else if (flag === '--keep-runs') options.keepRuns = flags[++index];
     else if (flag === '--keep-baselines') options.keepBaselines = flags[++index];
-    else if (flag === '--skip') {
+    else if (flag === '--level') {
+      options.level = flags[++index];
+      if (!LEVELS.includes(options.level)) throw new Error(`Unknown level "${options.level}"; use low, medium or high`);
+    } else if (flag === '--skip') {
       for (const stage of flags[++index].split(',')) options.skip.add(stage.trim());
     } else throw new Error(`Unknown option ${flag}`);
   }
@@ -88,9 +93,11 @@ async function runCommandLine(argv) {
     console.log(USAGE);
     return options.command && options.command !== 'help' ? EXIT_ERROR : EXIT_PASS;
   }
+  if (options.level && options.command !== 'run') throw new Error('--level applies to run only');
   const projectConfig = await loadProjectConfig(options.project, { includeSessions: !options.liveAuth });
   const config = options.repo ? { ...projectConfig, repo: options.repo } : projectConfig;
   if (options.liveAuth) {
+    if (options.level) throw new Error('--level cannot be combined with --live-auth');
     if (options.command !== 'run' || !config.web?.specs?.live) throw new Error('--live-auth requires run and web.specs.live configuration');
     if (options.skip.has('web')) throw new Error('--live-auth cannot be combined with --skip web');
     config.web.specs = { ...config.web.specs, mode: 'live' };
@@ -117,6 +124,9 @@ async function pruneCommand(options) {
 
 /** `spotter run`: head vs merge base, report written and printed. */
 async function runProject(config, options) {
+  const plan = options.liveAuth ? { config, skip: new Set(), record: null, hash: 'live' } : resolvePlan(config, options.level);
+  log(`plan: ${summarizePlan(plan)}`);
+  const runSkip = new Set([...options.skip, ...plan.skip]);
   const startedAt = Date.now();
   const directories = projectDirs(config.name);
   const headRef = options.ref ?? 'HEAD';
@@ -129,7 +139,7 @@ async function runProject(config, options) {
   const workRoot = path.join(directories.work, path.basename(runDir));
   await mkdir(runDir, { recursive: true });
 
-  const activity = createActivity(runDir, { project: config.name, branch: headRef, startedAt: new Date(startedAt).toISOString() });
+  const activity = createActivity(runDir, { project: config.name, branch: headRef, startedAt: new Date(startedAt).toISOString(), level: plan.record?.name ?? null, plan: summarizePlan(plan) });
   try {
     const changes = baseSha
       ? {
@@ -137,7 +147,7 @@ async function runProject(config, options) {
           commits: await listCommitMessages(config.repo, baseSha, headSha),
         }
       : { addedLines: [], commits: [] };
-    const sideArguments = { config, fixtures, skip: options.skip, workRoot, activity };
+    const sideArguments = { config: plan.config, fixtures, skip: runSkip, workRoot, activity };
 
     const headPromise = runSide({
       ...sideArguments,
@@ -146,7 +156,7 @@ async function runProject(config, options) {
       changes,
       log: (step, state) => { log(`head: ${step} (${state ?? 'started'})`); activity.event('head', step, state); },
     });
-    const basePromise = baseSha && (baseSha !== headSha || options.workingTree) ? loadOrRunBase({ ...sideArguments, baseSha, directories }).catch((error) => {
+    const basePromise = baseSha && (baseSha !== headSha || options.workingTree) ? loadOrRunBase({ ...sideArguments, baseSha, directories, planHash: plan.hash }).catch((error) => {
       log(`base: failed — ${error.message}`);
       activity.event('base', 'base run failed', 'done');
       return { error };
@@ -155,7 +165,7 @@ async function runProject(config, options) {
     await rm(workRoot, { recursive: true, force: true });
 
     activity.event('run', 'compare findings and screenshots');
-    const baseline = assessBaseline({ config, skip: options.skip, headStages: head.stages, baseStages: base?.side?.stages, baseSha, headSha, workingTree: !!options.workingTree, cached: !!base?.cached, error: base?.error, liveAuth: !!options.liveAuth });
+    const baseline = assessBaseline({ config: plan.config, skip: options.skip, headStages: head.stages, baseStages: base?.side?.stages, baseSha, headSha, workingTree: !!options.workingTree, cached: !!base?.cached, error: base?.error, liveAuth: !!options.liveAuth });
     const comparison = base?.side && baseline.status !== 'failed'
       ? compareWithBaseline(head.findings, base.side.findings)
       : { newFindings: head.findings, existingFindings: [], fixedFindings: [] };
@@ -168,7 +178,8 @@ async function runProject(config, options) {
       head: { label: `${options.workingTree ? `${headRef} + working tree` : headRef}${options.liveAuth ? ' (live authentication)' : ''}`, sha: headSha, shortSha: headSha.slice(0, 7), stages: head.stages },
       base: baseSha ? { label: `${config.baseBranch} merge base`, sha: baseSha, shortSha: baseSha.slice(0, 7) } : null,
       fixtures: describeFixtures(fixtures),
-      completeness: assessCompleteness({ config, skip: options.skip, stages: head.stages, fixtures, baseline, liveAuth: !!options.liveAuth }),
+      plan: summarizePlan(plan),
+      completeness: assessCompleteness({ config: plan.config, skip: options.skip, stages: head.stages, fixtures, baseline, liveAuth: !!options.liveAuth, level: plan.record }),
       comparison,
       visual: await compareScreenshots(path.join(runDir, 'screenshots'), base?.side?.screenshotDir ?? (baseSha === headSha && !options.workingTree ? path.join(runDir, 'screenshots') : null), runDir),
       durationMs: Date.now() - startedAt,
@@ -205,8 +216,8 @@ async function runProject(config, options) {
 }
 
 /** The merge base's findings, from cache when the same commit, config and fixtures ran before. */
-async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, directories, activity }) {
-  const cacheKey = `${baseSha.slice(0, 12)}-${spotterCodeHash()}-${config.configHash}-${fixtures?.hash ?? 'none'}-${[...skip].sort().join('_') || 'all'}`;
+async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, directories, activity, planHash }) {
+  const cacheKey = `${baseSha.slice(0, 12)}-${spotterCodeHash()}-${config.configHash}-${fixtures?.hash ?? 'none'}-${[...skip].sort().join('_') || 'all'}-${planHash}`;
   const cacheFile = path.join(directories.baselines, cacheKey, 'side.json');
   const cached = await readCachedSide(cacheFile);
   if (cached) {

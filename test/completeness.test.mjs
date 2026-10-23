@@ -134,3 +134,28 @@ test('describeFixtures and requirableNames', () => {
   assert.deepEqual(requirableNames({ checks: [{ name: 'a' }], web: { routes: ['/'], api: {}, specs: {}, sessions: [{ name: 'm', expectSelector: 'x' }, { name: 'n' }] } }), ['a', 'rules', 'web', 'fixtures', 'specs', 'm']);
   assert.deepEqual(requirableNames({}), ['rules']);
 });
+
+test('level exclusions are listed, never gaps, and shown in the summary', () => {
+  const exclusions = [{ name: 'rules', kind: 'stage', reason: 'excluded at level low' }, { name: 'lint', kind: 'check', reason: 'excluded at level low' }];
+  const level = { name: 'low', source: 'selected', exclusions, unsupported: [] };
+  const c = assess({ level, skip: new Set(['rules']), stages: { ...stages(), rules: 'skipped' } });
+  assert.equal(c.status, 'complete');
+  assert.deepEqual(c.gaps, []);
+  assert.equal(c.level, level);
+  assert.deepEqual(c.items.slice(-2), [
+    { name: 'rules', kind: 'stage', required: false, status: 'excluded', reason: 'excluded at level low' },
+    { name: 'lint', kind: 'check', required: false, status: 'excluded', reason: 'excluded at level low' },
+  ]);
+  assert.equal(c.items.filter((i) => i.name === 'rules').length, 1);
+  const summary = summarizeCompleteness(c);
+  assert.match(summary, /^COMPLETE · level low · /);
+  assert.match(summary, /2 excluded by level$/);
+  assert.equal(summarizeCompleteness(assess()), summarizeCompleteness({ ...assess(), level: null }));
+  assert.doesNotMatch(summarizeCompleteness(assess()), /level/);
+});
+
+test('an excluded route does not hide a coverage item with the same name', () => {
+  const level = { name: 'low', source: 'selected', exclusions: [{ name: 'web', kind: 'route', reason: 'excluded at level low' }], unsupported: [] };
+  const c = assess({ level });
+  assert.equal(c.items.find((i) => i.name === 'web' && i.kind === 'stage').status, 'executed');
+});

@@ -73,7 +73,10 @@ short-lived runner containers and does not depend on the dashboard service.
 
 ## Run behavior
 
-Select a configured project and an existing local or remote branch. Starting a
+Select a configured project, an existing local or remote branch and optionally a
+testing level (Project default uses `levels.default`; Low is available only when
+`levels.low` is configured). The plan preview below the form shows what the run
+will execute and exclude before you start it. Starting a
 run opens its activity page, which remains addressable after a reload. Project and branch lists refresh automatically every two seconds, including
 branch additions and deletions; valid selections are preserved. The server runs `git fetch --all --prune --no-tags` at startup and every minute,
 even with no browser open. This updates remote-tracking refs without changing

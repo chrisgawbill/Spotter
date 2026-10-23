@@ -136,6 +136,8 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     assert.equal(await page.inputValue('#keep-runs'), '7');
     await page.getByRole('link', { name: 'Runs', exact: true }).click();
     await page.waitForSelector('#run-page:not([hidden])');
+    assert.deepEqual(await page.locator('#level option').evaluateAll((options) => options.map((option) => option.value)), ['', 'low', 'medium', 'high']);
+    await page.waitForFunction(() => document.querySelector('#plan').textContent.startsWith('Plan: no level'));
     await page.screenshot({ path: '/tmp/spotter-dashboard-desktop.png', fullPage: true });
     await page.selectOption('#branch', 'seeded');
     await page.click('#submit');

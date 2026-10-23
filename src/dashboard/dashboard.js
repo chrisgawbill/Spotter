@@ -81,20 +81,45 @@ function updateBranches(previousBranch = '') {
   if (project?.branches.includes(previousBranch)) $('branch').value = previousBranch;
   else if (project?.branches.includes(project.baseBranch)) $('branch').value = project.baseBranch;
   $('project-info').textContent = project?.error ?? (project ? `Compare against ${project.baseBranch ?? 'main'}. Runs use recorded API fixtures.` : 'Add a project configuration to start a run.');
-  $('submit').disabled = !$('branch').value;
+  const levels = project?.levels;
+  $('level').options[0].textContent = `Project default (${levels?.default ?? 'none'})`;
+  $('level').options[1].disabled = !levels?.low;
+  if ($('level').value === 'low' && !levels?.low) $('level').value = '';
+  void updatePlan();
+  $('submit').disabled = !$('branch').value || planFailed;
+}
+// Show what the chosen level will run; a level the project cannot run blocks the start button.
+let planKey = '';
+let planFailed = false;
+async function updatePlan() {
+  const key = `${$('project').value}\n${$('level').value}`;
+  if (!$('project').value || key === planKey) return;
+  planKey = key;
+  try {
+    const plan = await api(`/api/plan?project=${encodeURIComponent($('project').value)}&level=${encodeURIComponent($('level').value)}`);
+    if (key !== planKey) return;
+    $('plan').textContent = `Plan: ${plan.summary}`;
+    planFailed = false;
+  } catch (error) {
+    if (key !== planKey) return;
+    $('plan').textContent = error.message;
+    planFailed = true;
+  }
+  $('submit').disabled = !$('branch').value || planFailed;
 }
 $('project').addEventListener('change', () => updateBranches());
+$('level').addEventListener('change', () => void updatePlan());
 $('start').addEventListener('submit', async (event) => {
   event.preventDefault();
   $('submit').disabled = true;
   showError(null);
   try {
-    const run = await api('/api/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: $('project').value, branch: $('branch').value }) });
+    const run = await api('/api/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ project: $('project').value, branch: $('branch').value, ...($('level').value && { level: $('level').value }) }) });
     location.hash = link(run);
     await refresh();
     $('detail-title').focus();
   } catch (error) { showError(error); }
-  finally { $('submit').disabled = !$('branch').value; }
+  finally { $('submit').disabled = !$('branch').value || planFailed; }
 });
 async function refresh() {
   if (refreshing) return;
@@ -136,6 +161,8 @@ async function refresh() {
       const key = `${match[1]}/${match[2]}`;
       const run = await api(`/api/runs/${key}`);
       $('identity').textContent = `${run.project} / ${run.branch} · ${run.id}`;
+      $('run-plan').textContent = run.plan ? `Plan: ${run.plan}` : '';
+      $('run-plan').hidden = !run.plan;
       html('status', badge(run.status));
       $('updated').textContent = `Last runner update: ${time(run.updatedAt)} · Checked ${new Date().toLocaleTimeString()}`;
       html('current', run.current.map((e) => `<li><span class="side">${escape(e.side)}</span> ${escape(e.activity)}</li>`).join('') || (run.status === 'running' ? '' : '<li>Run finished</li>'));

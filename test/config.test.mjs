@@ -51,3 +51,28 @@ test('session expectSelector must be a nonempty string', () => {
   }
   assert.equal(withCoverage({}).web.sessions[1].expectSelector, '#me');
 });
+
+test('levels block is validated and normalized', () => {
+  const make = (levels, web = {}) => normalizeConfig({
+    repo: '/tmp/app',
+    levels,
+    web: { build: { run: 'true' }, routes: ['home', { name: 'about', path: '/about' }], specs: { files: ['a.spec.mjs'] }, ...web },
+  }, { projectName: 'demo' });
+  const bad = (levels, message, web) => assert.throws(() => make(levels, web), (error) => error.message.includes(`- ${message}`));
+  const shape = '`levels` must be an object with optional default and low';
+  for (const levels of [[], 'x', null, { other: 1 }]) bad(levels, shape);
+  bad({ default: 'fast' }, '`levels.default` must be low, medium or high');
+  bad({ default: 'low' }, '`levels.default: low` requires `levels.low`');
+  for (const low of [[], 'x', { other: 1 }]) bad({ low }, '`levels.low` accepts routes and specs');
+  const routes = '`levels.low.routes` must list configured web route names';
+  for (const list of [undefined, [], 'home', ['nope'], ['home', 'home'], [1]]) bad({ low: { routes: list } }, routes);
+  assert.throws(() => normalizeConfig({ repo: '/tmp/app', levels: { low: { routes: ['home'] } } }, { projectName: 'demo' }), /levels\.low\.routes/);
+  const specs = '`levels.low.specs` needs a string grep and requires `web.specs`';
+  for (const value of ['x', {}, { grep: '' }, { grep: 1 }, { grep: 'a', other: 1 }]) bad({ low: { routes: ['home'], specs: value } }, specs);
+  bad({ low: { routes: ['home'], specs: { grep: '@smoke' } } }, specs, { specs: undefined });
+
+  assert.equal(make(undefined).levels, null);
+  assert.deepEqual(make({ default: 'low', low: { routes: ['about'], specs: { grep: '@smoke' } } }).levels,
+    { default: 'low', low: { routes: ['about'], specs: { grep: '@smoke' } } });
+  assert.deepEqual(make({ low: { routes: ['home'] } }).levels, { default: null, low: { routes: ['home'], specs: null } });
+});
