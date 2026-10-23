@@ -6,7 +6,7 @@ import { listProjectNames, loadProjectConfig } from './config.mjs';
 import { LEVELS, resolvePlan, summarizePlan } from './levels.mjs';
 import { assessBaseline, assessCompleteness, describeFixtures } from './completeness.mjs';
 import { compareWithBaseline, hasFailingFinding, sortFindings } from './findings.mjs';
-import { loadFixtures, saveFixtures } from './fixtures.mjs';
+import { loadFixtures, saveFixtures, summarizeFixtureData } from './fixtures.mjs';
 import { compareContracts, snapshotContracts } from './contracts.mjs';
 import { exportCommit, findMergeBase, listAddedLines, listCommitMessages, resolveCommit } from './git.mjs';
 import { projectDirs, spotterCodeHash, spotterHome, toHostPath } from './paths.mjs';
@@ -289,6 +289,7 @@ async function recordProject(config, options) {
   }
 
   const recorded = { recordedAt, source: config.web.api.recordFrom, ref, sha, entries, sessions };
+  recorded.summary = summarizeFixtureData(recorded, config.web.api.backend);
   const drift = compareContracts(previous, recorded);
   await writeFile(path.join(directories.fixtures, 'contracts.json'), JSON.stringify(snapshotContracts(recorded), null, 2));
   await writeFile(path.join(directories.fixtures, 'contract-drift.json'), JSON.stringify(drift, null, 2));

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { SEEDS } from './backend-discovery.mjs';
 import { redactSecrets } from './sessions.mjs';
 
 const FIXTURE_FILE = 'api.json';
@@ -60,6 +61,28 @@ export async function loadFixtures(fixturesDir) {
   const raw = await readFile(path.join(fixturesDir, FIXTURE_FILE), 'utf8').catch(() => null);
   if (!raw) return null;
   return { ...JSON.parse(raw), hash: createHash('sha1').update(raw).digest('hex').slice(0, 10) };
+}
+
+/**
+ * What recorded responses hold: JSON bodies with data, empty JSON arrays/objects and 4xx statuses, and
+ * whether the recording backend seeds data (`seeded`, or a seed/reset script in its run command; null without a backend).
+ */
+export function summarizeFixtureData(fixtures, backend = null) {
+  const responses = [...Object.values(fixtures.entries ?? {}), ...Object.values(fixtures.sessions ?? {}).flatMap(Object.values)];
+  const seedStep = new RegExp(`\\brun (?:${SEEDS.join('|')})(?![\\w:-])`);
+  const summary = { data: 0, empty: 0, clientErrors: 0, seeded: backend ? !!backend.seeded || seedStep.test(backend.run) : null };
+  for (const entry of responses) {
+    if (entry.status >= 400) {
+      if (entry.status < 500) summary.clientErrors++;
+      continue;
+    }
+    if (!/json/i.test(entry.contentType ?? '')) continue;
+    let value;
+    try { value = JSON.parse(entry.body); } catch { continue; }
+    if (value === null || (typeof value === 'object' && !Object.keys(value).length)) summary.empty++;
+    else summary.data++;
+  }
+  return summary;
 }
 
 /** Writes recorded fixtures: { recordedAt, source, entries: { [requestKey]: response } }. */

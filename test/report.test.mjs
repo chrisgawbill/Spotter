@@ -141,3 +141,14 @@ test('visual summaries split changed, added, removed and unchanged screenshots',
     assert.ok(renderHtmlReport(run, markdown).includes(`<h2>Visual review (advisory)</h2><p>${expected}</p>`));
   }
 });
+
+test('coverage notes follow the RESULT line in markdown and appear in the HTML coverage section', async () => {
+  const { renderHtmlReport } = await import('../src/htmlReport.mjs');
+  const note = 'fixtures hold no data; pages show empty states only (3 empty, 4 4xx responses). Seed the recording backend (or set web.api.backend.seeded when it seeds itself) and run spotter record demo';
+  const run = coverageRun({ ...completeness('complete', []), notes: [note] });
+  const markdown = renderMarkdownReport(run);
+  assert.ok(markdown.includes(`RESULT: PASS — nothing new · 0 fixed · 0 already on base (not shown)\ncoverage note: ${note}\n\n## New on this branch`), markdown);
+  assert.ok(renderHtmlReport(run, markdown).includes(`<h2>Coverage</h2><p>COMPLETE`));
+  assert.ok(renderHtmlReport(run, markdown).includes(`<p>Note: ${note}</p>`));
+  assert.doesNotMatch(renderMarkdownReport(coverageRun(completeness('complete', []))), /coverage note/);
+});

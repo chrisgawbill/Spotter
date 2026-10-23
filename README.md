@@ -53,7 +53,7 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `rules.importBoundaries[]` | `id`, `root` (slices directory), `aliases`, `allow[]` of `{ from, to }` (`to` may be a path inside a slice; `*` = any) |
 | `web.build` | `run`, `outDir`, `env` |
 | `web.base` | Base path the app is served under |
-| `web.api` | `envVar` the build reads the API origin from and/or `paths` (same-origin prefixes such as `/api`, intercepted in the browser); `recordFrom` live API for `record`; optional record-only `headers` (`${NAME}` = environment value) and `backend` `{ run, readyUrl, timeoutMs, stop }` (`record --host-backend` starts it on the host). Optional `expectedStatuses` `[{ request: 'GET /path-regex', status }]` lists error statuses the app handles on purpose (no `api-error` finding). See [same-origin APIs](docs/browser-checks.md#same-origin-apis-and-recording) |
+| `web.api` | `envVar` the build reads the API origin from and/or `paths` (same-origin prefixes such as `/api`, intercepted in the browser); `recordFrom` live API for `record`; optional record-only `headers` (`${NAME}` = environment value) and `backend` `{ run, readyUrl, timeoutMs, stop, seeded }` (`record --host-backend` starts it on the host; `seeded: true` when it loads its own data). Optional `expectedStatuses` `[{ request: 'GET /path-regex', status }]` lists error statuses the app handles on purpose (no `api-error` finding). See [same-origin APIs](docs/browser-checks.md#same-origin-apis-and-recording) |
 | `web.routes[]` | `{ name, path }` (hash routes include `#/`) |
 | `web.viewports`, `web.colorSchemes` | Widths (or `{ width, height }`) and `light`/`dark` |
 | `web.sessions` | Additional `{ name, localStorage }` or `{ name, storageState, storageOrigin }` sessions; anonymous visits always run. Optional `expectSelector` must match on every sweep visit of that session, proving it reached its signed-in state; optional `apiHeaders` override `web.api.headers` while recording that session |
@@ -101,6 +101,13 @@ does not make a run incomplete. Coverage covers configured routes only.
 `report.md` shows `RESULT: INCOMPLETE`, an `## Incomplete coverage` list and a
 one-line `coverage:` summary; `report.html` adds an item table; `report.json`
 holds the full `completeness` record. The dashboard shows the same summary.
+
+`spotter record` stores a data summary in `fixtures/api.json`: responses with
+JSON data, empty JSON arrays/objects, 4xx statuses, and whether the recording
+backend seeds data (`web.api.backend.seeded`, or a `seed`/`reset` script in its
+`run` command). When no response holds data, every report and the dashboard add
+`coverage note: fixtures hold no data; pages show empty states only` with a hint
+to seed the recording backend. A note never changes the status or exit code.
 
 ## Testing levels
 

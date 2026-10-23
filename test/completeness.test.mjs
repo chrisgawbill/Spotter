@@ -185,3 +185,18 @@ test('the API gap does not depend on web.api being configured', () => {
   const c = assess({ config, stages: stages(web({ apiNotReplayed: ['POST /api/x'] })) });
   assert.ok(c.gaps.includes('API traffic not replayed: POST /api/x; configure web.api.paths and run spotter record demo'));
 });
+
+test('fixtures with no data add a coverage note without changing completeness', () => {
+  const json = (body, status = 200) => ({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  const empty = { ...fixtures, entries: { 'GET /a': json([]), 'GET /b': json({ title: 'Not Found' }, 404) } };
+  const legacy = assess({ fixtures: empty });
+  assert.equal(legacy.status, 'complete');
+  assert.deepEqual(legacy.gaps, []);
+  assert.deepEqual(legacy.notes, ['fixtures hold no data; pages show empty states only (1 empty, 1 4xx responses). Record from an API with data and run spotter record demo']);
+  assert.match(assess({ fixtures: { ...empty, summary: { data: 0, empty: 1, clientErrors: 1, seeded: false } } }).notes[0], /Seed the recording backend \(or set web\.api\.backend\.seeded when it seeds itself\) and run spotter record demo$/);
+  assert.match(assess({ fixtures: { ...empty, summary: { data: 0, empty: 1, clientErrors: 1, seeded: true } } }).notes[0], /Check the recording backend's seed step/);
+  assert.deepEqual(assess({ fixtures: { ...empty, entries: { ...empty.entries, 'GET /c': json([{ id: 1 }]) } } }).notes, []);
+  assert.deepEqual(assess({ fixtures: { ...empty, summary: { data: 3, empty: 0, clientErrors: 0, seeded: true } } }).notes, []);
+  assert.deepEqual(assess().notes, []);
+  assert.deepEqual(assess({ fixtures: null }).notes, []);
+});

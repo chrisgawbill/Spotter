@@ -11,7 +11,7 @@ const LOCAL = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0']);
 const SKIP = /(^|\/)(node_modules|dist|build|bin|obj|coverage|tests?|__tests__)\//;
 const FRAMEWORKS = ['express', 'fastify', 'koa', '@hapi/hapi', 'hono', '@nestjs/core', 'restify', 'polka'];
 const COMPOSE = ['compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'];
-const SEEDS = ['seed', 'db:seed', 'reset', 'db:reset'];
+export const SEEDS = ['seed', 'db:seed', 'reset', 'db:reset'];
 
 function sameServer(a, b) {
   try {

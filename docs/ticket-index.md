@@ -36,7 +36,7 @@ ticket.
 | [QA-26](#qa-26--incomplete-when-api-traffic-is-not-replayed) | ACTIVE | Trustworthy pass without fixtures |
 | [QA-27](#qa-27--host-started-recording-backend-and-backend-detection) | ACTIVE | Recording backends with their own toolchain |
 | [QA-28](#qa-28--detect-hand-written-hash-routes-in-setup) | ACTIVE | Setup inference for custom hash routing |
-| [QA-29](#qa-29--report-fixtures-recorded-from-an-empty-backend) | IDEA | Trustworthy pass with empty fixtures |
+| [QA-29](#qa-29--report-fixtures-recorded-from-an-empty-backend) | ACTIVE | Trustworthy pass with empty fixtures |
 | [QA-30](#qa-30--stale-project-configuration-warning) | ACTIVE | Config drift from the tested branch |
 | [QA-31](#qa-31--consistent-report-counts) | ACTIVE | Report accuracy |
 | [QA-32](#qa-32--expected-api-statuses) | ACTIVE | Fewer false API-error findings |
@@ -998,7 +998,7 @@ opened Challenge Lab or Duel.
 
 ## QA-29 — Report fixtures recorded from an empty backend
 
-**Status:** IDEA — proposed 2026-10-23 from the triple-crown `creature-bench`
+**Status:** ACTIVE — proposed 2026-10-23 from the triple-crown `creature-bench`
 report review.
 
 **Goal:** A report says when its fixtures came from an empty backend, so a PASS

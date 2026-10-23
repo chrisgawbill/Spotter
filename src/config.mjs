@@ -171,11 +171,12 @@ function apiProblems(api) {
     if (!validExpectedStatus(entry)) problems.push(`\`web.api.expectedStatuses[${index}]\` needs \`request\` as "METHOD /path-regex" (for example "GET /api/items/\\d+") and \`status\` as an HTTP status from 400 to 599 or a list of them`);
   }
   const backend = api.backend;
-  if (backend !== undefined && !(isPlainObject(backend) && Object.keys(backend).every((key) => ['run', 'readyUrl', 'timeoutMs', 'stop'].includes(key))
+  if (backend !== undefined && !(isPlainObject(backend) && Object.keys(backend).every((key) => ['run', 'readyUrl', 'timeoutMs', 'stop', 'seeded'].includes(key))
     && typeof backend.run === 'string' && backend.run.trim() && isHttpUrl(backend.readyUrl)
     && (backend.timeoutMs === undefined || (Number.isSafeInteger(backend.timeoutMs) && backend.timeoutMs > 0))
-    && (backend.stop === undefined || (typeof backend.stop === 'string' && backend.stop.trim())))) {
-    problems.push('`web.api.backend` needs a `run` command, an http(s) `readyUrl`, optional positive `timeoutMs` and optional `stop` command');
+    && (backend.stop === undefined || (typeof backend.stop === 'string' && backend.stop.trim()))
+    && (backend.seeded === undefined || typeof backend.seeded === 'boolean'))) {
+    problems.push('`web.api.backend` needs a `run` command, an http(s) `readyUrl`, optional positive `timeoutMs`, optional `stop` command and optional boolean `seeded`');
   }
   return problems;
 }

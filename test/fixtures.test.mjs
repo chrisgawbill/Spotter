@@ -56,3 +56,32 @@ test('expected statuses match method, whole path and listed status only', async 
   assert.equal(isExpectedStatus(expected, 'POST', '/api/items', 422), true);
   assert.equal(isExpectedStatus(undefined, 'GET', '/admin/library', 404), false);
 });
+
+const json = (body, status = 200) => ({ status, contentType: 'application/json; charset=utf-8', encoding: 'utf8', body: JSON.stringify(body) });
+
+test('fixture data summary counts populated, empty and 4xx responses and the seed step', async () => {
+  const { summarizeFixtureData } = await import('../src/fixtures.mjs');
+  const empty = { entries: { 'GET /a': json([]), 'GET /b': json({}), 'GET /c': json({ title: 'Not Found' }, 404) }, sessions: { member: { 'GET /a': json([]) } } };
+  assert.deepEqual(summarizeFixtureData(empty), { data: 0, empty: 3, clientErrors: 1, seeded: null });
+  const mixed = { entries: { ...empty.entries, 'GET /d': json([{ id: 1 }]), 'GET /logo': { status: 200, contentType: 'image/png', encoding: 'base64', body: 'AAAA' }, 'GET /e': json({ error: 'x' }, 500) } };
+  assert.deepEqual(summarizeFixtureData(mixed), { data: 1, empty: 2, clientErrors: 1, seeded: null });
+  assert.deepEqual(summarizeFixtureData({ entries: { 'GET /d': json({ items: [] }) } }), { data: 1, empty: 0, clientErrors: 0, seeded: null });
+  assert.equal(summarizeFixtureData(empty, { run: 'node server.mjs' }).seeded, false);
+  assert.equal(summarizeFixtureData(empty, { run: 'node server.mjs', seeded: true }).seeded, true);
+  assert.equal(summarizeFixtureData(empty, { run: '(cd api && npm ci && npm run db:seed) && exec npm run start' }).seeded, true);
+  assert.equal(summarizeFixtureData(empty, { run: 'npm run seed-check && npm run start' }).seeded, false);
+});
+
+test('old fixture files without a data summary still load', async () => {
+  const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const { loadFixtures } = await import('../src/fixtures.mjs');
+  const dir = await mkdtemp(path.join(tmpdir(), 'spotter-fixtures-'));
+  try {
+    await writeFile(path.join(dir, 'api.json'), JSON.stringify({ recordedAt: '2026-01-01T00:00:00Z', source: 'http://x', entries: { 'GET /a': json([]) } }));
+    const loaded = await loadFixtures(dir);
+    assert.equal(loaded.summary, undefined);
+    assert.equal(loaded.entries['GET /a'].status, 200);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

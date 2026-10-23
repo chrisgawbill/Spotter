@@ -51,7 +51,7 @@ async function readRun(home, project, id) {
     error: activity?.error ?? (status === 'error' ? 'Runner heartbeat stopped. Inspect runner logs before restarting.' : null),
     current: status === 'running' ? [...current.values()] : [], events,
     report: report ? `/artifacts/${encodeURIComponent(project)}/${encodeURIComponent(id)}/report.html` : null,
-    coverage: report?.completeness ? summarizeCompleteness(report.completeness) : null, gaps: report?.completeness?.gaps ?? [],
+    coverage: report?.completeness ? summarizeCompleteness(report.completeness) : null, gaps: report?.completeness?.gaps ?? [], notes: report?.completeness?.notes ?? [],
     plan: activity?.plan ?? report?.plan ?? null,
     checks: report?.head.stages };
 }

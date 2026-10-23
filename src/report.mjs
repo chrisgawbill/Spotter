@@ -32,6 +32,7 @@ export function renderMarkdownReport(run) {
     '',
     `head: ${run.head.label} @ ${run.head.shortSha} · base: ${describeBase(run)} · ${formatDuration(run.durationMs)}`,
     `RESULT: ${incomplete ? 'INCOMPLETE' : blocking.length ? 'FAIL' : 'PASS'} — ${describeCounts(comparison)}`,
+    ...(run.completeness?.notes ?? []).map((note) => `coverage note: ${note}`),
     '',
   ];
   if (incomplete) lines.push(`## Incomplete coverage (${run.completeness.gaps.length})`, '', ...run.completeness.gaps.map((gap) => `- ${gap}`), '');

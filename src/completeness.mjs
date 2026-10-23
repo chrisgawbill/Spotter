@@ -1,3 +1,5 @@
+import { summarizeFixtureData } from './fixtures.mjs';
+
 /** Names usable in coverage.required for this (raw or normalized) config. */
 export function requirableNames(config) {
   const names = (Array.isArray(config.checks) ? config.checks : []).map((check) => check?.name).filter((name) => typeof name === 'string');
@@ -128,7 +130,13 @@ export function assessCompleteness({ config, skip, stages, fixtures, baseline, l
   if (min && specsExecuted < min) gaps.push(`specs: ${specsExecuted} executed, minimum ${min}`);
   if (baseline.status === 'failed') gaps.push(`baseline: ${baseline.reason}`);
 
-  return { status: gaps.length ? 'incomplete' : 'complete', gaps, items, counts, fixtures: describeFixtures(fixtures, now), baseline, level };
+  // Notes qualify a result without making it incomplete; fixtures recorded before QA-29 lack a stored summary.
+  const notes = [];
+  const data = fixtures && (fixtures.summary ?? summarizeFixtureData(fixtures));
+  if (data && !data.data && data.empty + data.clientErrors) {
+    notes.push(`fixtures hold no data; pages show empty states only (${data.empty} empty, ${data.clientErrors} 4xx responses). ${data.seeded ? 'Check the recording backend\'s seed step' : data.seeded === false ? 'Seed the recording backend (or set web.api.backend.seeded when it seeds itself)' : 'Record from an API with data'} and run spotter record ${config.name}`);
+  }
+  return { status: gaps.length ? 'incomplete' : 'complete', gaps, notes, items, counts, fixtures: describeFixtures(fixtures, now), baseline, level };
 }
 
 /** One line shared by Markdown, HTML and dashboard. */

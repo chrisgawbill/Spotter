@@ -96,7 +96,7 @@ possible. The key must work without an interactive passphrase prompt. Dashboard 
 recreate older containers with the updated startup template (or CLI wrapper).
 A finished run is PASS, FAIL or INCOMPLETE; INCOMPLETE runs list the coverage
 gaps beside the status, and every run shows the same one-line coverage summary
-as `report.md` (see [coverage and completeness](../README.md#coverage-and-completeness)).
+and coverage notes (such as fixtures that hold no data) as `report.md` (see [coverage and completeness](../README.md#coverage-and-completeness)).
 Dashboard runs execute the normal CLI inside the same container, using
 the same mounted repositories, fixtures and output directory. Preparation and
 runner failures show an error and the final log tail even without a report.
