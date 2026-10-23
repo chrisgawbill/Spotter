@@ -7,10 +7,10 @@ import { compareWithBaseline, hasFailingFinding, sortFindings } from './findings
 import { loadFixtures, saveFixtures } from './fixtures.mjs';
 import { compareContracts, snapshotContracts } from './contracts.mjs';
 import { exportCommit, findMergeBase, listAddedLines, listCommitMessages, resolveCommit } from './git.mjs';
-import { projectDirs, spotterCodeHash, toHostPath } from './paths.mjs';
+import { projectDirs, spotterCodeHash, spotterHome, toHostPath } from './paths.mjs';
 import { createActivity } from './activity.mjs';
 import { startDashboard } from './dashboard.mjs';
-import { pruneProject, retentionSettings } from './prune.mjs';
+import { loadSavedRetention, pruneProject, retentionSettings } from './prune.mjs';
 import { renderMarkdownReport } from './report.mjs';
 import { renderHtmlReport } from './htmlReport.mjs';
 import { compareScreenshots } from './visual.mjs';
@@ -101,7 +101,7 @@ async function runCommandLine(argv) {
 async function pruneCommand(options) {
   const names = await listProjectNames();
   if (options.project && !names.includes(options.project)) throw new Error(`Unknown project "${options.project}"`);
-  const settings = retentionSettings(process.env, { keepRuns: options.keepRuns, keepBaselines: options.keepBaselines });
+  const settings = retentionSettings(process.env, { keepRuns: options.keepRuns, keepBaselines: options.keepBaselines }, await loadSavedRetention(spotterHome));
   let total = 0;
   for (const name of options.project ? [options.project] : names) {
     const { removed, skipped } = await pruneProject(projectDirs(name), { ...settings, dryRun: options.dryRun });
@@ -181,7 +181,7 @@ async function runProject(config, options) {
     activity.event('run', 'compare findings and screenshots', 'done');
     activity.finish(exitCode ? 'fail' : 'pass');
     try {
-      const settings = retentionSettings();
+      const settings = retentionSettings(process.env, {}, await loadSavedRetention(spotterHome));
       if (settings.autoPrune) {
         const { removed } = await pruneProject(directories, settings);
         if (removed.length) log(`pruned ${removed.length} old item(s)`);

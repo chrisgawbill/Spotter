@@ -100,12 +100,15 @@ async function refresh() {
   if (refreshing) return;
   refreshing = true;
   try {
-    $('page-title').textContent = location.hash === '#configs' ? 'Configure your checks.' : 'See what changed.';
-    $('page-description').textContent = location.hash === '#configs' ? 'Build a project configuration with field guidance and examples.' : 'Start a check, follow the work, and review what Spotter found.';
-    $('config-page').hidden = location.hash !== '#configs';
-    $('run-page').hidden = location.hash === '#configs';
+    const current = location.hash === '#configs' ? 'configs' : location.hash === '#storage' ? 'storage' : 'runs';
+    const [title, description] = { runs: ['See what changed.', 'Start a check, follow the work, and review what Spotter found.'], configs: ['Configure your checks.', 'Build a project configuration with field guidance and examples.'], storage: ['Keep disk use in check.', 'See what Spotter stores and choose how much history to keep.'] }[current];
+    $('page-title').textContent = title;
+    $('page-description').textContent = description;
+    $('run-page').hidden = current !== 'runs';
+    $('config-page').hidden = current !== 'configs';
+    $('storage-page').hidden = current !== 'storage';
     for (const a of document.querySelectorAll('nav a.nav-link')) {
-      if ((a.getAttribute('href') === '#configs') === (location.hash === '#configs')) a.setAttribute('aria-current', 'page');
+      if (a.getAttribute('href') === { runs: '#', configs: '#configs', storage: '#storage' }[current]) a.setAttribute('aria-current', 'page');
       else a.removeAttribute('aria-current');
     }
     const previousProject = $('project').value;
@@ -293,7 +296,62 @@ $('delete-config').addEventListener('click', async () => {
   } catch (error) { message(error.message); }
 });
 $('close-config').addEventListener('click', () => { if (!dirty || confirm('Discard unsaved configuration changes?')) { dirty = false; $('config-editor').hidden = true; } });
-window.addEventListener('hashchange', refresh);
+const size = (bytes) => { let i = 0; while (bytes >= 1024 && i < 3) { bytes /= 1024; i++; } return i ? `${bytes.toFixed(1)} ${['B', 'KB', 'MB', 'GB'][i]}` : `${bytes} B`; };
+const retentionFields = { keepRuns: ['keep-runs', 'SPOTTER_KEEP_RUNS'], keepBaselines: ['keep-baselines', 'SPOTTER_KEEP_BASELINES'], autoPrune: ['auto-prune', 'SPOTTER_AUTO_PRUNE'] };
+let retentionDirty = false;
+let pending = 0;
+let pendingBytes = 0;
+function updateCleanup() {
+  $('cleanup-now').disabled = retentionDirty || !pending;
+  if (retentionDirty) $('cleanup-message').textContent = 'Save settings before cleaning up.';
+  else if ($('cleanup-message').textContent === 'Save settings before cleaning up.') $('cleanup-message').textContent = '';
+}
+async function loadStorage() {
+  try {
+    const { settings, locked, projects: usage } = await api('/api/storage');
+    for (const [key, [id, variable]] of Object.entries(retentionFields)) {
+      if (!retentionDirty) $(id)[key === 'autoPrune' ? 'checked' : 'value'] = settings[key];
+      $(id).disabled = locked[key];
+      $(`${id}-help`).textContent = locked[key] ? `Set on the server by ${variable}.` : '';
+    }
+    let total = 0;
+    pending = 0;
+    pendingBytes = 0;
+    html('storage-projects', usage.map((p) => {
+      total += p.runs.bytes + p.baselines.bytes + p.work.bytes;
+      pending += p.cleanup.count;
+      pendingBytes += p.cleanup.bytes;
+      const cell = (part) => `<td class="num">${part.count} · ${size(part.bytes)}</td>`;
+      return `<tr><td><strong>${escape(p.name)}</strong></td>${cell(p.runs)}${cell(p.baselines)}${cell(p.work)}<td>${p.cleanup.count ? `${p.cleanup.count} item(s) · ${size(p.cleanup.bytes)}` : 'Nothing to remove'}${p.cleanup.skipped ? `<br><span class="muted">${escape(p.cleanup.skipped)}</span>` : ''}</td></tr>`;
+    }).join(''));
+    $('storage-total').textContent = usage.length ? `Total on disk: ${size(total)}. Cleanup would remove ${pending} item(s) · ${size(pendingBytes)}. Sizes are measured when this page opens or is refreshed.` : 'No projects configured yet.';
+    updateCleanup();
+  } catch (error) { $('storage-total').textContent = `Could not load storage: ${error.message}`; }
+}
+$('refresh-storage').addEventListener('click', loadStorage);
+$('retention-form').addEventListener('input', () => { retentionDirty = true; updateCleanup(); });
+$('retention-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('save-retention').disabled = true;
+  try {
+    await configRequest('/api/retention', 'PUT', { keepRuns: Number($('keep-runs').value), keepBaselines: Number($('keep-baselines').value), autoPrune: $('auto-prune').checked });
+    retentionDirty = false;
+    $('retention-message').textContent = 'Settings saved.';
+    await loadStorage();
+  } catch (error) { $('retention-message').textContent = error.message; }
+  finally { $('save-retention').disabled = false; }
+});
+$('cleanup-now').addEventListener('click', async () => {
+  if (!confirm(`Delete ${pending} item(s) (${size(pendingBytes)}) now? In-progress runs and the latest run are kept.`)) return;
+  $('cleanup-now').disabled = true;
+  try {
+    const result = await configRequest('/api/cleanup', 'POST', {});
+    await loadStorage();
+    $('cleanup-message').textContent = `Removed ${result.removed} item(s).${result.skipped.length ? ` Skipped baselines and work folders for ${result.skipped.join(', ')} because a run is in progress.` : ''}`;
+  } catch (error) { $('cleanup-message').textContent = error.message; updateCleanup(); }
+});
+window.addEventListener('hashchange', () => { void refresh(); if (location.hash === '#storage') void loadStorage(); });
+if (location.hash === '#storage') void loadStorage();
 try {
   await refresh();
   setInterval(refresh, 2000);

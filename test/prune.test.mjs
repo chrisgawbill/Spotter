@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, writeFile, symlink, utimes } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, symlink, utimes, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { retentionSettings, isActiveRun, pruneProject } from '../src/prune.mjs';
+import {
+  retentionSettings, isActiveRun, pruneProject, lockedRetention, loadSavedRetention, saveRetention, directorySize, storageSummary,
+} from '../src/prune.mjs';
 
 const NOW = Date.parse('2026-06-01T12:00:00Z');
 const ago = (ms) => new Date(NOW - ms);
@@ -97,4 +99,75 @@ test('pruneProject keeps an active run beyond the count and leaves baselines and
 test('pruneProject tolerates missing baselines and work folders', async () => {
   const d = await tree();
   assert.deepEqual(await pruneProject(d, options), { removed: [], skipped: null });
+});
+
+test('retentionSettings precedence is overrides, env, saved, defaults', () => {
+  const saved = { keepRuns: 8, keepBaselines: 6, autoPrune: false };
+  assert.deepEqual(retentionSettings({}, {}, saved), { keepRuns: 8, keepBaselines: 6, autoPrune: false });
+  assert.deepEqual(retentionSettings({}, {}, { keepRuns: 0 }), { keepRuns: 0, keepBaselines: 5, autoPrune: true });
+  const env = { SPOTTER_KEEP_RUNS: '3', SPOTTER_AUTO_PRUNE: 'on' };
+  assert.deepEqual(retentionSettings(env, {}, saved), { keepRuns: 3, keepBaselines: 6, autoPrune: true });
+  assert.equal(retentionSettings(env, { keepRuns: 1 }, saved).keepRuns, 1);
+  assert.equal(retentionSettings({ SPOTTER_AUTO_PRUNE: '' }, {}, saved).autoPrune, false);
+  assert.throws(() => retentionSettings({}, {}, { keepRuns: -1 }), /Saved keepRuns/);
+  assert.throws(() => retentionSettings({}, {}, { keepBaselines: 1.5 }), /Saved keepBaselines/);
+  assert.throws(() => retentionSettings({}, {}, { autoPrune: 'yes' }), /Saved autoPrune must be true or false/);
+});
+
+test('lockedRetention marks variables that are set and not empty', () => {
+  assert.deepEqual(lockedRetention({}), { keepRuns: false, keepBaselines: false, autoPrune: false });
+  assert.deepEqual(lockedRetention({ SPOTTER_KEEP_RUNS: '3', SPOTTER_KEEP_BASELINES: '', SPOTTER_AUTO_PRUNE: 'off' }),
+    { keepRuns: true, keepBaselines: false, autoPrune: true });
+});
+
+test('saveRetention validates, creates the home folder and round-trips', async () => {
+  const home = path.join((await tree()).root, 'nested', 'home');
+  assert.deepEqual(await loadSavedRetention(home), {});
+  const settings = { keepRuns: 4, keepBaselines: 0, autoPrune: false };
+  assert.deepEqual(await saveRetention(home, settings), settings);
+  assert.deepEqual(await loadSavedRetention(home), settings);
+  for (const bad of [-1, 1.5, 'x']) {
+    await assert.rejects(saveRetention(home, { ...settings, keepRuns: bad }), /keepRuns must be a whole number of 0 or more/);
+    await assert.rejects(saveRetention(home, { ...settings, keepBaselines: bad }), /keepBaselines must be a whole number/);
+  }
+  await assert.rejects(saveRetention(home, { ...settings, autoPrune: 'on' }), /autoPrune must be true or false/);
+  assert.deepEqual(await loadSavedRetention(home), settings);
+  await writeFile(path.join(home, 'retention.json'), '{nope');
+  assert.deepEqual(await loadSavedRetention(home), {});
+  await writeFile(path.join(home, 'retention.json'), '[1]');
+  assert.deepEqual(await loadSavedRetention(home), {});
+});
+
+test('directorySize sums nested files and treats a missing folder as empty', async () => {
+  const d = await tree();
+  await dir(d.runs, 'a', { f: '12345' });
+  await dir(path.join(d.runs, 'a'), 'deep', { g: '123' });
+  assert.equal(await directorySize(d.runs), 8);
+  assert.equal(await directorySize(path.join(d.root, 'missing')), 0);
+});
+
+test('storageSummary reports counts, bytes and a cleanup preview without deleting', async () => {
+  const d = await tree();
+  const done = (hours) => ({ status: 'done', startedAt: ago(hours * HOUR).toISOString() });
+  await run(d, 'r-new', done(1));
+  await run(d, 'r-mid', done(2));
+  const old = await run(d, 'r-old', done(3));
+  await writeFile(path.join(old, 'big'), 'x'.repeat(100));
+  await symlink('r-new', path.join(d.runs, 'latest'));
+  await baseline(d, 'b-1', HOUR);
+  const oldBaseline = await baseline(d, 'b-2', 5 * HOUR);
+  const work = await dir(d.work, 'x-1', { f: '12345' }, 3 * HOUR);
+  const summary = await storageSummary(d, options);
+  assert.equal(summary.runs.count, 3);
+  assert.equal(summary.baselines.count, 2);
+  assert.equal(summary.work.count, 1);
+  assert.equal(summary.runs.bytes, await directorySize(d.runs));
+  assert.ok(summary.runs.bytes > 100);
+  assert.equal(summary.work.bytes, 5);
+  const dry = await pruneProject(d, { ...options, dryRun: true });
+  const expected = (await Promise.all(dry.removed.map(directorySize))).reduce((a, b) => a + b, 0);
+  assert.deepEqual(summary.cleanup, { count: dry.removed.length, bytes: expected, skipped: null });
+  assert.equal(summary.cleanup.count, 3);
+  assert.ok(existsSync(old) && existsSync(oldBaseline) && existsSync(work));
+  assert.equal(await readFile(path.join(old, 'big'), 'utf8'), 'x'.repeat(100));
 });

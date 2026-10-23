@@ -98,6 +98,25 @@ becomes an error after 30 seconds without a heartbeat, including after a
 container/server restart. Inspect runner logs before restarting a stalled run.
 Auto-refreshing screenshots and live video are deferred.
 
+## Storage
+
+**Storage** shows, per configured project, how many runs, cached base results
+and work folders exist and how much disk each uses, plus what cleanup would
+remove right now. Sizes are computed when the page opens or **Refresh** is
+pressed, never on the two-second poll.
+
+The settings (runs to keep, cached base results to keep, automatic cleanup
+after each run) are saved to `retention.json` in the Spotter data folder. The
+environment variables `SPOTTER_KEEP_RUNS`, `SPOTTER_KEEP_BASELINES` and
+`SPOTTER_AUTO_PRUNE` override the saved file; a field they set is disabled and
+names its variable. Command-line flags override both.
+
+**Clean up now** deletes what the preview lists, using the saved settings, after
+a confirmation. It is disabled when nothing would be removed or when the form
+has unsaved changes. The latest run and runs in progress are always kept; while
+a run is in progress for a project, its cached base results and work folders are
+skipped and the page says so.
+
 ## Verification
 
 ```bash

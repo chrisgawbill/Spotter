@@ -7,7 +7,7 @@
 <script type="module" src="/dashboard.js"></script>
 </head>
 <body class="ds-page-shell ds-scrollbar">
-<header class="app-bar ds-aero-glass"><div class="ds-container ds-cluster"><a class="brand ds-focus-outline" href="#"><span aria-hidden="true">◉</span> Spotter</a><nav class="ds-cluster" aria-label="Dashboard"><a class="nav-link ds-focus-outline" href="#">Runs</a><a class="nav-link ds-focus-outline" href="#configs">Configurations</a></nav><span class="ds-chip ds-chip-primary" title="Served only on the Tailscale network">Tailscale only</span></div></header>
+<header class="app-bar ds-aero-glass"><div class="ds-container ds-cluster"><a class="brand ds-focus-outline" href="#"><span aria-hidden="true">◉</span> Spotter</a><nav class="ds-cluster" aria-label="Dashboard"><a class="nav-link ds-focus-outline" href="#">Runs</a><a class="nav-link ds-focus-outline" href="#configs">Configurations</a><a class="nav-link ds-focus-outline" href="#storage">Storage</a></nav><span class="ds-chip ds-chip-primary" title="Served only on the Tailscale network">Tailscale only</span></div></header>
 <main class="ds-container ds-stack">
 <div class="page-intro"><h1 id="page-title">See what changed.</h1><p id="page-description" class="muted">Start a check, follow the work, and review what Spotter found.</p></div>
 <p id="error" role="alert" hidden></p>
@@ -64,6 +64,25 @@
 <p id="config-message" role="status"></p>
 <div class="ds-cluster editor-actions"><button id="save-config" type="submit" class="ds-button">Save configuration</button><button id="close-config" type="button" class="ds-button button-secondary">Close editor</button><button id="delete-config" type="button" class="ds-button button-danger">Delete configuration</button></div>
 </form>
+</section>
+<section id="storage-page" class="ds-stack" hidden aria-labelledby="storage-title">
+<section class="ds-card ds-aero-surface ds-stack"><h2 id="storage-title">Cleanup settings</h2>
+<form id="retention-form" class="ds-stack">
+<label class="ds-field">Runs to keep per project<input id="keep-runs" class="ds-input" type="number" min="0" step="1" required aria-describedby="keep-runs-help"></label>
+<p id="keep-runs-help" class="muted"></p>
+<label class="ds-field">Cached base results to keep per project<input id="keep-baselines" class="ds-input" type="number" min="0" step="1" required aria-describedby="keep-baselines-help"></label>
+<p id="keep-baselines-help" class="muted"></p>
+<label class="check"><input id="auto-prune" type="checkbox" aria-describedby="auto-prune-help"> Clean up automatically after each run</label>
+<p id="auto-prune-help" class="muted"></p>
+<p class="muted">The latest run and runs in progress are always kept.</p>
+<p id="retention-message" role="status"></p>
+<div class="ds-cluster"><button id="save-retention" type="submit" class="ds-button">Save settings</button></div>
+</form></section>
+<section class="ds-stack" aria-labelledby="usage-title"><div class="section-head"><h2 id="usage-title">Disk usage</h2><button id="refresh-storage" class="ds-button button-secondary" type="button">Refresh</button></div>
+<div class="ds-table-wrap"><table class="ds-table"><thead><tr><th>Project</th><th>Runs</th><th>Cached base results</th><th>Work folders</th><th>Cleanup would remove</th></tr></thead><tbody id="storage-projects"></tbody></table></div>
+<p id="storage-total" class="muted">Loading storage…</p>
+<div class="ds-cluster"><button id="cleanup-now" class="ds-button button-danger" type="button" disabled>Clean up now</button></div>
+<p id="cleanup-message" role="status"></p></section>
 </section>
 </main>
 </body></html>

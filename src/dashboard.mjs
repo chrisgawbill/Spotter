@@ -13,6 +13,7 @@ import { listProjectNames, loadProjectConfig, normalizeConfig } from './config.m
 import { spotterHome, spotterRoot } from './paths.mjs';
 import { hasFailingFinding } from './findings.mjs';
 import { configFields } from './config-fields.mjs';
+import { retentionSettings, lockedRetention, loadSavedRetention, saveRetention, storageSummary, pruneProject } from './prune.mjs';
 
 const guidedKeys = Object.keys(configFields).filter((key) => configFields[key].guided);
 
@@ -52,7 +53,7 @@ async function readRun(home, project, id) {
 }
 
 /** No shell is involved in run control. Only configured projects and listed branches are accepted. */
-export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn, branchRefreshMs = 60_000, projectsRoot = process.env.SPOTTER_PROJECTS_ROOT ?? path.join(homedir(), 'projects'), configsDir = path.join(spotterRoot, 'projects') } = {}) {
+export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn, branchRefreshMs = 60_000, projectsRoot = process.env.SPOTTER_PROJECTS_ROOT ?? path.join(homedir(), 'projects'), configsDir = path.join(spotterRoot, 'projects'), env = process.env } = {}) {
   let starting = false;
   let editing = false;
   const children = new Set();
@@ -79,6 +80,7 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
     } finally { fetching = false; }
   }
   let refreshTimer;
+  const projectFolders = (name) => ({ runs: path.join(home, name, 'runs'), baselines: path.join(home, name, 'baselines'), work: path.join(home, name, 'work') });
 
   const server = createServer(async (req, res) => {
     const send = (status, data, type = 'application/json') => {
@@ -206,6 +208,34 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
           child.once('exit', (code, signal) => { void finish(`Runner exited ${signal ?? code} before producing a report.`).catch(console.error); });
           return send(202, { project, id });
         } finally { starting = false; }
+      }
+      if (url.pathname === '/api/storage' && req.method === 'GET') {
+        const settings = retentionSettings(env, {}, await loadSavedRetention(home));
+        const projects = [];
+        for (const name of (await projectNames()).filter(safeName)) projects.push({ name, ...await storageSummary(projectFolders(name), settings) });
+        return send(200, { settings, locked: lockedRetention(env), projects });
+      }
+      if (url.pathname === '/api/retention' && req.method === 'PUT' || url.pathname === '/api/cleanup' && req.method === 'POST') {
+        if (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON required' });
+        let body = '';
+        for await (const chunk of req) {
+          body += chunk;
+          if (Buffer.byteLength(body) > 4096) return send(413, { error: 'Request too large' });
+        }
+        if (url.pathname === '/api/retention') {
+          await saveRetention(home, JSON.parse(body));
+          return send(200, { settings: retentionSettings(env, {}, await loadSavedRetention(home)), locked: lockedRetention(env) });
+        }
+        if (starting) return send(409, { error: 'Wait for the run that is starting' });
+        const settings = retentionSettings(env, {}, await loadSavedRetention(home));
+        let removed = 0;
+        const skipped = [];
+        for (const name of (await projectNames()).filter(safeName)) {
+          const result = await pruneProject(projectFolders(name), settings);
+          removed += result.removed.length;
+          if (result.skipped) skipped.push(name);
+        }
+        return send(200, { removed, skipped });
       }
       if (req.method !== 'GET') return send(405, { error: 'Method not allowed' });
       if (url.pathname === '/api/projects') {

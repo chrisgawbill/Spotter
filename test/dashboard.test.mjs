@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, symlink, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -236,5 +236,54 @@ test('folder setup drafts nested apps without executing scripts and confines bro
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('storage API reports usage, saves retention settings and cleans up old runs', async () => {
+  const home = await mkdtemp(path.join(tmpdir(), 'spotter-storage-'));
+  const runs = path.join(home, 'demo/runs');
+  for (const day of ['01', '02', '03']) {
+    const id = `202401${day}-run`;
+    await mkdir(path.join(runs, id), { recursive: true });
+    await writeFile(path.join(runs, id, 'activity.json'), JSON.stringify({ status: 'done', startedAt: `2024-01-${day}T00:00:00Z` }));
+  }
+  await symlink('20240101-run', path.join(runs, 'latest'));
+  await mkdir(path.join(home, 'demo/baselines/one'), { recursive: true });
+  await writeFile(path.join(home, 'demo/baselines/one/side.json'), '{}');
+  const start = async (env) => {
+    const server = createDashboardServer({ branchRefreshMs: 0, home, env, projectNames: async () => ['demo'], loadConfig: async () => ({}) });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    const call = (url, method = 'GET', data, headers = {}) => fetch(origin + url, { method, headers: { Origin: origin, 'Content-Type': 'application/json', ...headers }, ...(data ? { body: JSON.stringify(data) } : {}) });
+    return { server, call };
+  };
+  const stop = ({ server }) => { server.closeAllConnections(); return new Promise((resolve) => server.close(resolve)); };
+  const plain = await start({});
+  try {
+    const storage = await (await plain.call('/api/storage')).json();
+    assert.deepEqual(storage.settings, { keepRuns: 10, keepBaselines: 5, autoPrune: true });
+    assert.deepEqual(storage.locked, { keepRuns: false, keepBaselines: false, autoPrune: false });
+    assert.equal(storage.projects[0].name, 'demo');
+    assert.equal(storage.projects[0].runs.count, 3);
+    assert.equal(storage.projects[0].baselines.count, 1);
+    const body = { keepRuns: 1, keepBaselines: 5, autoPrune: false };
+    assert.equal((await plain.call('/api/retention', 'PUT', body, { Origin: 'http://outside.example' })).status, 403);
+    assert.equal((await plain.call('/api/retention', 'PUT', { ...body, keepRuns: -1 })).status, 400);
+    assert.equal((await plain.call('/api/retention', 'PUT', body)).status, 200);
+    assert.deepEqual((await (await plain.call('/api/storage')).json()).settings, body);
+    assert.equal((await plain.call('/api/cleanup', 'POST', {}, { Origin: 'http://outside.example' })).status, 403);
+    const cleanup = await plain.call('/api/cleanup', 'POST', {});
+    assert.equal(cleanup.status, 200);
+    assert.deepEqual(await cleanup.json(), { removed: 1, skipped: [] });
+    assert.deepEqual((await readdir(runs)).sort(), ['20240101-run', '20240103-run', 'latest']);
+  } finally { await stop(plain); }
+  const locked = await start({ SPOTTER_KEEP_RUNS: '3' });
+  try {
+    const storage = await (await locked.call('/api/storage')).json();
+    assert.equal(storage.settings.keepRuns, 3);
+    assert.equal(storage.locked.keepRuns, true);
+  } finally {
+    await stop(locked);
+    await rm(home, { recursive: true, force: true });
   }
 });
