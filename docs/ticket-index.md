@@ -34,6 +34,7 @@ ticket.
 | [QA-24](#qa-24--project-started-backend-for-recording) | ACTIVE | Local recording source |
 | [QA-25](#qa-25--recording-request-headers) | ACTIVE | Recording protected APIs |
 | [QA-26](#qa-26--incomplete-when-api-traffic-is-not-replayed) | ACTIVE | Trustworthy pass without fixtures |
+| [QA-27](#qa-27--host-started-recording-backend-and-backend-detection) | IDEA | Recording backends with their own toolchain |
 
 Statuses and acceptance below are recorded decisions. Historical test output is
 in [ticket evidence](ticket-evidence.md); usage instructions are in the [README](../README.md).
@@ -888,3 +889,62 @@ independent.
   INCOMPLETE with the finding; the same app with `web.api.paths` and fixtures is
   COMPLETE; HockeyStatsWebApp main stays COMPLETE with no new findings.
 
+---
+
+## QA-27 — Host-started recording backend and backend detection
+
+**Status:** IDEA
+
+**Goal:** Let `spotter record` start a project's real API when it needs a
+toolchain or services the Spotter image lacks (for example .NET with Postgres in
+Docker Compose), and let setup propose that backend from the repository.
+
+**Context:** QA-24 runs `web.api.backend.run` inside the Spotter container, which
+provides Node only. triple-crown's API (`dotnet run`, Postgres via
+`api/docker-compose.yml`, `/health`, port 5209 from `launchSettings.json`)
+cannot start there. Recording is launched only from the host through
+`bin/spotter`; the dashboard starts runs, not recordings. The container shares
+the host network, so a host-started API is reachable at `recordFrom`.
+
+**Scope:**
+
+- `bin/spotter record` starts and stops the backend on the host through a
+  Playwright-free host entry point that reuses `src/backend.mjs` and config
+  loading (host Node 18): export the ref with `git archive`, start, wait for
+  `readyUrl`, run the container `record` with the backend marked as already
+  running, stop in every exit path (success, failure, timeout, Ctrl-C).
+- Optional `web.api.backend.stop` command, run after the process group stops,
+  for services that outlive it (for example `docker compose … down`).
+- Host execution requires explicit host-side opt-in that a dashboard config edit
+  cannot grant (for example a `--host-backend` flag or a host environment
+  allow-list of project names). The command is printed before it runs.
+- Setup inference, syntax and file reads only, never running project code:
+  - backend candidates: .NET web projects (`Microsoft.NET.Sdk.Web` plus
+    `Properties/launchSettings.json` `applicationUrl`), Node server packages
+    (`start`/`dev` script plus a server framework dependency), Compose services
+    such as Postgres;
+  - link a candidate to the frontend when its URL matches the inferred
+    `recordFrom` (for example a Vite proxy target); several candidates give a note;
+  - `readyUrl` from a literal health route (`MapHealthChecks("/health")` or a
+    `/health` handler), otherwise the app URL;
+  - propose Compose `up -d --wait` with a matching `stop`, and EF migrations when
+    a `dotnet-ef` tool manifest exists;
+  - seeding stays project-owned: propose a `seed`/`reset` script when found,
+    otherwise note that recordings will reflect an empty database.
+- Sweeps (`spotter run`, dashboard runs) never start a backend.
+
+**Out of scope:** API or browser tests against a live backend (QA-18), per-branch
+databases and port isolation, building per-project images.
+
+**Depends on:** QA-22, QA-24.
+
+**Verify:**
+
+- Unit tests for the host entry point's lifecycle and opt-in refusal, `stop`
+  ordering, and detection for .NET, Node and Compose examples (match, no match,
+  several candidates, missing seed note).
+- A generic example backend that needs a host-only service records through
+  `bin/spotter record` and leaves no process or Compose container behind on
+  success, startup failure, readiness timeout and Ctrl-C.
+- Setup proposes `paths`, `recordFrom` and `backend` for triple-crown `card-lab`;
+  recording against it waits for Product Owner approval.
