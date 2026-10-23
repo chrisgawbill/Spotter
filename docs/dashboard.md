@@ -76,7 +76,11 @@ short-lived runner containers and does not depend on the dashboard service.
 Select a configured project, an existing local or remote branch and optionally a
 testing level (Project default uses `levels.default`; Low is available only when
 `levels.low` is configured). The plan preview below the form shows what the run
-will execute and exclude before you start it. Starting a
+will execute and exclude before you start it. For a project with `web.api`, it
+also shows **Record API fixtures first** with the exact `bin/spotter record`
+command (and a Copy button) when no fixtures exist or the newest finished run
+called endpoints missing from them. Recording starts the project's API, so it
+runs only in a terminal on the server; the dashboard never runs it. Starting a
 run opens its activity page, which remains addressable after a reload. Project and branch lists refresh automatically every two seconds, including
 branch additions and deletions; valid selections are preserved. The server runs `git fetch --all --prune --no-tags` at startup and every minute,
 even with no browser open. This updates remote-tracking refs without changing
