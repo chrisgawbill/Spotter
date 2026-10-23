@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 
@@ -10,10 +12,13 @@ const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 export async function runCommand(command, { cwd, env = {}, timeoutMs = DEFAULT_TIMEOUT_MS, logFile } = {}) {
   const startedAt = Date.now();
   const outputChunks = [];
+  const npmCache = env.npm_config_cache ?? env.NPM_CONFIG_CACHE
+    ?? process.env.npm_config_cache ?? process.env.NPM_CONFIG_CACHE
+    ?? path.join(tmpdir(), `spotter-npm-cache-${process.getuid?.() ?? 'default'}`);
   const exitCode = await new Promise((resolve) => {
     const child = spawn('bash', ['-c', command], {
       cwd,
-      env: { ...process.env, CI: '1', FORCE_COLOR: '0', NO_COLOR: '1', ...env },
+      env: { ...process.env, CI: '1', FORCE_COLOR: '0', NO_COLOR: '1', ...env, npm_config_cache: npmCache },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const timer = setTimeout(() => {
