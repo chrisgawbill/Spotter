@@ -92,23 +92,35 @@ function updateBranches(previousBranch = '') {
 let planKey = '';
 let planFailed = false;
 async function updatePlan() {
-  const key = `${$('project').value}\n${$('level').value}`;
+  const key = `${$('project').value}\n${$('level').value}\n${$('branch').value}`;
   if (!$('project').value || key === planKey) return;
   planKey = key;
   try {
-    const plan = await api(`/api/plan?project=${encodeURIComponent($('project').value)}&level=${encodeURIComponent($('level').value)}`);
+    const plan = await api(`/api/plan?project=${encodeURIComponent($('project').value)}&level=${encodeURIComponent($('level').value)}&branch=${encodeURIComponent($('branch').value)}`);
     if (key !== planKey) return;
     $('plan').textContent = `Plan: ${plan.summary}`;
+    $('record-help').hidden = !plan.fixtures;
+    $('record-reason').textContent = plan.fixtures?.reason ?? '';
+    $('record-command').textContent = plan.fixtures?.command ?? '';
+    $('record-message').textContent = '';
     planFailed = false;
   } catch (error) {
     if (key !== planKey) return;
     $('plan').textContent = error.message;
+    $('record-help').hidden = true;
     planFailed = true;
   }
   $('submit').disabled = !$('branch').value || planFailed;
 }
 $('project').addEventListener('change', () => updateBranches());
 $('level').addEventListener('change', () => void updatePlan());
+$('branch').addEventListener('change', () => void updatePlan());
+$('copy-record').addEventListener('click', async () => {
+  try {
+    await copyText($('record-command').textContent);
+    $('record-message').textContent = 'Copied.';
+  } catch (error) { $('record-message').textContent = `Could not copy: ${error.message}`; }
+});
 $('start').addEventListener('submit', async (event) => {
   event.preventDefault();
   $('submit').disabled = true;

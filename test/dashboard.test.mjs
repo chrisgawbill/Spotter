@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { createDashboardServer, startDashboard } from '../src/dashboard.mjs';
+import { createDashboardServer, fixtureAdvice, startDashboard } from '../src/dashboard.mjs';
 import YAML from 'yaml';
 import { createActivity } from '../src/activity.mjs';
 
@@ -334,4 +334,29 @@ test('storage API reports usage, saves retention settings and cleans up old runs
     await stop(locked);
     await rm(home, { recursive: true, force: true });
   }
+});
+
+test('run form advice shows the server record command when fixtures are missing or incomplete', async () => {
+  const home = await mkdtemp(path.join(tmpdir(), 'spotter-fixture-advice-'));
+  const api = { paths: ['/api'], recordFrom: 'http://localhost:5209', backend: null };
+  const config = { name: 'shop', web: { api } };
+  assert.equal(await fixtureAdvice(home, { name: 'shop', web: { api: null } }, 'main'), null);
+  assert.deepEqual(await fixtureAdvice(home, config, 'feature/x'), {
+    reason: 'No API fixtures are recorded yet, so this run will be incomplete.',
+    command: 'bin/spotter record shop --ref feature/x',
+  });
+  assert.equal((await fixtureAdvice(home, { name: 'shop', web: { api: { ...api, backend: { run: 'x' } } } }, "it's")).command, "bin/spotter record shop --ref 'it'\\''s' --host-backend");
+  await mkdir(path.join(home, 'shop/fixtures'), { recursive: true });
+  await writeFile(path.join(home, 'shop/fixtures/api.json'), '{}');
+  assert.equal(await fixtureAdvice(home, config, 'main'), null);
+  const report = (check) => JSON.stringify({ head: { label: 'feature/x' }, comparison: { newFindings: [{ check }], existingFindings: [] } });
+  await mkdir(path.join(home, 'shop/runs/20261023-100000-a'), { recursive: true });
+  await writeFile(path.join(home, 'shop/runs/20261023-100000-a/report.json'), report('unrecorded-request'));
+  assert.deepEqual(await fixtureAdvice(home, config, 'main'), {
+    reason: 'The last run (feature/x) called API endpoints the fixtures do not have.',
+    command: 'bin/spotter record shop --ref main --merge',
+  });
+  await mkdir(path.join(home, 'shop/runs/20261023-110000-b'), { recursive: true });
+  await writeFile(path.join(home, 'shop/runs/20261023-110000-b/report.json'), report('console-error'));
+  assert.equal(await fixtureAdvice(home, config, 'main'), null, 'only the newest finished run counts');
 });

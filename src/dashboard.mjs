@@ -56,6 +56,31 @@ async function readRun(home, project, id) {
     checks: report?.head.stages };
 }
 
+/**
+ * Whether the project needs fixtures recorded before a run: none yet, or its newest finished run
+ * hit endpoints missing from them. Recording runs only in a server terminal, so this returns the
+ * command to show, never runs it.
+ */
+export async function fixtureAdvice(home, config, branch) {
+  if (!config.web?.api) return null;
+  const recorded = await stat(path.join(home, config.name, 'fixtures', 'api.json')).then(() => true, () => false);
+  let reason = recorded ? null : 'No API fixtures are recorded yet, so this run will be incomplete.';
+  if (recorded) {
+    const ids = (await readdir(path.join(home, config.name, 'runs'), { withFileTypes: true }).catch(() => []))
+      .filter((entry) => entry.isDirectory() && runName(entry.name)).map((entry) => entry.name).sort().reverse();
+    for (const id of ids) {
+      const report = await jsonFile(path.join(home, config.name, 'runs', id, 'report.json'));
+      if (!report) continue;
+      const { newFindings = [], existingFindings = [] } = report.comparison ?? {};
+      if ([...newFindings, ...existingFindings].some((finding) => finding.check === 'unrecorded-request')) reason = `The last run (${report.head?.label ?? id}) called API endpoints the fixtures do not have.`;
+      break;
+    }
+  }
+  if (!reason) return null;
+  const ref = /^[\w./@-]+$/.test(branch) ? branch : `'${branch.replace(/'/g, `'\\''`)}'`;
+  return { reason, command: `bin/spotter record ${config.name} --ref ${ref}${recorded ? ' --merge' : ''}${config.web.api.backend ? ' --host-backend' : ''}` };
+}
+
 /** No shell is involved in run control. Only configured projects and listed branches are accepted. */
 export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn, branchRefreshMs = 60_000, projectsRoot = process.env.SPOTTER_PROJECTS_ROOT ?? path.join(homedir(), 'projects'), configsDir = path.join(spotterRoot, 'projects'), env = process.env } = {}) {
   let starting = false;
@@ -255,8 +280,11 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
         const project = url.searchParams.get('project');
         if (!safeName(project) || !(await projectNames()).includes(project)) return send(404, { error: 'Unknown project' });
         let plan;
-        try { plan = resolvePlan(await loadConfig(project), url.searchParams.get('level')); } catch (error) { return send(400, { error: error.message }); }
-        return send(200, { level: plan.record?.name ?? null, source: plan.record?.source ?? null, summary: summarizePlan(plan), exclusions: plan.record?.exclusions ?? [], unsupported: plan.record?.unsupported ?? [] });
+        let config;
+        try { config = await loadConfig(project); plan = resolvePlan(config, url.searchParams.get('level')); } catch (error) { return send(400, { error: error.message }); }
+        const branch = url.searchParams.get('branch');
+        return send(200, { level: plan.record?.name ?? null, source: plan.record?.source ?? null, summary: summarizePlan(plan), exclusions: plan.record?.exclusions ?? [], unsupported: plan.record?.unsupported ?? [],
+          fixtures: branch ? await fixtureAdvice(home, { ...config, name: project }, branch) : null });
       }
       if (url.pathname === '/api/runs') {
         const runs = [];

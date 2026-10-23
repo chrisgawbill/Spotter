@@ -132,3 +132,5 @@ iframe{height:70vh}
 .runs-table td:nth-child(3),.runs-table td:nth-child(4){grid-column:1/-1}
 .runs-table td:last-child{white-space:normal}
 }
+.record-help{border-left:4px solid var(--ds-color-warning);padding-left:var(--ds-space-3)}
+.record-command{white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
