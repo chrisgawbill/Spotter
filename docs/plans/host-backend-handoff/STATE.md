@@ -27,8 +27,5 @@
 - Nothing project-specific in `src/` (triple-crown is only the motivating example; never name it in src or tests).
 - Do not mention AI tools in code, comments or messages. Do not commit.
 
-## In flight (wave 1, parallel; each agent owns its files exclusively)
-- host: src/config.mjs, src/config-fields.mjs, src/backend.mjs, src/cli.mjs, src/host-record.mjs (new), bin/spotter,
-  test/config.test.mjs, test/backend.test.mjs, test/host-record.test.mjs (new)
-- setup: src/backend-discovery.mjs (new), src/project-setup.mjs, test/backend-discovery.test.mjs (new), test/project-setup.test.mjs
-- Coordinator: README, docs, examples, plans, verification.
+## In flight
+- Nothing. Wave 1 landed and verified; see docs/plans/host-backend-progress/coordinator.md.

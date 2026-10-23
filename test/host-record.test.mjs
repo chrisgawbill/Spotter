@@ -102,4 +102,5 @@ test('SIGINT during record stops the backend group, runs the stop command and ex
   assert.equal(await exit, 130);
   assert.ok(await waitGone(sleeper));
   assert.equal((await readFile(path.join(workDir('sigint'), 'stopped'), 'utf8')).trim(), 'gone');
+  assert.deepEqual(await exportsOf('sigint'), []);
 });

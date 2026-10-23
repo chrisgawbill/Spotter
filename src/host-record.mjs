@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
-import { mkdir, rm } from 'node:fs/promises';
+import { rmSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { startBackend } from './backend.mjs';
 import { loadProjectConfig } from './config.mjs';
@@ -38,7 +39,10 @@ export async function hostRecord(argv, { loadConfig = loadProjectConfig, record 
   const exportDir = path.join(directories.work, `record-host-${sha.slice(0, 12)}`);
   const logFile = path.join(directories.fixtures, 'logs', 'backend.log');
   await mkdir(path.dirname(logFile), { recursive: true });
-  await rm(exportDir, { recursive: true, force: true });
+  // Also on Ctrl-C/SIGTERM, where startBackend stops the backend and exits the process.
+  const removeExport = () => rmSync(exportDir, { recursive: true, force: true });
+  removeExport();
+  process.once('exit', removeExport);
   try {
     await exportCommit(repo, sha, exportDir);
     log(`starting backend on this host in ${exportDir}: ${backend.run}`);
@@ -51,7 +55,8 @@ export async function hostRecord(argv, { loadConfig = loadProjectConfig, record 
       await started.stop();
     }
   } finally {
-    await rm(exportDir, { recursive: true, force: true });
+    process.off('exit', removeExport);
+    removeExport();
   }
 }
 

@@ -67,8 +67,7 @@ Contracts: [host-backend-contracts.md](host-backend-contracts.md).
 - The host needs Node 18+ and Spotter's `node_modules` (`npm ci` in the Spotter checkout) for
   `--host-backend`; without the flag nothing changes.
 - A second Ctrl-C while the stop command runs exits Spotter at once; the stop command keeps
-  running detached until it finishes. An interrupted host record leaves its export folder; it is
-  removed by the next record of the same commit or by pruning after a day.
+  running detached until it finishes.
 - No port isolation: a developer's own backend or database on the same ports makes startup fail
   (reported with the log path). Per-branch databases remain out of scope.
 - The container record resolves `--ref` again; a branch moved between the host export and the

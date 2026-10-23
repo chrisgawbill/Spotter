@@ -50,5 +50,13 @@ the seed rule does not select it.
 
 | Wave | Agent | Files | Status |
 | --- | --- | --- | --- |
-| 1 | host (C1–C4) | config.mjs, config-fields.mjs, backend.mjs, cli.mjs, host-record.mjs (new), bin/spotter, test/config, test/backend, test/host-record (new) | dispatched |
-| 1 | setup (C5) | backend-discovery.mjs (new), project-setup.mjs, test/backend-discovery (new), test/project-setup | dispatched |
+| 1 | host (C1–C4) | config.mjs, config-fields.mjs, backend.mjs, cli.mjs, host-record.mjs (new), bin/spotter, test/config, test/backend, test/host-record (new) | Landed; diff read, tests re-run |
+| 1 | setup (C5) | backend-discovery.mjs (new), project-setup.mjs, test/backend-discovery (new), test/project-setup | Landed; diff read, tests re-run |
+
+Coordinator interventions:
+- Accepted setup's Node cross-package seed `cd` relative to the backend dir (the shell is already there); C5 amended.
+- Made `host-record.mjs` remove its export folder on process exit too, so Ctrl-C leaves nothing; asserted in `test/host-record.test.mjs`.
+- Wrote README/docs, `examples/host-backend/`, evidence; ran all verification (see docs/ticket-evidence.md#qa-27).
+
+No outstanding caller integrations. Ownership held: each agent changed only its allow-list.
+Unverified: recording triple-crown (needs Product Owner approval); a stop command hitting the 120 s limit outside unit tests.

@@ -205,3 +205,34 @@ finding IDs to the accepted reports. Evidence:
   `~/spotter/triple-crown/runs/20261023-171857-origin-creature-bench-a92211aa/report.md`.
 - Not verified: SIGINT during a real `spotter record` (SIGTERM is covered by
   `test/backend.test.mjs`); recording triple-crown (needs its API running).
+
+## QA-27
+
+**Host-started recording backend evidence (2026-10-23, not yet accepted):**
+
+- `npm test`: 129 tests pass (112 before). Docker integration (examples
+  mounted): 7 files, 12 tests pass, unchanged.
+- `examples/host-backend` (Node API that needs a Docker Compose data service,
+  so it cannot start in the image), recorded with
+  `bin/spotter record host-backend-example --ref host-recording-backend --host-backend`:
+  success (1 response recorded, exit 0), startup failure (exit 2, `backend
+  exited with code 3 …; see …/backend.log`), readiness timeout (exit 2, `backend
+  not ready … after 8s`) and SIGINT to the process group during the container
+  record (exit 130). After each: no Compose container, volume or network, no
+  server process, no Spotter container, port free, no export folder. Replay run
+  COMPLETE/PASS:
+  `~/spotter/host-backend-example/runs/20261023-174045-host-recording-backend-9a0ec666/report.md`.
+- Setup inference on an export of triple-crown `origin/creature-bench`
+  (`card-lab`) proposes `paths: [/admin]`, `recordFrom: http://localhost:5209`
+  and the .NET backend with Compose Postgres, EF migrations, `/health` and
+  `down -v` stop exactly as in `docs/plans/host-backend.md`, plus the
+  `--host-backend` and empty-database notes. Headers are not inferred.
+- HockeyStats main: the same 17 groups (390 occurrences) as before QA-27,
+  COMPLETE 66/66, `apiNotReplayed: []`:
+  `~/spotter/hockeystats-webapp/runs/20261023-180005-main-6a7fe1a1/report.md`.
+  An earlier main run (`20261023-174235-main-402aaf65`) added only transient
+  `net::ERR_NETWORK_CHANGED` asset/image failures and was repeated.
+  Seeded: all 7 seeded groups new, 17 on base, COMPLETE:
+  `~/spotter/hockeystats-webapp/runs/20261023-174826-verify-browser-depth-defects-75bd8fe5/report.md`.
+- Not verified: recording triple-crown (awaits Product Owner approval); a
+  Compose stop command that exceeds 120 s.
