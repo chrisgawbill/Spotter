@@ -78,7 +78,7 @@ baseline cache entries and leftover work folders. Set the limits with
 `SPOTTER_AUTO_PRUNE=off` to disable automatic cleanup. In-progress runs and the
 run `runs/latest` points to are always kept.
 
-The dashboard's Storage page shows disk use and changes the same settings; they
+The dashboard's Settings page shows disk use and changes the same settings; they
 are saved to `retention.json` in the Spotter data folder. Precedence: command
 flags, then environment variables, then saved settings, then the defaults.
 

@@ -26,6 +26,15 @@ const jsonFile = async (file) => readFile(file, 'utf8').then(JSON.parse).catch((
 const safeName = (name) => typeof name === 'string' && /^[A-Za-z0-9_-]+$/.test(name);
 const runName = (name) => typeof name === 'string' && /^[A-Za-z0-9._-]+$/.test(name) && !['.', '..', 'latest'].includes(name);
 
+const APP_SETTINGS_FILE = 'dashboard.json';
+/** Parses an https://<machine>.<tailnet>.ts.net[:port] origin; '' or null gives null. */
+export function httpsOrigin(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const url = URL.canParse(value) ? new URL(value) : null;
+  if (!url || url.protocol !== 'https:' || !url.hostname.endsWith('.ts.net') || url.origin !== String(value).replace(/\/$/, '')) throw new Error('The HTTPS address must look like https://<machine>.<tailnet>.ts.net or https://<machine>.<tailnet>.ts.net:<port>.');
+  return url;
+}
+
 export async function branches(config) {
   const { stdout } = await exec('git', ['-C', config.repo, 'for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes']);
   return stdout.trim().split('\n').filter((name) => name && !name.endsWith('/HEAD')).map((name) => name.replace(/^refs\/(heads|remotes)\//, ''));
@@ -98,9 +107,10 @@ export async function renderReportPdf(file, root) {
 
 /** No shell is involved in run control. Only configured projects and listed branches are accepted. */
 export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn, branchRefreshMs = 60_000, projectsRoot = process.env.SPOTTER_PROJECTS_ROOT ?? path.join(homedir(), 'projects'), configsDir = path.join(spotterRoot, 'projects'), env = process.env, renderPdf = renderReportPdf } = {}) {
-  // Optional HTTPS front end on the tailnet (for example Caddy with a Tailscale certificate), needed to install the dashboard as an app.
-  const httpsOrigin = env.SPOTTER_DASHBOARD_ORIGIN ? new URL(env.SPOTTER_DASHBOARD_ORIGIN) : null;
-  if (httpsOrigin && (httpsOrigin.protocol !== 'https:' || !httpsOrigin.hostname.endsWith('.ts.net') || httpsOrigin.origin !== env.SPOTTER_DASHBOARD_ORIGIN.replace(/\/$/, ''))) throw new Error('SPOTTER_DASHBOARD_ORIGIN must be an https://<machine>.<tailnet>.ts.net[:port] origin.');
+  // Optional HTTPS front end on the tailnet (tailscale serve, or Caddy with a Tailscale certificate), needed to install
+  // the dashboard as an app. The environment variable beats the address saved from the Settings page.
+  const envOrigin = httpsOrigin(env.SPOTTER_DASHBOARD_ORIGIN);
+  let savedOrigin = jsonFile(path.join(home, APP_SETTINGS_FILE)).then((saved) => httpsOrigin(saved?.httpsOrigin)).catch(() => null);
   let starting = false;
   let editing = false;
   const children = new Set();
@@ -137,8 +147,9 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
     try {
       const localHost = `${req.socket.localAddress}:${req.socket.localPort}`;
       const proxyHost = process.env.SPOTTER_TAILSCALE_IP ? `${process.env.SPOTTER_TAILSCALE_IP}:8088` : null;
-      if (req.headers.host !== localHost && req.headers.host !== proxyHost && req.headers.host !== httpsOrigin?.host) return send(403, { error: 'Unrecognized dashboard host' });
-      const sameOriginJson = () => req.headers.origin === (req.headers.host === httpsOrigin?.host ? httpsOrigin.origin : `http://${req.headers.host}`) && req.headers['content-type'] === 'application/json';
+      const https = envOrigin ?? await savedOrigin;
+      if (req.headers.host !== localHost && req.headers.host !== proxyHost && req.headers.host !== https?.host) return send(403, { error: 'Unrecognized dashboard host' });
+      const sameOriginJson = () => req.headers.origin === (req.headers.host === https?.host ? https.origin : `http://${req.headers.host}`) && req.headers['content-type'] === 'application/json';
       const url = new URL(req.url, 'http://dashboard');
       if (url.pathname === '/api/project-folders' && req.method === 'GET') {
         return send(200, await browseProjects(projectsRoot, url.searchParams.get('folder') ?? undefined));
@@ -261,6 +272,23 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
           child.once('exit', (code, signal) => { void finish(`Runner exited ${signal ?? code} before producing a report.`).catch(console.error); });
           return send(202, { project, id });
         } finally { starting = false; }
+      }
+      if (url.pathname === '/api/app' && req.method === 'GET') return send(200, { httpsOrigin: https?.origin ?? null, locked: !!envOrigin });
+      if (url.pathname === '/api/app' && req.method === 'PUT') {
+        if (!sameOriginJson()) return send(403, { error: 'Same-origin JSON required' });
+        if (envOrigin) return send(409, { error: 'The HTTPS address is set by SPOTTER_DASHBOARD_ORIGIN on the server.' });
+        let body = '';
+        for await (const chunk of req) {
+          body += chunk;
+          if (Buffer.byteLength(body) > 4096) return send(413, { error: 'Request too large' });
+        }
+        const next = httpsOrigin(JSON.parse(body).httpsOrigin);
+        const file = path.join(home, APP_SETTINGS_FILE);
+        await mkdir(home, { recursive: true });
+        await writeFile(`${file}.tmp`, `${JSON.stringify({ httpsOrigin: next?.origin ?? null }, null, 2)}\n`);
+        await rename(`${file}.tmp`, file);
+        savedOrigin = Promise.resolve(next);
+        return send(200, { httpsOrigin: next?.origin ?? null, locked: false });
       }
       if (url.pathname === '/api/storage' && req.method === 'GET') {
         const settings = retentionSettings(env, {}, await loadSavedRetention(home));

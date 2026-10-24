@@ -193,10 +193,44 @@ test('dashboard serves its app manifest and accepts only a configured HTTPS tail
     assert.equal(await post({ Host: 'box.tail1.ts.net', Origin: 'https://box.tail1.ts.net' }), 403);
     assert.equal(await post({ Origin: https }), 403);
     assert.equal(await post({ Origin: origin }), 400);
+    assert.deepEqual(await (await fetch(`${origin}/api/app`)).json(), { httpsOrigin: https, locked: true });
+    assert.equal((await fetch(`${origin}/api/app`, { method: 'PUT', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ httpsOrigin: '' }) })).status, 409);
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test('Settings saves the HTTPS address, applies it immediately and keeps it across restarts', async () => {
+  const home = await mkdtemp(path.join(tmpdir(), 'spotter-app-'));
+  const saved = 'https://box.tail1.ts.net:8444';
+  const listen = async () => {
+    const server = createDashboardServer({ branchRefreshMs: 0, home, projectNames: async () => [], env: {} });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    return [server, `http://127.0.0.1:${server.address().port}`];
+  };
+  const close = async (server) => { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); };
+  let [server, origin] = await listen();
+  const put = (httpsOrigin, headers = {}) => fetch(`${origin}/api/app`, { method: 'PUT', headers: { Origin: origin, 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ httpsOrigin }) });
+  const post = (headers) => new Promise((resolve, reject) => {
+    const req = httpRequest(`${origin}/api/runs`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers } }, (res) => { res.resume(); resolve(res.statusCode); });
+    req.on('error', reject);
+    req.end(JSON.stringify({ project: '../x', branch: 'main' }));
+  });
+  try {
+    assert.deepEqual(await (await fetch(`${origin}/api/app`)).json(), { httpsOrigin: null, locked: false });
+    assert.equal(await post({ Host: 'box.tail1.ts.net:8444', Origin: saved }), 403);
+    assert.equal((await put(saved, { Origin: 'http://outside.example' })).status, 403);
+    assert.equal((await put('https://example.com')).status, 400);
+    assert.equal((await put(saved)).status, 200);
+    assert.equal(await post({ Host: 'box.tail1.ts.net:8444', Origin: saved }), 400);
+    await close(server);
+    [server, origin] = await listen();
+    assert.deepEqual(await (await fetch(`${origin}/api/app`)).json(), { httpsOrigin: saved, locked: false });
+    assert.equal(await post({ Host: 'box.tail1.ts.net:8444', Origin: saved }), 400);
+    assert.equal((await put('')).status, 200);
+    assert.equal(await post({ Host: 'box.tail1.ts.net:8444', Origin: saved }), 403);
+  } finally { await close(server); }
 });
 
 test('config editor validates YAML, preserves comments, detects stale edits and confines writes', async () => {
