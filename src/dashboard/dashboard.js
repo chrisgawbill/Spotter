@@ -141,7 +141,7 @@ async function refresh() {
   refreshing = true;
   try {
     const current = location.hash === '#configs' ? 'configs' : location.hash === '#storage' ? 'storage' : 'runs';
-    const [title, description] = { runs: ['See what changed.', 'Start a check, follow the work, and review what Spotter found.'], configs: ['Configure your checks.', 'Build a project configuration with field guidance and examples.'], storage: ['Keep disk use in check.', 'See what Spotter stores and choose how much history to keep.'] }[current];
+    const [title, description] = { runs: ['See what changed.', 'Start a check, follow the work, and review what Spotter found.'], configs: ['Configure your checks.', 'Build a project configuration with field guidance and examples.'], storage: ['Set up this dashboard.', 'Install it as an app, see what Spotter stores and choose how much history to keep.'] }[current];
     $('page-title').textContent = title;
     $('page-description').textContent = description;
     $('run-page').hidden = current !== 'runs';
@@ -421,6 +421,30 @@ async function loadStorage() {
     updateCleanup();
   } catch (error) { $('storage-total').textContent = `Could not load storage: ${error.message}`; }
 }
+// The HTTPS address the dashboard also answers on; the server may fix it with SPOTTER_DASHBOARD_ORIGIN.
+let appDirty = false;
+function showApp({ httpsOrigin, locked }) {
+  if (!appDirty) $('https-origin').value = httpsOrigin ?? '';
+  $('https-origin').disabled = locked;
+  $('save-app').disabled = locked;
+  $('https-origin-help').textContent = locked ? 'Set by SPOTTER_DASHBOARD_ORIGIN on the server.' : 'Leave empty to turn it off. Run controls also accept this exact address.';
+  $('open-https').hidden = !httpsOrigin || location.origin === httpsOrigin;
+  $('open-https').href = httpsOrigin ? `${httpsOrigin}/` : '';
+}
+async function loadApp() {
+  try { showApp(await api('/api/app')); } catch (error) { $('app-message').textContent = error.message; }
+}
+$('app-form').addEventListener('input', () => { appDirty = true; $('app-message').textContent = ''; });
+$('app-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('save-app').disabled = true;
+  try {
+    const result = await configRequest('/api/app', 'PUT', { httpsOrigin: $('https-origin').value.trim().replace(/\/$/, '') });
+    appDirty = false;
+    showApp(result);
+    $('app-message').textContent = result.httpsOrigin ? 'Address saved. Open it to install the app.' : 'HTTPS address removed.';
+  } catch (error) { $('app-message').textContent = error.message; $('save-app').disabled = false; }
+});
 $('refresh-storage').addEventListener('click', loadStorage);
 $('retention-form').addEventListener('input', () => { retentionDirty = true; updateCleanup(); });
 $('retention-form').addEventListener('submit', async (event) => {
@@ -449,10 +473,12 @@ let installPrompt = null;
 const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const macSafari = !ios && /^((?!chrome|chromium|android|edg|firefox).)*safari/i.test(navigator.userAgent);
-function showInstall(message, canPrompt = false) {
+function showInstall(message, canPrompt = false, link = null) {
   try { if (installed || localStorage.getItem('spotter-install-dismissed')) return; } catch { if (installed) return; }
   $('install-message').textContent = message;
   $('install-app').hidden = !canPrompt;
+  $('install-link').hidden = !link;
+  if (link) { $('install-link').href = link.href; $('install-link').textContent = link.text; }
   $('install-banner').hidden = false;
 }
 function hideInstall() {
@@ -479,10 +505,15 @@ $('dismiss-install').addEventListener('click', () => {
   hideInstall();
 });
 if (ios) showInstall('Tap Share, then Add to Home Screen, to open the dashboard like an app.');
-else if (!isSecureContext) showInstall('Apps install only from HTTPS. Open the dashboard’s https://….ts.net address to install it (see the dashboard guide).');
+else if (!isSecureContext) {
+  api('/api/app').then(({ httpsOrigin }) => httpsOrigin
+    ? showInstall('Apps install only from HTTPS. Open the dashboard’s HTTPS address to install it.', false, { href: `${httpsOrigin}/`, text: 'Open HTTPS address' })
+    : showInstall('Apps install only from HTTPS. Add the dashboard’s HTTPS address in Settings to install it.', false, { href: '#storage', text: 'Open Settings' }))
+    .catch(() => {});
+}
 else if (macSafari) showInstall('In Safari, choose File › Add to Dock to open the dashboard like an app.');
-window.addEventListener('hashchange', () => { void refresh(); if (location.hash === '#storage') void loadStorage(); });
-if (location.hash === '#storage') void loadStorage();
+window.addEventListener('hashchange', () => { void refresh(); if (location.hash === '#storage') { void loadStorage(); void loadApp(); } });
+if (location.hash === '#storage') { void loadStorage(); void loadApp(); }
 try {
   await refresh();
   setInterval(refresh, 2000);

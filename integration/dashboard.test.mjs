@@ -124,10 +124,14 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     await page.click('#delete-config');
     await page.waitForSelector('#config-editor[hidden]', { state: 'attached' });
     await page.waitForSelector('[data-config="dashboard-created"]', { state: 'detached' });
-    await page.getByRole('link', { name: 'Storage', exact: true }).click();
+    await page.getByRole('link', { name: 'Settings', exact: true }).click();
     await page.waitForSelector('#storage-page:not([hidden])');
-    assert.equal(await page.getByRole('link', { name: 'Storage', exact: true }).getAttribute('aria-current'), 'page');
+    assert.equal(await page.getByRole('link', { name: 'Settings', exact: true }).getAttribute('aria-current'), 'page');
     await page.waitForSelector('#storage-projects tr');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'https-origin');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'save-app');
     await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'keep-runs');
     await page.locator('#keep-runs').fill('7');

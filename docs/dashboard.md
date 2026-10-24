@@ -64,28 +64,29 @@ the banner in that browser. The installed app is the live dashboard; it has no
 offline mode.
 
 Browsers install apps only from HTTPS. The plain `http://<tailscale-ip>:8089`
-address cannot be installed except on iOS; there the banner says so. To install
-it elsewhere, put an HTTPS proxy with a Tailscale certificate in front of
-the dashboard on the tailnet, and give the dashboard that origin:
+address cannot be installed except on iOS; there the banner links to
+**Settings** or to the saved HTTPS address. To install it elsewhere, put an
+HTTPS proxy with a Tailscale certificate in front of the dashboard on the
+tailnet:
 
 ```bash
-export SPOTTER_DASHBOARD_ORIGIN=https://<machine>.<tailnet>.ts.net:9944
-bash deploy/start-dashboard   # or bin/spotter dashboard
+sudo tailscale serve --bg --https=8444 http://<tailscale-ip>:8089
 ```
 
-```caddyfile
-https://<machine>.<tailnet>.ts.net:9944 {
-	bind <tailscale-ip>
-	reverse_proxy <tailscale-ip>:8089
-}
-```
+Then enter `https://<machine>.<tailnet>.ts.net:8444` under **Settings → Install
+as an app**. It is saved to `dashboard.json` in the Spotter data folder and
+applies immediately. Setting `SPOTTER_DASHBOARD_ORIGIN` to the same kind of
+origin (passed through by `bin/spotter dashboard` and
+`examples/deploy/start-dashboard`) overrides the saved address and locks the
+field. A Caddy site with a Tailscale certificate that proxies to
+`<tailscale-ip>:8089` works the same way; the proxy must pass the original Host
+header.
 
-The origin must be `https://` on a `.ts.net` name. The dashboard then accepts
+The address must be `https://` on a `.ts.net` name. The dashboard then accepts
 that Host and Origin for run controls, in addition to its own address. Keep
 the proxy on the Tailscale interface and never expose it with Tailscale Funnel;
-there is still no application sign-in. Recreate an existing `spotter-dashboard`
-container so it picks up the variable, after copying the updated
-`examples/deploy/start-dashboard` into `deploy/`.
+there is still no application sign-in. `sudo tailscale serve --https=8444 off`
+removes the proxy.
 
 ## Persistent container
 
@@ -149,9 +150,9 @@ becomes an error after 30 seconds without a heartbeat, including after a
 container/server restart. Inspect runner logs before restarting a stalled run.
 Auto-refreshing screenshots and live video are deferred.
 
-## Storage
+## Settings and storage
 
-**Storage** shows, per configured project, how many runs, cached base results
+**Settings** holds the app install address (above) and shows, per configured project, how many runs, cached base results
 and work folders exist and how much disk each uses, plus what cleanup would
 remove right now. Sizes are computed when the page opens or **Refresh** is
 pressed, never on the two-second poll.

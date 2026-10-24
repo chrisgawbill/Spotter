@@ -9,9 +9,9 @@
 <script type="module" src="/dashboard.js"></script>
 </head>
 <body class="ds-page-shell ds-scrollbar">
-<header class="app-bar ds-aero-glass"><div class="ds-container ds-cluster"><a class="brand ds-focus-outline" href="#"><span aria-hidden="true">◉</span> Spotter</a><nav class="ds-cluster" aria-label="Dashboard"><a class="nav-link ds-focus-outline" href="#">Runs</a><a class="nav-link ds-focus-outline" href="#configs">Configurations</a><a class="nav-link ds-focus-outline" href="#storage">Storage</a></nav><span class="ds-chip ds-chip-primary" title="Served only on the Tailscale network">Tailscale only</span></div></header>
+<header class="app-bar ds-aero-glass"><div class="ds-container ds-cluster"><a class="brand ds-focus-outline" href="#"><span aria-hidden="true">◉</span> Spotter</a><nav class="ds-cluster" aria-label="Dashboard"><a class="nav-link ds-focus-outline" href="#">Runs</a><a class="nav-link ds-focus-outline" href="#configs">Configurations</a><a class="nav-link ds-focus-outline" href="#storage">Settings</a></nav><span class="ds-chip ds-chip-primary" title="Served only on the Tailscale network">Tailscale only</span></div></header>
 <main class="ds-container ds-stack">
-<section id="install-banner" class="install-banner ds-card ds-aero-surface" aria-labelledby="install-title" hidden><img src="/icon.svg" alt="" width="40" height="40"><div class="install-text"><h2 id="install-title">Install Spotter as an app</h2><p id="install-message" class="muted"></p></div><div class="ds-cluster install-actions"><button id="install-app" class="ds-button" type="button" hidden>Install app</button><button id="dismiss-install" class="ds-button button-secondary" type="button">Not now</button></div></section>
+<section id="install-banner" class="install-banner ds-card ds-aero-surface" aria-labelledby="install-title" hidden><img src="/icon.svg" alt="" width="40" height="40"><div class="install-text"><h2 id="install-title">Install Spotter as an app</h2><p id="install-message" class="muted"></p></div><div class="ds-cluster install-actions"><button id="install-app" class="ds-button" type="button" hidden>Install app</button><a id="install-link" class="ds-button" hidden></a><button id="dismiss-install" class="ds-button button-secondary" type="button">Not now</button></div></section>
 <div class="page-intro"><h1 id="page-title" tabindex="-1">See what changed.</h1><p id="page-description" class="muted">Start a check, follow the work, and review what Spotter found.</p></div>
 <p id="error" role="alert" hidden></p>
 <div id="run-page" class="ds-stack">
@@ -72,6 +72,14 @@
 </form>
 </section>
 <section id="storage-page" class="ds-stack" hidden aria-labelledby="storage-title">
+<section class="ds-card ds-aero-surface ds-stack" aria-labelledby="app-title"><h2 id="app-title">Install as an app</h2>
+<p class="muted">Browsers install apps only from HTTPS. Put an HTTPS proxy on the tailnet in front of this dashboard, for example <code>sudo tailscale serve --bg --https=8444 http://&lt;tailscale-ip&gt;:8089</code>, then save its address here. Never expose it with Tailscale Funnel; the dashboard has no sign-in.</p>
+<form id="app-form" class="ds-stack">
+<label class="ds-field">HTTPS address<input id="https-origin" class="ds-input" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://machine.tailnet.ts.net:8444" aria-describedby="https-origin-help"></label>
+<p id="https-origin-help" class="muted"></p>
+<p id="app-message" role="status"></p>
+<div class="ds-cluster"><button id="save-app" type="submit" class="ds-button">Save address</button><a id="open-https" class="ds-button button-secondary" hidden>Open HTTPS address</a></div>
+</form></section>
 <section class="ds-card ds-aero-surface ds-stack"><h2 id="storage-title">Cleanup settings</h2>
 <form id="retention-form" class="ds-stack">
 <label class="ds-field">Runs to keep per project<input id="keep-runs" class="ds-input" type="number" min="0" step="1" required aria-describedby="keep-runs-help"></label>

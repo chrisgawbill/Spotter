@@ -118,7 +118,12 @@ td{overflow-wrap:anywhere;max-width:450px}
 #retention-form input[type=number]{width:8rem}
 #retention-form p{margin:0}
 #retention-form p:empty{display:none}
-#retention-message:empty,#cleanup-message:empty,#copy-message:empty{display:none}
+#retention-message:empty,#cleanup-message:empty,#copy-message:empty,#app-message:empty{display:none}
+#app-form{align-items:flex-start}
+#app-form label{width:min(100%,32rem)}
+#app-form input{width:100%}
+#app-form p{margin:0}
+code{font-family:ui-monospace,monospace;font-size:.9em;overflow-wrap:anywhere}
 #copy-message{margin:0}
 .format-button[aria-pressed=false]{background:transparent;color:var(--ds-color-primary);border:1px solid var(--ds-color-outline-variant)}
 .format-button[aria-pressed=true]::before{content:'✓ ';content:'✓ ' / ''}
