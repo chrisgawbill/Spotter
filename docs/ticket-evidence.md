@@ -306,3 +306,53 @@ finding IDs to the accepted reports. Evidence:
   Timing-dependent; raising `web.settleMs` or QA-16 flake tracking addresses it.
 - Not verified: a real phone (emulation only); an image without Firefox/WebKit
   (covered by an injected launch failure in the integration test).
+
+## QA-11
+
+**Fault recovery evidence (2026-10-24, accepted by Product Owner 2026-10-24):**
+
+- Recovery specs: `examples/recovery` (7 scenarios, 3 `@critical`): disconnect and
+  reconnect, 401 sign-in, 403 without Retry, 429 `Retry-After` within a 4 s budget,
+  malformed body, 500 with Retry, stale response ignored. Docker
+  `integration/recovery.test.mjs` 4/4 with `Date` frozen and 2 workers, healthy
+  0 findings. Seeds, each new against healthy: permanently disabled Refresh (T5,
+  plus T1 and T3), ineffective Retry (T5, plus T7), stale overwrite (T6 only).
+- Sweep fault kinds: `web.faultInjection.kinds` adds `abort`, `401`, `403`, `429`,
+  `malformed` to `500`/`delay`; high runs all seven, medium is unchanged.
+  `npm test` 162/162 (160 before). Docker integration: browser-depth 4/4 (a
+  guarded app: 7 fault visits, nothing above low; an unguarded app: new
+  `page crashes during abort response` and `... malformed response`),
+  same-origin-api 2/2, browser-matrix 4/4, journeys 4/4, specs 3/3,
+  authentication 2/2, contracts 1/1. `visual` 0/1 fails identically on
+  unchanged `HEAD` (pre-existing `renderHtmlReport` call shape).
+- HockeyStats main (real config, medium plan unchanged): PASS, COMPLETE 78/78,
+  34 specs, 362 fault visits, exit 0; only the known low keyboard-focus advisory:
+  `~/spotter/hockeystats-webapp/runs/20261024-151617-main-08105cd8/report.md`.
+- Seeded (`/tmp/spotter-depth-seeded`): all 7 seeded groups new, 11 on base,
+  exit 3. INCOMPLETE only because the 2026-10-23 clone has no spec files
+  ("specs: selected zero tests"):
+  `~/spotter/hockeystats-webapp/runs/20261024-152317-verify-browser-depth-defects-a0d739a8/report.md`.
+- All kinds on a real app (temporary `projects/qa11-faults.yml`: HockeyStats
+  config, 3 routes, all seven kinds): 329 fault visits, no fault findings, PASS,
+  COMPLETE, exit 0. Plan line shows the kinds:
+  `~/spotter/qa11-faults/runs/20261024-153635-main-285afbd7/report.md`.
+- Setup inference (Product Owner request, 2026-10-24): the wizard and the run's
+  config check suggest fault kinds the app visibly handles (401/403/429 status
+  checks, `Retry-After`, online/offline listeners, caught `fetch` or retry
+  backoff → `abort`, JSON parsing in `try` → `malformed`). `npm test` 163/163;
+  Docker dashboard 1/1. Applied to every config with fault visits on:
+  HockeyStats configs (`hockeystats-webapp`, `hockeystatswebapp`,
+  `qa10-journeys`) get `[500, delay, abort, 401, malformed]` (apiClient retry and
+  JSON catch, authApi 401); Triple Crown configs get `[500, delay, abort,
+  malformed]` (libraryStore). `hockeystats-auth` keeps fault visits off; the
+  example configs have nothing inferred.
+- HockeyStats main with its inferred kinds: 905 fault visits, no fault findings,
+  PASS, COMPLETE 78/78, exit 0:
+  `~/spotter/hockeystats-webapp/runs/20261024-175742-main-d017420f/report.md`.
+- Triple Crown main: 0 fault visits. Main's pages load the static
+  `/card-lab-library.json`, not the `/admin` API, so no endpoint is observed
+  (not caused by this change). INCOMPLETE only because main has no journey file
+  ("No tests found"; it lives on the local `interaction-journeys` branch):
+  `~/spotter/triple-crown/runs/20261024-181219-main-23934278/report.md`.
+- Not verified: Firefox/WebKit (faults and the example ran in Chromium only);
+  consumer adoption of a recovery journey.

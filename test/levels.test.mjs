@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { normalizeConfig } from '../src/config.mjs';
-import { HIGH_DEVICES, UNSUPPORTED_AT_HIGH, resolvePlan, summarizePlan } from '../src/levels.mjs';
+import { FAULT_KINDS, HIGH_DEVICES, UNSUPPORTED_AT_HIGH, resolvePlan, summarizePlan } from '../src/levels.mjs';
 
 const make = ({ levels, required = ['typecheck'], minSpecs, web = {} } = {}) => normalizeConfig({
   repo: '/tmp/app',
@@ -34,8 +34,8 @@ test('medium selects the full run', () => {
 test('high is medium plus the browser matrix and the unsupported list', () => {
   const config = make();
   const plan = resolvePlan(config, 'high');
-  assert.deepEqual({ ...plan.config, web: { ...plan.config.web, browsers: config.web.browsers, devices: config.web.devices } }, config);
-  assert.equal(UNSUPPORTED_AT_HIGH.length, 3);
+  assert.deepEqual({ ...plan.config, web: { ...plan.config.web, browsers: config.web.browsers, devices: config.web.devices, faultInjection: config.web.faultInjection } }, config);
+  assert.deepEqual(UNSUPPORTED_AT_HIGH.map((item) => item.ticket), ['QA-13', 'QA-15']);
   assert.deepEqual(plan.record.unsupported, UNSUPPORTED_AT_HIGH);
   assert.deepEqual(plan.record.exclusions, []);
 });
@@ -138,4 +138,14 @@ test('summarizePlan shows the matrix only when it is not the default', () => {
   assert.doesNotMatch(summarizePlan(resolvePlan(make(), 'medium')), /matrix/);
   const line = summarizePlan(resolvePlan(make({ web: { browsers: ['chromium', 'firefox'], devices: ['iPhone 13'] } }), 'medium'));
   assert.match(line, / · matrix chromium, firefox, iPhone 13 · specs/);
+});
+
+test('high injects every fault kind only when fault visits are configured', () => {
+  const config = make();
+  const high = resolvePlan(config, 'high');
+  assert.deepEqual(high.config.web.faultInjection, { ...config.web.faultInjection, kinds: FAULT_KINDS });
+  assert.equal('kinds' in resolvePlan(config, 'medium').config.web.faultInjection, false);
+  assert.equal(resolvePlan(make({ web: { faultInjection: false } }), 'high').config.web.faultInjection, null);
+  assert.match(summarizePlan(high), /\+ fault visits \(500, delay, abort, 401, 403, 429, malformed\)/);
+  assert.match(summarizePlan(resolvePlan(config, 'medium')), /sessions \+ fault visits ·/);
 });

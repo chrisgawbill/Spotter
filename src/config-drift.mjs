@@ -2,6 +2,7 @@ import { readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import YAML from 'yaml';
 import { createFinding } from './findings.mjs';
+import { DEFAULT_FAULT_KINDS, FAULT_KINDS } from './levels.mjs';
 import { discoverOptions, projectText } from './project-options.mjs';
 import { discoverRoutes } from './route-discovery.mjs';
 
@@ -21,6 +22,7 @@ export async function inferWebSettings(exportDir, workdir) {
     routes: (web.routes ?? discovered.routes).filter((route) => !discovered.hashAliases.includes(route.path)),
     apiPaths: web.api?.paths ?? [],
     specFiles: web.specs?.files ?? [],
+    faultKinds: web.faultInjection?.kinds ?? [],
   };
 }
 
@@ -45,6 +47,10 @@ export function compareWithInference(web, inferred) {
   for (const prefix of inferred.apiPaths) if (!web.api?.paths?.includes(prefix)) report('web.api.paths', prefix, { api: { paths: [prefix] } });
   const specFiles = [...(web.specs?.files ?? []), ...(web.specs?.live?.files ?? [])];
   for (const file of inferred.specFiles ?? []) if (!specFiles.includes(file)) report('web.specs.files', file, { specs: { files: [file] } });
+  // Only when fault visits are on; the suggestion lists the whole resulting kinds list.
+  const kinds = web.faultInjection?.kinds ?? DEFAULT_FAULT_KINDS;
+  const wanted = FAULT_KINDS.filter((kind) => kinds.includes(kind) || inferred.faultKinds?.includes(kind));
+  if (web.faultInjection) for (const kind of wanted) if (!kinds.includes(kind)) report('web.faultInjection.kinds', kind, { faultInjection: { kinds: wanted } });
   return findings;
 }
 

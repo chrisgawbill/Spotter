@@ -6,6 +6,7 @@ import path from 'node:path';
 import { chromium, devices, firefox, webkit } from 'playwright';
 import { DEFAULT_TARGET_ID, isDefaultMatrix, listTargets } from '../browsers.mjs';
 import { lastLines, runCommand } from '../exec.mjs';
+import { DEFAULT_FAULT_KINDS } from '../levels.mjs';
 import { findIneffectiveSchemes } from '../config-drift.mjs';
 import { createFinding } from '../findings.mjs';
 import { apiRequestMatcher, isExpectedStatus, recordFixtures, recordingHeaders, replayFixtures } from '../fixtures.mjs';
@@ -55,7 +56,7 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
       for (let i = 0; i < results.length; i++) {
         if (jobs[i].target.id !== targets[0].id || jobs[i].viewport.width !== toViewport(web.viewports[0]).width || jobs[i].colorScheme !== web.colorSchemes[0]) continue;
         for (const key of results[i].requests) {
-          for (const kind of ['500', 'delay']) faultJobs.push({ job: jobs[i], healthy: results[i], fault: { ...web.faultInjection, key, kind } });
+          for (const kind of web.faultInjection.kinds ?? DEFAULT_FAULT_KINDS) faultJobs.push({ job: jobs[i], healthy: results[i], fault: { ...web.faultInjection, key, kind } });
         }
       }
     }

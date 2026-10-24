@@ -18,7 +18,7 @@ ticket.
 | [QA-08](#qa-08--configurable-low-medium-and-high-testing-levels) | DONE | Testing levels |
 | [QA-09](#qa-09--coverage-and-run-completeness) | DONE | Trustworthy pass results |
 | [QA-10](#qa-10--critical-interaction-journeys) | DONE | Interaction testing |
-| [QA-11](#qa-11--fault-recovery-and-response-ordering) | IDEA | Recovery testing |
+| [QA-11](#qa-11--fault-recovery-and-response-ordering) | DONE | Recovery testing |
 | [QA-12](#qa-12--cross-browser-and-device-matrix) | DONE | Browser compatibility |
 | [QA-13](#qa-13--data-edge-case-scenarios) | IDEA | Data robustness |
 | [QA-14](#qa-14--deployed-application-smoke-checks) | IDEA | Deployment verification |
@@ -78,6 +78,7 @@ an agent should be able to act on `report.md` without opening anything else.
 | QA-06 | Dashboard implementation and hosting checks ready for review; sample acceptance and persistent service activation pending. |
 | QA-07 | Generic auth support and sample report accepted 2026-10-22. |
 | QA-09 | Sample report accepted 2026-10-23; exit 3 = incomplete. QA-08 level integration deferred. |
+| QA-11 | Accepted by Product Owner 2026-10-24: spec-based recovery scenarios plus config-only sweep fault kinds (medium 500/delay, high all), inferred by setup. Consumer recovery journeys pending direction. |
 
 ## Dependency outline
 
@@ -335,7 +336,7 @@ Historical verification: [evidence](ticket-evidence.md#qa-07).
 ## Proposed robustness backlog
 
 QA-08 through QA-21 capture the requested feature proposals. QA-08, QA-09,
-QA-10 and QA-12 are DONE; the rest remain IDEA. Writing these tickets does not start
+QA-10, QA-11 and QA-12 are DONE; the rest remain IDEA. Writing these tickets does not start
 implementation or activate services.
 Suggested first delivery sequence: QA-08, QA-09, QA-10, then QA-11.
 
@@ -459,7 +460,9 @@ initial page rendering, without building a separate journey language.
 
 ## QA-11 — Fault recovery and response ordering
 
-**Status:** IDEA
+**Status:** DONE — accepted by Product Owner 2026-10-24. Plan: [fault-recovery](plans/fault-recovery.md).
+Usage: [recovery scenarios](project-specs.md#recovery-scenarios) and
+[fault kinds](browser-checks.md). Verification: [evidence](ticket-evidence.md#qa-11).
 
 **Goal:** Test recovery after failure as well as the initial failure state.
 

@@ -20,6 +20,7 @@ web:
     delayMs: 2000
     timeoutMs: 5000
     loadingSelector: '[aria-busy="true"], [role="progressbar"]'
+    kinds: [500, delay, abort, 429]   # optional; default [500, delay]
 ```
 
 Use test sessions accepted by the app's frontend; this does not bypass server
@@ -36,14 +37,22 @@ A miss does not create a finding; it makes the run incomplete and the report
 names the session and how many visits failed.
 
 Fault injection revisits each route/session at the first viewport and scheme.
-Each API request observed there gets its own fresh visit returning 500, then a
-visit delaying that endpoint. Other endpoints replay normally. After
+Each API request observed there gets one fresh visit per fault kind (by default
+a 500, then a delay). Other endpoints replay normally. After
 `timeoutMs` (independent of the healthy-page settling delay), Spotter reports crashes, blank pages and visible loading indicators
 (customize `loadingSelector` for the app). Expected injected HTTP errors are
 suppressed; loading indicators already present on the healthy visit are excluded.
 Loading during a delayed response is advisory: an intentionally pending request
-does not prove a stuck page. A 500 loading finding records the configured
+does not prove a stuck page. Any other kind's loading finding records the configured
 observation deadline, not proof that loading never ends.
+`kinds` chooses the faults: `500`, `delay`, `abort` (connection dropped),
+`401`, `403`, `429` (with `Retry-After: 1`) and `malformed` (the recorded
+status with an unreadable JSON body). The default is `500` and `delay`; level
+`high` runs all seven and `low` runs none. Every kind and endpoint is a
+separate visit, so all seven take about three and a half times as long as the
+default. Kinds report the same crash, blank and loading findings, named after
+the kind (`page crashes during abort response`). Proving that Retry or
+reconnecting works needs a [recovery spec](project-specs.md#recovery-scenarios).
 `delayMs` controls the response delay; use a value above `timeoutMs`
 to observe pending requests. Choose settling and fault budgets that allow the
 app's retry window to finish. Set `web.faultInjection: false` to skip this sweep.

@@ -120,7 +120,13 @@ export async function replayFixtures(context, { fakeOrigin, apiPaths = [], appOr
         });
         if (!open) return;
       }
-      else return route.fulfill({ status: 500, headers: { ...corsHeaders(request, appOrigin), 'content-type': 'application/json', 'x-spotter-injected': '1' }, body: '{"error":"Injected failure"}' });
+      else if (fault.kind === 'abort') return route.abort('internetdisconnected');
+      else {
+        const headers = { ...corsHeaders(request, appOrigin), 'content-type': 'application/json', 'x-spotter-injected': '1' };
+        if (fault.kind === 'malformed') return route.fulfill({ status: recorded.status, headers: { ...headers, 'content-type': recorded.contentType ?? 'application/json' }, body: '{"injected": "malformed' });
+        if (fault.kind === '429') headers['retry-after'] = '1';
+        return route.fulfill({ status: Number(fault.kind), headers, body: '{"error":"Injected failure"}' });
+      }
     }
     return route.fulfill({
       status: recorded.status,

@@ -10,6 +10,7 @@ const inferred = {
   routes: [{ name: 'home', path: '/' }, { name: 'reports', path: '/#reports' }, { name: 'matchup', path: '#/matchup' }],
   apiPaths: ['/api'],
   specFiles: ['qa/journeys.spec.mjs'],
+  faultKinds: ['500', 'delay', 'abort', '429'],
 };
 
 test('missing inferred settings each become one low config finding with suggested YAML', () => {
@@ -37,6 +38,16 @@ test('present settings are not reported, even with different values; routes matc
   assert.deepEqual(compareWithInference(web, inferred), []);
 });
 
+test('inferred fault kinds missing from enabled fault visits are suggested as the whole list', () => {
+  const routes = inferred.routes;
+  const titles = (faultInjection) => compareWithInference({ ...inferred, routes, api: { paths: ['/api'] }, specs: { files: inferred.specFiles }, faultInjection }, inferred);
+  const findings = titles({ timeoutMs: 5000 });
+  assert.deepEqual(findings.map((finding) => finding.title), ['config lacks inferred web.faultInjection.kinds abort', 'config lacks inferred web.faultInjection.kinds 429']);
+  assert.match(findings[0].detail, /faultInjection:\n {4}kinds:\n {6}- "500"\n {6}- delay\n {6}- abort\n {6}- "429"/);
+  assert.deepEqual(titles({ kinds: ['500', 'delay', 'abort', '401', '403', '429', 'malformed'] }), []);
+  assert.deepEqual(titles(null), [], 'fault visits switched off are left alone');
+});
+
 test('config finding keys depend on setting and value only', () => {
   const first = compareWithInference({ routes: [], api: null }, inferred);
   const second = compareWithInference({ routes: [{ name: 'other', path: '/#other' }], api: { paths: ['/other'] } }, { ...inferred, colorSchemeStorage: { ...inferred.colorSchemeStorage } });
@@ -57,6 +68,10 @@ test('inference reads the exported tree without installs and skips legacy hash a
       const scheme = localStorage.getItem('app:theme') === 'dark' ? 'dark' : 'light';
       if (location.hash === '#old') history.replaceState(null, '', '#reports');
       if (location.hash === '#reports') show();
+      async function load() {
+        try { const response = await fetch('/api/items'); if (response.status === 401) signIn(); return await response.json(); } catch { showError(); }
+      }
+      addEventListener('online', load);
     `);
     await mkdir(path.join(root, 'app', 'qa'));
     await writeFile(path.join(root, 'app', 'qa', 'journeys.spec.mjs'), 'const { test } = await import(process.env.SPOTTER_TEST_MODULE);');
@@ -68,6 +83,7 @@ test('inference reads the exported tree without installs and skips legacy hash a
     assert.deepEqual(settings.colorSchemeStorage, inferred.colorSchemeStorage);
     assert.deepEqual(settings.routes, [{ name: 'home', path: '/' }, { name: 'reports', path: '/#reports' }]);
     assert.deepEqual(settings.apiPaths, ['/api']);
+    assert.deepEqual(settings.faultKinds, ['500', 'delay', 'abort', '401', 'malformed']);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
