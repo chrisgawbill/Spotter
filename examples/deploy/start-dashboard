@@ -15,6 +15,7 @@ docker run --detach --name spotter-dashboard --restart unless-stopped \
   -e SPOTTER_HOME=/data \
   -e SPOTTER_HOST_HOME="${SPOTTER_HOME:-$HOME/spotter}" \
   -e SPOTTER_TAILSCALE_IP="${SPOTTER_TAILSCALE_IP:-$(tailscale ip -4)}" \
+  -e SPOTTER_DASHBOARD_ORIGIN="${SPOTTER_DASHBOARD_ORIGIN:-}" \
   -v "$spotter_dir/src:/opt/spotter/src:ro" \
   -v "$spotter_dir/projects:/opt/spotter/projects:rw" \
   -v "${SPOTTER_HOME:-$HOME/spotter}:/data" \

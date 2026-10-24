@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { request as httpRequest } from 'node:http';
 import { createDashboardServer, fixtureAdvice, startDashboard } from '../src/dashboard.mjs';
 import YAML from 'yaml';
 import { createActivity } from '../src/activity.mjs';
@@ -162,6 +163,39 @@ test('dashboard requires an explicit Tailscale address', async () => {
   } finally {
     if (before === undefined) delete process.env.SPOTTER_TAILSCALE_IP;
     else process.env.SPOTTER_TAILSCALE_IP = before;
+  }
+});
+
+test('dashboard serves its app manifest and accepts only a configured HTTPS tailnet origin', async () => {
+  for (const origin of ['http://box.tail1.ts.net', 'https://example.com', 'https://box.tail1.ts.net/path', 'not a url']) {
+    assert.throws(() => createDashboardServer({ branchRefreshMs: 0, env: { SPOTTER_DASHBOARD_ORIGIN: origin } }));
+  }
+  const https = 'https://box.tail1.ts.net:9944';
+  const server = createDashboardServer({ branchRefreshMs: 0, home: await mkdtemp(path.join(tmpdir(), 'spotter-pwa-')), projectNames: async () => [], env: { SPOTTER_DASHBOARD_ORIGIN: https } });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  // fetch() ignores a custom Host header, so send these through node:http.
+  const post = (headers) => new Promise((resolve, reject) => {
+    const req = httpRequest(`${origin}/api/runs`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers } }, (res) => { res.resume(); resolve(res.statusCode); });
+    req.on('error', reject);
+    req.end(JSON.stringify({ project: '../x', branch: 'main' }));
+  });
+  try {
+    const manifest = await fetch(`${origin}/manifest.webmanifest`);
+    assert.equal(manifest.headers.get('content-type'), 'application/manifest+json');
+    const { start_url, display, icons } = await manifest.json();
+    assert.deepEqual([start_url, display], ['/', 'standalone']);
+    for (const icon of icons) assert.equal((await fetch(`${origin}${icon.src}`)).headers.get('content-type'), icon.type);
+    assert.equal((await fetch(`${origin}/apple-touch-icon.png`)).headers.get('content-type'), 'image/png');
+    // Reaching validation (400) means the host and origin were accepted.
+    assert.equal(await post({ Host: 'box.tail1.ts.net:9944', Origin: https }), 400);
+    assert.equal(await post({ Host: 'box.tail1.ts.net:9944', Origin: 'http://box.tail1.ts.net:9944' }), 403);
+    assert.equal(await post({ Host: 'box.tail1.ts.net', Origin: 'https://box.tail1.ts.net' }), 403);
+    assert.equal(await post({ Origin: https }), 403);
+    assert.equal(await post({ Origin: origin }), 400);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
   }
 });
 

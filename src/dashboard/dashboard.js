@@ -443,6 +443,44 @@ $('cleanup-now').addEventListener('click', async () => {
     $('cleanup-message').textContent = `Removed ${result.removed} item(s).${result.skipped.length ? ` Skipped baselines and work folders for ${result.skipped.join(', ')} because a run is in progress.` : ''}`;
   } catch (error) { $('cleanup-message').textContent = error.message; updateCleanup(); }
 });
+// Offer the dashboard as an installable app. Browsers install only from HTTPS (or localhost) and
+// Safari has no install prompt, so explain the route instead of showing a button that cannot work.
+let installPrompt = null;
+const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const macSafari = !ios && /^((?!chrome|chromium|android|edg|firefox).)*safari/i.test(navigator.userAgent);
+function showInstall(message, canPrompt = false) {
+  try { if (installed || localStorage.getItem('spotter-install-dismissed')) return; } catch { if (installed) return; }
+  $('install-message').textContent = message;
+  $('install-app').hidden = !canPrompt;
+  $('install-banner').hidden = false;
+}
+function hideInstall() {
+  const hadFocus = $('install-banner').contains(document.activeElement);
+  $('install-banner').hidden = true;
+  if (hadFocus) $('page-title').focus();
+}
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  installPrompt = event;
+  showInstall('Open the dashboard in its own window from your dock, home screen or app list.', true);
+});
+window.addEventListener('appinstalled', () => { installPrompt = null; hideInstall(); });
+$('install-app').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  const prompt = installPrompt;
+  installPrompt = null;
+  await prompt.prompt();
+  await prompt.userChoice;
+  hideInstall();
+});
+$('dismiss-install').addEventListener('click', () => {
+  try { localStorage.setItem('spotter-install-dismissed', '1'); } catch {}
+  hideInstall();
+});
+if (ios) showInstall('Tap Share, then Add to Home Screen, to open the dashboard like an app.');
+else if (!isSecureContext) showInstall('Apps install only from HTTPS. Open the dashboard’s https://….ts.net address to install it (see the dashboard guide).');
+else if (macSafari) showInstall('In Safari, choose File › Add to Dock to open the dashboard like an app.');
 window.addEventListener('hashchange', () => { void refresh(); if (location.hash === '#storage') void loadStorage(); });
 if (location.hash === '#storage') void loadStorage();
 try {
