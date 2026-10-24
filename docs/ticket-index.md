@@ -17,9 +17,9 @@ ticket.
 | [QA-07](#qa-07--generic-authentication-flow-testing) | DONE | Authentication |
 | [QA-08](#qa-08--configurable-low-medium-and-high-testing-levels) | DONE | Testing levels |
 | [QA-09](#qa-09--coverage-and-run-completeness) | DONE | Trustworthy pass results |
-| [QA-10](#qa-10--critical-interaction-journeys) | IDEA | Interaction testing |
+| [QA-10](#qa-10--critical-interaction-journeys) | ACTIVE | Interaction testing |
 | [QA-11](#qa-11--fault-recovery-and-response-ordering) | IDEA | Recovery testing |
-| [QA-12](#qa-12--cross-browser-and-device-matrix) | ACTIVE | Browser compatibility |
+| [QA-12](#qa-12--cross-browser-and-device-matrix) | DONE | Browser compatibility |
 | [QA-13](#qa-13--data-edge-case-scenarios) | IDEA | Data robustness |
 | [QA-14](#qa-14--deployed-application-smoke-checks) | IDEA | Deployment verification |
 | [QA-15](#qa-15--performance-regression-budgets) | IDEA | Performance checks |
@@ -334,8 +334,8 @@ Historical verification: [evidence](ticket-evidence.md#qa-07).
 
 ## Proposed robustness backlog
 
-QA-08 through QA-21 capture the requested feature proposals. QA-08 and QA-09
-are DONE; the rest remain IDEA. Writing these tickets does not start
+QA-08 through QA-21 capture the requested feature proposals. QA-08, QA-09 and
+QA-12 are DONE and QA-10 is ACTIVE; the rest remain IDEA. Writing these tickets does not start
 implementation or activate services.
 Suggested first delivery sequence: QA-08, QA-09, QA-10, then QA-11.
 
@@ -424,7 +424,8 @@ coverage from producing a successful result.
 
 ## QA-10 — Critical interaction journeys
 
-**Status:** IDEA
+**Status:** ACTIVE — started by Product Owner 2026-10-23. Plan:
+[interaction-journeys](plans/interaction-journeys.md).
 
 **Goal:** Extend adoption of the existing project-spec adapter to test behavior after
 initial page rendering, without building a separate journey language.
@@ -477,8 +478,9 @@ initial page rendering, without building a separate journey language.
 
 ## QA-12 — Cross-browser and device matrix
 
-**Status:** ACTIVE — started by Product Owner 2026-10-23. Plan:
-[browser-matrix](plans/browser-matrix.md).
+**Status:** DONE — accepted by Product Owner 2026-10-23. Plan:
+[browser-matrix](plans/browser-matrix.md). Usage: [browser checks](browser-checks.md).
+Historical verification: [evidence](ticket-evidence.md#qa-12).
 
 **Goal:** Extend the Chromium-only coverage with configurable Firefox and WebKit runs.
 

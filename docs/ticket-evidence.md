@@ -237,9 +237,40 @@ finding IDs to the accepted reports. Evidence:
 - Not verified: recording triple-crown (awaits Product Owner approval); a
   Compose stop command that exceeds 120 s.
 
+## QA-10
+
+**Interaction journeys evidence (2026-10-23, not yet accepted):**
+
+- No `src/` change. `npm test`: 157/157 pass. Docker integration
+  (`journeys`, `specs`, `authentication`, `examples/` mounted): 9/9 pass;
+  `integration/journeys.test.mjs` passed three further times without flakes.
+- Healthy example: 7 journeys pass with 2 workers. Seeds, each new against the
+  healthy run: broken save (T1, plus the persistence journey), duplicate write,
+  lost URL state, missing focus restoration and an unguarded admin route.
+  `@critical` grep selects 3.
+- HockeyStatsWebApp branch `qa-interaction-journeys` (local, not pushed):
+  `react/qa/journeys.spec.mjs` with a matchup URL/back-forward journey
+  (`@critical`) and a stat-leader dialog keyboard/focus journey. Temporary
+  config `projects/qa10-journeys.yml` (HockeyStats config plus `web.specs` and
+  `levels.low`):
+  low: COMPLETE, 1 critical spec passed, exit 0:
+  `~/spotter/qa10-journeys/runs/20261023-233619-working-tree-258630f6/report.md`;
+  medium: COMPLETE 66/66, 2 specs passed, nothing new, exit 0:
+  `~/spotter/qa10-journeys/runs/20261023-233649-working-tree-0f7ca6f6/report.md`.
+  Main has no spec yet, so its base side reports "project specs could not
+  complete" (shown as fixed). Enable `web.specs` in the real config only after
+  the branch merges.
+- Missing-setup hints (Product Owner request, 2026-10-24): the config check
+  suggests unlisted project spec files, and web runs without `web.specs` list
+  interaction journeys under "Not checked". `npm test` 158/158. The real
+  HockeyStats config against the branch shows one new low finding, `config lacks
+  inferred web.specs.files qa/journeys.spec.mjs`, plus the "Not checked" entry,
+  COMPLETE 66/66, exit 0:
+  `~/spotter/hockeystats-webapp/runs/20261024-010411-qa-interaction-journeys-89c9c05a/report.md`.
+
 ## QA-12
 
-**Browser and device matrix evidence (2026-10-23, not yet accepted):**
+**Browser and device matrix evidence (2026-10-23, accepted by Product Owner 2026-10-23):**
 
 - `npm test`: 157 tests pass (145 before). Docker integration, all files with
   `examples/` mounted: 17/17 pass, including `integration/browser-matrix.test.mjs`

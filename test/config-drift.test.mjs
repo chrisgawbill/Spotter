@@ -9,6 +9,7 @@ const inferred = {
   colorSchemeStorage: { light: { 'app:theme': 'light' }, dark: { 'app:theme': 'dark' } },
   routes: [{ name: 'home', path: '/' }, { name: 'reports', path: '/#reports' }, { name: 'matchup', path: '#/matchup' }],
   apiPaths: ['/api'],
+  specFiles: ['qa/journeys.spec.mjs'],
 };
 
 test('missing inferred settings each become one low config finding with suggested YAML', () => {
@@ -18,10 +19,12 @@ test('missing inferred settings each become one low config finding with suggeste
     'config lacks inferred web.routes /#reports',
     'config lacks inferred web.routes #/matchup',
     'config lacks inferred web.api.paths /api',
+    'config lacks inferred web.specs.files qa/journeys.spec.mjs',
   ]);
   assert.ok(findings.every((finding) => finding.stage === 'config' && finding.check === 'setup-inference' && finding.severity === 'low'));
   assert.match(findings[0].detail, /web:\n {2}colorSchemeStorage:\n {4}light:\n {6}app:theme: light/);
   assert.match(findings[1].detail, /routes:\n {4}- name: reports\n {6}path: \/#reports/);
+  assert.match(findings[4].detail, /specs:\n {4}files:\n {6}- qa\/journeys\.spec\.mjs/);
 });
 
 test('present settings are not reported, even with different values; routes match without query', () => {
@@ -29,6 +32,7 @@ test('present settings are not reported, even with different values; routes matc
     colorSchemeStorage: { light: { theme: 'day' }, dark: { theme: 'night' } },
     routes: [{ name: 'home', path: '/' }, { name: 'reports', path: '#reports' }, { name: 'matchup', path: '#/matchup?teamA=TOR' }],
     api: { paths: ['/api'] },
+    specs: { files: [], live: { files: ['qa/journeys.spec.mjs'] } },
   };
   assert.deepEqual(compareWithInference(web, inferred), []);
 });
@@ -54,7 +58,12 @@ test('inference reads the exported tree without installs and skips legacy hash a
       if (location.hash === '#old') history.replaceState(null, '', '#reports');
       if (location.hash === '#reports') show();
     `);
+    await mkdir(path.join(root, 'app', 'qa'));
+    await writeFile(path.join(root, 'app', 'qa', 'journeys.spec.mjs'), 'const { test } = await import(process.env.SPOTTER_TEST_MODULE);');
+    await writeFile(path.join(root, 'app', 'qa', 'login.live.spec.mjs'), 'const { test } = await import(process.env.SPOTTER_TEST_MODULE);');
+    await writeFile(path.join(root, 'app', 'qa', 'plain.spec.mjs'), "import { test } from '@playwright/test';");
     const settings = await inferWebSettings(root, path.join(root, 'app'));
+    assert.deepEqual(settings.specFiles, ['qa/journeys.spec.mjs']);
     assert.deepEqual(settings.colorSchemeStorage, inferred.colorSchemeStorage);
     assert.deepEqual(settings.routes, [{ name: 'home', path: '/' }, { name: 'reports', path: '/#reports' }]);
     assert.deepEqual(settings.apiPaths, ['/api']);

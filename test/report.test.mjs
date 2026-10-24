@@ -81,6 +81,12 @@ test('complete runs keep PASS and show the coverage line', () => {
   assert.doesNotMatch(markdown, /Incomplete coverage/);
 });
 
+test('a web run without configured specs lists interaction journeys as not checked', () => {
+  const run = (items) => renderMarkdownReport({ ...coverageRun({ ...completeness('complete', []), items }), head: { label: 'x', shortSha: 'abc', stages: { web: { pages: 1, sessions: ['anonymous'] } } } });
+  assert.match(run([]), /Not checked: .*interaction journeys \(no web\.specs; see docs\/project-specs\.md\)/);
+  assert.doesNotMatch(run([{ name: 'specs', kind: 'specs', required: false, status: 'excluded', reason: 'excluded at level low' }]), /interaction journeys/);
+});
+
 test('HTML coverage section escapes reasons and lists gaps', async () => {
   const { renderHtmlReport } = await import('../src/htmlReport.mjs');
   const html = renderHtmlReport(coverageRun(completeness('incomplete', ['web: build failed'])), 'md');

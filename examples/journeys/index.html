@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Journeys example</title>
+<main></main>
+<script type="module">
+const app = document.querySelector('main');
+const el = (tag, text = '', attrs = {}) => {
+  const node = Object.assign(document.createElement(tag), { textContent: text });
+  for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, value);
+  return node;
+};
+const getJson = async (url) => (await fetch(url)).json();
+let shown;
+
+async function render() {
+  if (location.hash === shown) return; // popstate and hashchange both fire on history traversal
+  shown = location.hash;
+  const [path, query] = location.hash.slice(1).split('?');
+  const id = path.match(/^\/items\/(\d+)$/)?.[1];
+  if (path === '/admin') showAdmin();
+  else if (id) await showEdit(id);
+  else await showItems(new URLSearchParams(query));
+}
+
+async function showItems(params) {
+  const items = await getJson('api/items');
+  let query = params.get('q') ?? '';
+  let page = Number(params.get('page')) || 1;
+  let pages = 1;
+  const filter = el('input');
+  filter.value = query;
+  const label = el('label', 'Filter ');
+  label.append(filter);
+  const list = el('ul');
+  const previous = el('button', 'Previous');
+  const next = el('button', 'Next');
+  const status = el('p', '', { role: 'status' });
+  const update = () => {
+    const matches = items.filter((item) => item.name.toLowerCase().includes(query.toLowerCase()));
+    pages = Math.max(1, Math.ceil(matches.length / 2));
+    page = Math.min(Math.max(page, 1), pages);
+    list.replaceChildren(...matches.slice((page - 1) * 2, page * 2).map(row));
+    status.textContent = `Page ${page} of ${pages}`;
+    previous.disabled = page <= 1;
+    next.disabled = page >= pages;
+  };
+  const go = (nextQuery, nextPage) => {
+    query = nextQuery;
+    page = nextPage;
+    const qs = new URLSearchParams({ ...(query && { q: query }), ...(page > 1 && { page }) }).toString();
+    history.pushState(null, '', '#/items' + (qs && '?' + qs));
+    shown = location.hash;
+    update();
+  };
+  filter.oninput = () => go(filter.value, 1);
+  previous.onclick = () => go(query, page - 1);
+  next.onclick = () => go(query, page + 1);
+  app.replaceChildren(el('h1', 'Items'), label, list, previous, ' ', next, status);
+  update();
+}
+
+function row(item) {
+  const open = el('button', 'Delete…');
+  open.onclick = () => confirmDelete(item, open);
+  const li = el('li');
+  li.append(el('a', item.name, { href: `#/items/${item.id}` }), ' ', open);
+  return li;
+}
+
+function confirmDelete(item, opener) {
+  const dialog = el('div', '', { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'dialog-title' });
+  const close = () => {
+    dialog.remove();
+    opener.focus();
+  };
+  const cancel = el('button', 'Cancel');
+  const remove = el('button', 'Delete');
+  cancel.onclick = remove.onclick = close;
+  dialog.onkeydown = (event) => { if (event.key === 'Escape') close(); };
+  dialog.append(el('h2', `Delete ${item.name}?`, { id: 'dialog-title' }), cancel, ' ', remove);
+  app.append(dialog);
+  cancel.focus();
+}
+
+async function showEdit(id) {
+  const item = await getJson(`api/items/${id}`);
+  const input = el('input', '', { required: '' });
+  input.value = item.name;
+  const label = el('label', 'Name ');
+  label.append(input);
+  const save = el('button', 'Save');
+  const alert = el('p', '', { role: 'alert' });
+  const status = el('p', '', { role: 'status' });
+  const form = el('form', '', { novalidate: '' });
+  form.append(label, ' ', save, alert, status);
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const name = input.value.trim();
+    status.textContent = '';
+    if (name.length < 3) {
+      alert.textContent = 'Name must be at least 3 characters';
+      return;
+    }
+    alert.textContent = '';
+    save.disabled = true;
+    await fetch(`api/items/${id}`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
+    save.disabled = false;
+    status.textContent = 'Saved';
+  };
+  app.replaceChildren(el('h1', 'Edit item'), form, el('a', 'Back to items', { href: '#/items' }));
+}
+
+function showAdmin() {
+  if (localStorage.getItem('role') === 'admin') app.replaceChildren(el('h1', 'Admin'), el('p', 'Admin tools'));
+  else app.replaceChildren(el('h1', 'Not authorized'));
+}
+
+addEventListener('popstate', render);
+addEventListener('hashchange', render);
+await render();
+</script></html>

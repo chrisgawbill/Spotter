@@ -31,6 +31,36 @@ colorScheme: 'dark' })` for configured sessions and themes. Tests use the built
 app's base URL. Failures are high-severity findings compared with the merge
 base; `--skip web` also skips specs. Spec discovery or runner failures block.
 
+## Interaction journeys
+
+Specs also test what happens after the first render: correcting invalid input,
+duplicate submits, saved edits, filters and pagination restored from the URL,
+back/forward navigation, dialog keyboard use and focus restoration, and routes
+limited to a role. Spotter has no journey language; write them as ordinary specs.
+
+- **Writes and response sequences** belong in the spec. Recorded fixtures match
+  method and URL only, so answer writes with `page.route` and keep a small
+  per-test store. Assert the request body and count, and serve later reads from
+  the store so a reload proves persistence. Page routes take precedence over
+  Spotter's replay, and each test gets its own context, so parallel journeys
+  stay isolated.
+- **Focus:** check focus after keyboard operation with
+  `expect(locator).toBeFocused()`, both inside the dialog and on the opener
+  after it closes.
+- **Roles:** use one configured session per role (`test.use({ spotterSession })`)
+  and assert both the allowed and the refused view.
+- **Levels:** put a tag such as `@critical` in the names of journeys that low
+  should run, and select them with `levels.low.specs.grep: '@critical'`. Medium
+  and high run every configured spec.
+
+The [runnable example](../examples/journeys/journeys.spec.mjs) and its tiny
+[app](../examples/journeys/index.html) cover each pattern. The
+journeys integration test seeds a broken save, a duplicate write, lost URL
+state, missing focus restoration and an unguarded route. Each one fails its
+named test as a new finding.
+
+## API contracts
+
 Every successful `record` writes `fixtures/contracts.json` and
 `fixtures/contract-drift.json`. The first recording establishes a baseline;
 later recordings compare endpoint/session additions, removals, status codes,

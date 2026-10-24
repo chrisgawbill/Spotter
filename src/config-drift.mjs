@@ -20,6 +20,7 @@ export async function inferWebSettings(exportDir, workdir) {
     colorSchemeStorage: web.colorSchemeStorage,
     routes: (web.routes ?? discovered.routes).filter((route) => !discovered.hashAliases.includes(route.path)),
     apiPaths: web.api?.paths ?? [],
+    specFiles: web.specs?.files ?? [],
   };
 }
 
@@ -42,6 +43,8 @@ export function compareWithInference(web, inferred) {
   const configured = new Set(web.routes.map((route) => routePath(route.path)));
   for (const route of inferred.routes) if (!configured.has(routePath(route.path))) report('web.routes', route.path, { routes: [route] });
   for (const prefix of inferred.apiPaths) if (!web.api?.paths?.includes(prefix)) report('web.api.paths', prefix, { api: { paths: [prefix] } });
+  const specFiles = [...(web.specs?.files ?? []), ...(web.specs?.live?.files ?? [])];
+  for (const file of inferred.specFiles ?? []) if (!specFiles.includes(file)) report('web.specs.files', file, { specs: { files: [file] } });
   return findings;
 }
 

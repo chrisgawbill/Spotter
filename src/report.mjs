@@ -13,6 +13,7 @@ function notChecked(run) {
   const gaps = [];
   if (run.visual?.status !== 'compared') gaps.push('visual changes vs base');
   if (!web?.sessions?.some((name) => name !== 'anonymous')) gaps.unshift('signed-in sweep (no sessions configured)');
+  if (web && !run.completeness?.items?.some((item) => item.kind === 'specs')) gaps.unshift('interaction journeys (no web.specs; see docs/project-specs.md)');
   if (!web?.accessibility) gaps.unshift('accessibility (axe)');
   if (!web?.keyboard) gaps.unshift('keyboard smoke');
   if (!web?.faultVisits) gaps.unshift('slow or failing endpoints');

@@ -29,7 +29,7 @@ Before the first run, create a project config and record fixtures if it uses an 
 1. **Export** the ref with `git archive` (the project's checkout is never touched; `--working-tree` copies uncommitted files instead).
 2. **Static:** install, then each configured check. Parsers turn `tsc`, Vitest JSON and Prettier output into findings with file and line; anything else reports exit code and log tail.
 3. **Rules:** forbidden text in commit messages, added lines or files (e.g. "no AI mentions", "no `../../` imports"), and import boundaries between slices with an allowlist.
-4. **Config:** runs setup's read-only inference on the exported tree (no installs, no project code) and reports, as low findings with suggested YAML, inferred `web.colorSchemeStorage`, routes and `web.api.paths` the configuration lacks. A configured `colorSchemeStorage`, even with other values, is left alone; routes match by path without query. `--skip config` turns it off.
+4. **Config:** runs setup's read-only inference on the exported tree (no installs, no project code) and reports, as low findings with suggested YAML, inferred `web.colorSchemeStorage`, routes, `web.api.paths` and project spec files (importing `SPOTTER_TEST_MODULE`, not live) the configuration lacks. A web run without `web.specs` lists interaction journeys under "Not checked". A configured `colorSchemeStorage`, even with other values, is left alone; routes match by path without query. `--skip config` turns it off.
 5. **Web:** builds the app with its API URL pointed at a fake origin (and intercepts same-origin `web.api.paths`), serves it, and visits every route × viewport × colour scheme in Chromium (by default) with the recorded API responses and the clock frozen at record time. Reports uncaught errors, console errors, failed requests, API errors, requests missing from the fixtures, same-origin data requests answered by the app's HTML page, pages that scroll sideways or cut content off at the right edge (naming the elements), blank pages and configured error text. With `web.browsers`/`web.devices` it repeats this in Firefox, WebKit or emulated devices. Saves a full-page screenshot of each, and reports a route whose colour schemes produce byte-identical screenshots on every visit.
 6. **Compare:** the same run on the merge base (cached by commit, config, fixtures and Spotter version) splits findings into new / already on base / fixed. Only new ones are listed.
 7. **Completeness:** records what the head side actually executed (checks, rules, page visits, specs, session assertions), fixture identity and age, and whether the baseline comparison succeeded. Missing coverage makes the run INCOMPLETE even when the same gap exists on the base. See [Coverage and completeness](#coverage-and-completeness).
@@ -179,7 +179,7 @@ are provided; services are not installed automatically.
 | Task | Guide |
 | --- | --- |
 | Configure accessibility, keyboard, sessions and endpoint faults | [Browser checks](docs/browser-checks.md) |
-| Run project-owned acceptance tests; inspect API shape drift | [Project specs and API contracts](docs/project-specs.md) |
+| Run project-owned acceptance tests and interaction journeys; inspect API shape drift | [Project specs and API contracts](docs/project-specs.md) |
 | Test sign-in, saved sessions or live authentication | [Authentication](docs/authentication.md) |
 | Start runs, edit configurations or generate a draft from a folder | [Dashboard](docs/dashboard.md) |
 | Install and maintain a server | [Self-hosting](docs/self-hosting.md) |
