@@ -440,6 +440,11 @@ initial page rendering, without building a separate journey language.
   in project-owned specs. Use explicit routing for response sequences.
 - Let projects select critical journeys for low level and broader sets for
   medium/high through QA-08; retain isolated contexts and deterministic replay.
+- Adoption is non-invasive (Product Owner, 2026-10-24): a consumer repository
+  only gains journey files (`*.journey.mjs`). No change to its app code, build,
+  or test and tooling configuration. Its own test runners must not collect them.
+- Setup inference and the run's config check detect journey files and suggest
+  `web.specs`. A web run without specs lists journeys under "Not checked".
 
 **Verify:**
 
@@ -447,6 +452,8 @@ initial page rendering, without building a separate journey language.
   focus restoration and unauthorized-route behavior fail named tests.
 - Failures compare correctly with the baseline and parallel journeys remain
   isolated. Adopt representative journeys in the first consumer repository.
+- Each adoption adds files only: `git diff --stat` against its base shows no
+  modified existing file, and the project's own checks still pass.
 
 ---
 

@@ -77,7 +77,7 @@ export async function discoverOptions(folder, files, discovered) {
   }
   const widths = new Set([375, 1280]);
   const specs = [];
-  for (const file of files.filter((file) => /\.(css|scss|sass|less)$/.test(file) || /(?:\.(?:spec|test)\.[cm]?[jt]sx?|playwright\.config\.[cm]?[jt]s)$/.test(file)).slice(0, 500)) {
+  for (const file of files.filter((file) => /\.(css|scss|sass|less)$/.test(file) || /(?:\.(?:spec|test|journey)\.[cm]?[jt]sx?|playwright\.config\.[cm]?[jt]s)$/.test(file)).slice(0, 500)) {
     const source = await projectText(folder, file);
     if (/\.(css|scss|sass|less)$/.test(file)) {
       for (const media of source.matchAll(/@media[^{}]+/g)) for (const match of media[0].matchAll(/(?:min|max)-width\s*:\s*(\d+(?:\.\d+)?)(px|em|rem)/g)) {
@@ -85,7 +85,7 @@ export async function discoverOptions(folder, files, discovered) {
         if (width >= 320 && width <= 1920) widths.add(width);
       }
     }
-    if (/\.(?:spec|test)\./.test(file) && source.includes('SPOTTER_TEST_MODULE')) {
+    if (/\.(?:spec|test|journey)\./.test(file) && source.includes('SPOTTER_TEST_MODULE')) {
       if (/\.live\.|SPOTTER_LIVE_AUTH|process\.env\.[A-Z0-9_]*(?:PASSWORD|TOKEN|SECRET|CREDENTIAL)/i.test(file + '\n' + source)) notes.push(`${file}: live/credential-dependent spec found; configure web.specs.live explicitly.`);
       else specs.push(file);
     }

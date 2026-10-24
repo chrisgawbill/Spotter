@@ -267,6 +267,17 @@ finding IDs to the accepted reports. Evidence:
   inferred web.specs.files qa/journeys.spec.mjs`, plus the "Not checked" entry,
   COMPLETE 66/66, exit 0:
   `~/spotter/hockeystats-webapp/runs/20261024-010411-qa-interaction-journeys-89c9c05a/report.md`.
+- Non-invasive adoption (2026-10-24): `*.journey.mjs` naming, accepted by setup
+  inference. The example is renamed `items.journey.mjs`; journeys integration
+  4/4 and `npm test` 158/158. Triple Crown branch `interaction-journeys`
+  (local `97d8aa1`) adds only `card-lab/qa/challenges.journey.mjs`. Card Lab's
+  typecheck and Vitest pass unchanged, 4 journeys pass and coverage is
+  COMPLETE (temporary `projects/qa10-triple-crown.yml`):
+  `~/spotter/qa10-triple-crown/runs/20261024-045901-working-tree-f7218d00/report.md`.
+  Triple Crown fixtures were re-recorded 2026-10-24 after removing the
+  `admin` route from its config. That route was the API endpoint
+  `/admin/ingest-runs/latest`, which now answers 204, and opening it as a page
+  aborted recording.
 
 ## QA-12
 

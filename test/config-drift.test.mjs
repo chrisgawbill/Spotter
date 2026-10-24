@@ -62,8 +62,9 @@ test('inference reads the exported tree without installs and skips legacy hash a
     await writeFile(path.join(root, 'app', 'qa', 'journeys.spec.mjs'), 'const { test } = await import(process.env.SPOTTER_TEST_MODULE);');
     await writeFile(path.join(root, 'app', 'qa', 'login.live.spec.mjs'), 'const { test } = await import(process.env.SPOTTER_TEST_MODULE);');
     await writeFile(path.join(root, 'app', 'qa', 'plain.spec.mjs'), "import { test } from '@playwright/test';");
+    await writeFile(path.join(root, 'app', 'qa', 'checkout.journey.mjs'), 'const { test } = await import(process.env.SPOTTER_TEST_MODULE);');
     const settings = await inferWebSettings(root, path.join(root, 'app'));
-    assert.deepEqual(settings.specFiles, ['qa/journeys.spec.mjs']);
+    assert.deepEqual(settings.specFiles.sort(), ['qa/checkout.journey.mjs', 'qa/journeys.spec.mjs']);
     assert.deepEqual(settings.colorSchemeStorage, inferred.colorSchemeStorage);
     assert.deepEqual(settings.routes, [{ name: 'home', path: '/' }, { name: 'reports', path: '/#reports' }]);
     assert.deepEqual(settings.apiPaths, ['/api']);

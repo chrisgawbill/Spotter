@@ -30,6 +30,7 @@ QA-07 delivered `examples/authentication`.
 | Levels | Critical journeys carry `@critical` in their names; projects set `levels.low.specs.grep: '@critical'`. No new level config: medium and high run every configured spec. |
 | Seeded defects | Integration test applies one exact-string replacement to `index.html` per seed and checks the named test is new against the healthy run. |
 | Consumer adoption | Separate step in HockeyStatsWebApp, pending Product Owner direction (other repository). |
+| Non-invasive (Product Owner, 2026-10-24) | Adoption only adds `*.journey.mjs` files. Vitest/Jest never collect that name by default, so project configs stay untouched. Setup inference accepts `.journey.` alongside `.spec.`/`.test.`. The example is renamed `items.journey.mjs`. |
 
 ## Ownership and waves
 

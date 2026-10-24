@@ -32,7 +32,7 @@ test('journeys', async (t) => {
     await cp(new URL('../examples/journeys', import.meta.url), root, { recursive: true });
     await mkdir(path.join(root, 'logs'));
     server = await startStaticServer(root, '/');
-    const config = { web: { base: '/', specs: { files: ['journeys.spec.mjs'], workers: 2 }, sessions: [{ name: 'anonymous', localStorage: {} }, { name: 'admin', localStorage: { role: 'admin' } }] } };
+    const config = { web: { base: '/', specs: { files: ['items.journey.mjs'], workers: 2 }, sessions: [{ name: 'anonymous', localStorage: {} }, { name: 'admin', localStorage: { role: 'admin' } }] } };
     const run = (name) => runSpecsStage({ config, workdir: root, logDir: path.join(root, 'logs', name), fixtures: null, appOrigin: server.origin });
 
     let healthy;

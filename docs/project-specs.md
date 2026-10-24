@@ -38,6 +38,13 @@ duplicate submits, saved edits, filters and pagination restored from the URL,
 back/forward navigation, dialog keyboard use and focus restoration, and routes
 limited to a role. Spotter has no journey language; write them as ordinary specs.
 
+Adopting journeys must not be invasive. Add the journey files and nothing
+else: no changes to the app, its build, or its test or tooling configuration.
+Name them `*.journey.mjs` (for example `qa/checkout.journey.mjs`). The
+project's own unit-test runner then never collects them, because Vitest and
+Jest only pick up `*.spec.*` and `*.test.*` by default. Setup inference
+detects either name.
+
 - **Writes and response sequences** belong in the spec. Recorded fixtures match
   method and URL only, so answer writes with `page.route` and keep a small
   per-test store. Assert the request body and count, and serve later reads from
@@ -53,7 +60,7 @@ limited to a role. Spotter has no journey language; write them as ordinary specs
   should run, and select them with `levels.low.specs.grep: '@critical'`. Medium
   and high run every configured spec.
 
-The [runnable example](../examples/journeys/journeys.spec.mjs) and its tiny
+The [runnable example](../examples/journeys/items.journey.mjs) and its tiny
 [app](../examples/journeys/index.html) cover each pattern. The
 journeys integration test seeds a broken save, a duplicate write, lost URL
 state, missing focus restoration and an unguarded route. Each one fails its
