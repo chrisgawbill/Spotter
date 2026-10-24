@@ -98,6 +98,9 @@ export async function renderReportPdf(file, root) {
 
 /** No shell is involved in run control. Only configured projects and listed branches are accepted. */
 export function createDashboardServer({ home = spotterHome, projectNames = listProjectNames, loadConfig = loadProjectConfig, launch = spawn, branchRefreshMs = 60_000, projectsRoot = process.env.SPOTTER_PROJECTS_ROOT ?? path.join(homedir(), 'projects'), configsDir = path.join(spotterRoot, 'projects'), env = process.env, renderPdf = renderReportPdf } = {}) {
+  // Optional HTTPS front end on the tailnet (for example Caddy with a Tailscale certificate), needed to install the dashboard as an app.
+  const httpsOrigin = env.SPOTTER_DASHBOARD_ORIGIN ? new URL(env.SPOTTER_DASHBOARD_ORIGIN) : null;
+  if (httpsOrigin && (httpsOrigin.protocol !== 'https:' || !httpsOrigin.hostname.endsWith('.ts.net') || httpsOrigin.origin !== env.SPOTTER_DASHBOARD_ORIGIN.replace(/\/$/, ''))) throw new Error('SPOTTER_DASHBOARD_ORIGIN must be an https://<machine>.<tailnet>.ts.net[:port] origin.');
   let starting = false;
   let editing = false;
   const children = new Set();
@@ -134,13 +137,14 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
     try {
       const localHost = `${req.socket.localAddress}:${req.socket.localPort}`;
       const proxyHost = process.env.SPOTTER_TAILSCALE_IP ? `${process.env.SPOTTER_TAILSCALE_IP}:8088` : null;
-      if (req.headers.host !== localHost && req.headers.host !== proxyHost) return send(403, { error: 'Unrecognized dashboard host' });
+      if (req.headers.host !== localHost && req.headers.host !== proxyHost && req.headers.host !== httpsOrigin?.host) return send(403, { error: 'Unrecognized dashboard host' });
+      const sameOriginJson = () => req.headers.origin === (req.headers.host === httpsOrigin?.host ? httpsOrigin.origin : `http://${req.headers.host}`) && req.headers['content-type'] === 'application/json';
       const url = new URL(req.url, 'http://dashboard');
       if (url.pathname === '/api/project-folders' && req.method === 'GET') {
         return send(200, await browseProjects(projectsRoot, url.searchParams.get('folder') ?? undefined));
       }
       if (url.pathname === '/api/project-setup' && req.method === 'POST') {
-        if (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON required' });
+        if (!sameOriginJson()) return send(403, { error: 'Same-origin JSON required' });
         let body = '';
         for await (const chunk of req) {
           body += chunk;
@@ -151,7 +155,7 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
         return send(200, await detectProject(projectsRoot, folder, { configsDir, existingName }));
       }
       if (url.pathname === '/api/config-draft' && req.method === 'POST') {
-        if (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON required' });
+        if (!sameOriginJson()) return send(403, { error: 'Same-origin JSON required' });
         let body = '';
         for await (const chunk of req) {
           body += chunk;
@@ -175,7 +179,7 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
         if (!safeName(name)) return send(400, { error: 'Use letters, numbers, underscores or hyphens for the project name' });
         const file = path.join(configsDir, `${name}.yml`);
         if (!['GET', 'PUT', 'DELETE'].includes(req.method)) return send(405, { error: 'Method not allowed' });
-        if (req.method !== 'GET' && (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json')) return send(403, { error: 'Same-origin JSON required' });
+        if (req.method !== 'GET' && !sameOriginJson()) return send(403, { error: 'Same-origin JSON required' });
         // Never follow config symlinks, including a dangling link on creation.
         const info = await lstat(file).catch((error) => { if (error.code !== 'ENOENT') throw error; return null; });
         if (info && !info.isFile()) return send(400, { error: 'Config must be a regular file' });
@@ -211,7 +215,7 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
       }
       if (req.method === 'POST' && url.pathname === '/api/runs') {
         // Same-origin JSON prevents a website outside the tailnet from triggering runs through a reviewer's browser.
-        if (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON required' });
+        if (!sameOriginJson()) return send(403, { error: 'Same-origin JSON required' });
         let body = '';
         for await (const chunk of req) {
           body += chunk;
@@ -265,7 +269,7 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
         return send(200, { settings, locked: lockedRetention(env), projects });
       }
       if (url.pathname === '/api/retention' && req.method === 'PUT' || url.pathname === '/api/cleanup' && req.method === 'POST') {
-        if (req.headers.origin !== `http://${req.headers.host}` || req.headers['content-type'] !== 'application/json') return send(403, { error: 'Same-origin JSON required' });
+        if (!sameOriginJson()) return send(403, { error: 'Same-origin JSON required' });
         let body = '';
         for await (const chunk of req) {
           body += chunk;
@@ -360,10 +364,11 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
         return send(200, data, types[ext]);
       }
       if (url.pathname === '/core.css') return send(200, await readFile(require.resolve('@chrisgawbill/aero-md3-core/core.css')), 'text/css');
-      const assets = { '/': 'index.html', '/dashboard.js': 'dashboard.js', '/dashboard.css': 'dashboard.css', '/config-fields.mjs': '../config-fields.mjs' };
+      const assets = { '/': 'index.html', '/dashboard.js': 'dashboard.js', '/dashboard.css': 'dashboard.css', '/config-fields.mjs': '../config-fields.mjs', '/manifest.webmanifest': 'manifest.webmanifest', '/icon.svg': 'icon.svg', '/icon-192.png': 'icon-192.png', '/icon-512.png': 'icon-512.png', '/apple-touch-icon.png': 'apple-touch-icon.png' };
+      const assetTypes = { html: 'text/html', js: 'text/javascript', mjs: 'text/javascript', css: 'text/css', webmanifest: 'application/manifest+json', svg: 'image/svg+xml', png: 'image/png' };
       if (assets[url.pathname]) {
         res.setHeader('Content-Security-Policy', "default-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'");
-        return send(200, await readFile(path.join(spotterRoot, 'src/dashboard', assets[url.pathname])), url.pathname === '/' ? 'text/html' : (/\.(js|mjs)$/.test(url.pathname)) ? 'text/javascript' : 'text/css');
+        return send(200, await readFile(path.join(spotterRoot, 'src/dashboard', assets[url.pathname])), assetTypes[path.extname(assets[url.pathname]).slice(1)]);
       }
       send(404, { error: 'Not found' });
     } catch (error) {
@@ -387,5 +392,5 @@ export async function startDashboard() {
   if (!octets || octets.length !== 4 || octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255) || octets[0] !== 100 || octets[1] < 64 || octets[1] > 127) throw new Error('Set SPOTTER_TAILSCALE_IP to the server’s Tailscale IPv4 address (100.64.0.0/10).');
   const server = createDashboardServer();
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(8089, host, resolve); });
-  console.error(`Spotter dashboard: http://${host}:8089`);
+  console.error(`Spotter dashboard: http://${host}:8089${process.env.SPOTTER_DASHBOARD_ORIGIN ? ` (HTTPS: ${process.env.SPOTTER_DASHBOARD_ORIGIN})` : ''}`);
 }

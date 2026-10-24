@@ -54,6 +54,39 @@ spotter-dashboard`. It uses the existing Docker image and runs as the repository
 owner, who needs Docker access. Adding the unit does not install or activate it.
 Jenkins activation remains QA-03 work.
 
+## Install as an app
+
+The dashboard ships a web app manifest and icons, so browsers can install it
+and open it in its own window. A banner at the top of the page explains
+how: **Install app** in Chromium-based browsers, **Share → Add to Home Screen**
+on iPhone and iPad, **File → Add to Dock** in Safari on macOS. **Not now** hides
+the banner in that browser. The installed app is the live dashboard; it has no
+offline mode.
+
+Browsers install apps only from HTTPS. The plain `http://<tailscale-ip>:8089`
+address cannot be installed except on iOS; there the banner says so. To install
+it elsewhere, put an HTTPS proxy with a Tailscale certificate in front of
+the dashboard on the tailnet, and give the dashboard that origin:
+
+```bash
+export SPOTTER_DASHBOARD_ORIGIN=https://<machine>.<tailnet>.ts.net:9944
+bash deploy/start-dashboard   # or bin/spotter dashboard
+```
+
+```caddyfile
+https://<machine>.<tailnet>.ts.net:9944 {
+	bind <tailscale-ip>
+	reverse_proxy <tailscale-ip>:8089
+}
+```
+
+The origin must be `https://` on a `.ts.net` name. The dashboard then accepts
+that Host and Origin for run controls, in addition to its own address. Keep
+the proxy on the Tailscale interface and never expose it with Tailscale Funnel;
+there is still no application sign-in. Recreate an existing `spotter-dashboard`
+container so it picks up the variable, after copying the updated
+`examples/deploy/start-dashboard` into `deploy/`.
+
 ## Persistent container
 
 For automatic startup without installing a system service, build the image,

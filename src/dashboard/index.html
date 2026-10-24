@@ -1,7 +1,9 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#3f5f90"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Spotter">
+<link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>Spotter · QA dashboard</title>
 <link rel="stylesheet" href="/core.css"><link rel="stylesheet" href="/dashboard.css">
 <script type="module" src="/dashboard.js"></script>
@@ -9,7 +11,8 @@
 <body class="ds-page-shell ds-scrollbar">
 <header class="app-bar ds-aero-glass"><div class="ds-container ds-cluster"><a class="brand ds-focus-outline" href="#"><span aria-hidden="true">◉</span> Spotter</a><nav class="ds-cluster" aria-label="Dashboard"><a class="nav-link ds-focus-outline" href="#">Runs</a><a class="nav-link ds-focus-outline" href="#configs">Configurations</a><a class="nav-link ds-focus-outline" href="#storage">Storage</a></nav><span class="ds-chip ds-chip-primary" title="Served only on the Tailscale network">Tailscale only</span></div></header>
 <main class="ds-container ds-stack">
-<div class="page-intro"><h1 id="page-title">See what changed.</h1><p id="page-description" class="muted">Start a check, follow the work, and review what Spotter found.</p></div>
+<section id="install-banner" class="install-banner ds-card ds-aero-surface" aria-labelledby="install-title" hidden><img src="/icon.svg" alt="" width="40" height="40"><div class="install-text"><h2 id="install-title">Install Spotter as an app</h2><p id="install-message" class="muted"></p></div><div class="ds-cluster install-actions"><button id="install-app" class="ds-button" type="button" hidden>Install app</button><button id="dismiss-install" class="ds-button button-secondary" type="button">Not now</button></div></section>
+<div class="page-intro"><h1 id="page-title" tabindex="-1">See what changed.</h1><p id="page-description" class="muted">Start a check, follow the work, and review what Spotter found.</p></div>
 <p id="error" role="alert" hidden></p>
 <div id="run-page" class="ds-stack">
 <section class="ds-card ds-aero-surface ds-stack"><h2>Start a run</h2>
@@ -82,7 +85,7 @@
 <div class="ds-cluster"><button id="save-retention" type="submit" class="ds-button">Save settings</button></div>
 </form></section>
 <section class="ds-stack" aria-labelledby="usage-title"><div class="section-head"><h2 id="usage-title">Disk usage</h2><button id="refresh-storage" class="ds-button button-secondary" type="button">Refresh</button></div>
-<div class="ds-table-wrap"><table class="ds-table"><thead><tr><th>Project</th><th>Runs</th><th>Cached base results</th><th>Work folders</th><th>Cleanup would remove</th></tr></thead><tbody id="storage-projects"></tbody></table></div>
+<div class="ds-table-wrap"><table class="ds-table storage-table"><thead><tr><th>Project</th><th>Runs</th><th>Cached base results</th><th>Work folders</th><th>Cleanup would remove</th></tr></thead><tbody id="storage-projects"></tbody></table></div>
 <p id="storage-total" class="muted">Loading storage…</p>
 <div class="ds-cluster"><button id="cleanup-now" class="ds-button button-danger" type="button" disabled>Clean up now</button></div>
 <p id="cleanup-message" role="status"></p></section>

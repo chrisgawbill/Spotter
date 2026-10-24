@@ -66,7 +66,7 @@ exec docker run --rm "${tty_flag[@]}" --init --network host --ipc host \
   --user "$(id -u):$(id -g)" \
   -e SPOTTER_PROJECTS_ROOT="$projects_root" \
   -e SPOTTER_HOME=/data -e SPOTTER_HOST_HOME="$spotter_home" \
-  -e SPOTTER_TAILSCALE_IP="${SPOTTER_TAILSCALE_IP:-}" \
+  -e SPOTTER_TAILSCALE_IP="${SPOTTER_TAILSCALE_IP:-}" -e SPOTTER_DASHBOARD_ORIGIN \
   -e SPOTTER_KEEP_RUNS -e SPOTTER_KEEP_BASELINES -e SPOTTER_AUTO_PRUNE \
   -v "$spotter_dir/src:/opt/spotter/src:ro" \
   -v "$spotter_dir/projects:/opt/spotter/projects:$config_mode" \
