@@ -1,6 +1,7 @@
 import { readFile, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { matchesApiPath } from './fixtures.mjs';
+import { DEFAULT_FAULT_KINDS, FAULT_KINDS } from './levels.mjs';
 
 /** Bounded reads, confined to the selected checkout. Private env/state files are never scanned. */
 export async function projectText(folder, file) {
@@ -74,6 +75,12 @@ export async function discoverOptions(folder, files, discovered) {
   if (facts.loadingSelectors.length) {
     web.faultInjection = { ...web.faultInjection, loadingSelector: ['[aria-busy="true"]', '[role="progressbar"]', ...new Set(facts.loadingSelectors.map((item) => item.value))].join(', ') };
     evidence['web.faultInjection'] = `${evidence['web.faultInjection'] ?? 'Default fault budgets'}; inferred stable loading classes from ${[...new Set(facts.loadingSelectors.map((item) => item.file))].join(', ')}`;
+  }
+  const handledKinds = new Set(facts.faultKinds.map((item) => item.kind));
+  if (facts.retryDelays.length) handledKinds.add('abort'); // retrying with backoff covers dropped connections
+  if (handledKinds.size) {
+    web.faultInjection = { ...web.faultInjection, kinds: FAULT_KINDS.filter((kind) => DEFAULT_FAULT_KINDS.includes(kind) || handledKinds.has(kind)) };
+    evidence['web.faultInjection'] = `${evidence['web.faultInjection'] ?? 'Default fault budgets'}; inferred fault kinds ${[...handledKinds].join(', ')} from failure handling in ${[...new Set([...facts.faultKinds, ...facts.retryDelays].map((item) => item.file))].join(', ')}`;
   }
   const widths = new Set([375, 1280]);
   const specs = [];

@@ -4,7 +4,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 import { matrixProblems } from './browsers.mjs';
 import { requirableNames } from './completeness.mjs';
-import { levelProblems, normalizeLevels } from './levels.mjs';
+import { FAULT_KINDS, levelProblems, normalizeLevels } from './levels.mjs';
 import { spotterRoot } from './paths.mjs';
 import { readSessionState } from './sessions.mjs';
 
@@ -84,6 +84,10 @@ export function normalizeConfig(config, { projectName, source = '' }) {
       if (typeof config.web.faultInjection !== 'object' || Array.isArray(config.web.faultInjection)) problems.push('`web.faultInjection` must be an object or false');
       const selector = config.web.faultInjection.loadingSelector;
       if (selector !== undefined && (typeof selector !== 'string' || !selector.trim())) problems.push('`web.faultInjection.loadingSelector` must be a nonempty selector');
+      const kinds = config.web.faultInjection.kinds;
+      if (kinds !== undefined && (!Array.isArray(kinds) || !kinds.length || new Set(kinds.map(String)).size !== kinds.length || kinds.some((kind) => !FAULT_KINDS.includes(String(kind))))) {
+        problems.push(`\`web.faultInjection.kinds\` must list unique values from ${FAULT_KINDS.join(', ')}`);
+      }
       for (const field of ['delayMs', 'timeoutMs']) {
         const value = config.web.faultInjection[field];
         if (value !== undefined && (!Number.isFinite(value) || value <= 0)) problems.push(`web.faultInjection.${field} must be positive`);
@@ -131,7 +135,7 @@ function normalizeWebConfig(web) {
     ...WEB_DEFAULTS,
     ...web,
     sessions: [{ name: 'anonymous', localStorage: {} }, ...(web.sessions ?? [])],
-    faultInjection: web.faultInjection === false ? null : { delayMs: 2000, timeoutMs: 5000, loadingSelector: '[aria-busy="true"], [role="progressbar"]', ...web.faultInjection },
+    faultInjection: web.faultInjection === false ? null : { delayMs: 2000, timeoutMs: 5000, loadingSelector: '[aria-busy="true"], [role="progressbar"]', ...web.faultInjection, ...(Array.isArray(web.faultInjection?.kinds) ? { kinds: web.faultInjection.kinds.map(String) } : {}) },
     base: web.base ?? '/',
     build: { outDir: 'dist', env: {}, ...web.build },
     api: web.api ? {

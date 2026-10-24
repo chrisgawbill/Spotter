@@ -150,3 +150,13 @@ test('web browsers and devices default and are validated', () => {
   assert.throws(() => make({ browsers: ['ie'] }), /- `web\.browsers` must list unique browsers from chromium, firefox and webkit/);
   assert.throws(() => make({ devices: ['iPhone 13', 'iphone 13'] }), /- `web\.devices` must list unique Playwright device names such as "iPhone 13"/);
 });
+
+const faults = (faultInjection) => normalizeConfig({ repo: '/tmp/app', web: { build: { run: 'true' }, routes: ['/'], faultInjection } }, { projectName: 'demo' });
+
+test('fault kinds accept known values, stringify them and add no default', () => {
+  assert.deepEqual(faults({ kinds: ['abort', 429] }).web.faultInjection.kinds, ['abort', '429']);
+  assert.equal('kinds' in faults({ delayMs: 10 }).web.faultInjection, false);
+  for (const kinds of [[], ['404'], ['500', '500'], '500', { 0: '500' }]) {
+    assert.throws(() => faults({ kinds }), /`web.faultInjection.kinds` must list unique values from 500, delay, abort, 401, 403, 429, malformed/);
+  }
+});

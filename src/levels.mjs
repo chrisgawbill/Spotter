@@ -6,10 +6,14 @@ export const LEVELS = ['low', 'medium', 'high'];
 /** Devices every web project adds at high: one WebKit and one Chromium phone. */
 export const HIGH_DEVICES = ['iPhone 13', 'Pixel 7'];
 
-/** Wider coverage high would add; none is implemented yet. Listed, never enabled. */
+/** Every endpoint fault a sweep can inject. High runs all of them. */
+export const FAULT_KINDS = ['500', 'delay', 'abort', '401', '403', '429', 'malformed'];
+/** Fault kinds when `web.faultInjection.kinds` is not configured (low skips faults). */
+export const DEFAULT_FAULT_KINDS = ['500', 'delay'];
+
+/** Wider coverage high would add that is not implemented yet. Listed, never enabled. */
 export const UNSUPPORTED_AT_HIGH = [
   { name: 'data edge cases', ticket: 'QA-13', reason: 'not implemented' },
-  { name: 'recovery scenarios', ticket: 'QA-11', reason: 'not implemented' },
   { name: 'performance budgets', ticket: 'QA-15', reason: 'not implemented' },
 ];
 
@@ -64,6 +68,7 @@ export function resolvePlan(config, selected) {
   else if (name === 'high' && config.web) {
     const union = (base, extra) => [...new Set([...base, ...extra])];
     effective = { ...config, web: { ...config.web, browsers: union(config.web.browsers, BROWSERS), devices: union(config.web.devices, HIGH_DEVICES) } };
+    if (config.web.faultInjection) effective.web.faultInjection = { ...config.web.faultInjection, kinds: FAULT_KINDS };
   }
   const record = name && { name, source, exclusions, unsupported: name === 'high' ? UNSUPPORTED_AT_HIGH : [] };
   const hash = createHash('sha1').update(JSON.stringify({ name, skip: [...skip].sort(), config: effective })).digest('hex').slice(0, 10);
@@ -117,7 +122,7 @@ export function summarizePlan({ config, skip, record }) {
   parts.push(`${(config.checks ?? []).length} checks`, skip.has('rules') ? 'no rules' : 'rules');
   const web = config.web;
   if (web) {
-    parts.push(`${web.routes.length} routes × ${web.viewports.length} viewports × ${web.colorSchemes.length} schemes × ${web.sessions?.length ?? 1} sessions${web.faultInjection ? ' + fault visits' : ''}`);
+    parts.push(`${web.routes.length} routes × ${web.viewports.length} viewports × ${web.colorSchemes.length} schemes × ${web.sessions?.length ?? 1} sessions${web.faultInjection ? ` + fault visits${faultKindsNote(web.faultInjection.kinds)}` : ''}`);
     if (!isDefaultMatrix(web)) parts.push(`matrix ${listTargets(web).map((t) => t.label).join(', ')}`);
     if (web.specs) parts.push(web.specs.grep ? `specs (grep ${web.specs.grep})` : 'specs');
   }
@@ -125,3 +130,5 @@ export function summarizePlan({ config, skip, record }) {
   if (record?.unsupported.length) parts.push(`unsupported: ${record.unsupported.map((item) => `${item.name} (${item.ticket})`).join(', ')}`);
   return parts.join(' · ');
 }
+
+const faultKindsNote = (kinds) => (kinds && kinds.join() !== DEFAULT_FAULT_KINDS.join() ? ` (${kinds.join(', ')})` : '');

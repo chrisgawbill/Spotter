@@ -17,7 +17,7 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
   const routes = new Set();
   const pending = new Set();
   const notes = [];
-  const evidence = { api: [], themeKeys: [], errorText: [], retryDelays: [], routeSamples: [], loadingSelectors: [], proxy: [], relativeRequests: [], expectedStatuses: [], playwright: { viewports: [], colorSchemes: [] } };
+  const evidence = { api: [], themeKeys: [], errorText: [], retryDelays: [], routeSamples: [], loadingSelectors: [], proxy: [], relativeRequests: [], expectedStatuses: [], faultKinds: [], playwright: { viewports: [], colorSchemes: [] } };
   const cleanUrl = (value) => {
     try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.search && !url.hash ? url.href.replace(/\/$/, '') : null; } catch { return null; }
   };
@@ -221,6 +221,21 @@ export async function discoverRoutes(folder, files, dependencies = {}) {
         && [[node.left, node.right], [node.right, node.left]].find(([member, value]) => member.type === 'MemberExpression' && !member.computed && member.property.name === 'status'
           && value.type === 'NumericLiteral' && value.value >= 400 && value.value <= 499)?.[1].value;
       if (status) statusChecks.push({ node, status });
+      // Faults the app visibly handles: status checks, Retry-After, online/offline, parse failures caught.
+      const isStatus = (member) => member?.type === 'MemberExpression' && !member.computed && member.property.name === 'status';
+      const faultStatus = (value) => value?.type === 'NumericLiteral' && [401, 403, 429].includes(value.value) ? String(value.value) : null;
+      const handles = (kind) => kind && evidence.faultKinds.push({ kind, file });
+      if (node.type === 'BinaryExpression' && ['===', '=='].includes(node.operator)) handles((isStatus(node.left) && faultStatus(node.right)) || (isStatus(node.right) && faultStatus(node.left)));
+      if (node.type === 'SwitchStatement' && isStatus(node.discriminant)) node.cases.forEach((item) => handles(faultStatus(item.test)));
+      if (node.type === 'StringLiteral' && /^retry-after$/i.test(node.value)) handles('429');
+      if ((node.type === 'CallExpression' && /(?:^|\.)addEventListener$/.test(memberPath(node.callee)) && ['online', 'offline'].includes(literal(node.arguments[0])))
+        || (node.type === 'MemberExpression' && /(?:^|\.)navigator\.onLine$/.test(memberPath(node)))) handles('abort');
+      if (node.type === 'TryStatement' && node.handler) {
+        const calls = [];
+        walk(node.block, (child) => { if (child.type === 'CallExpression') calls.push(memberPath(child.callee)); });
+        if (calls.some((name) => /(?:^|\.)(?:json|JSON\.parse)$/.test(name))) handles('malformed');
+        if (calls.some((name) => /(?:^|\.)fetch\w*$/i.test(name))) handles('abort'); // a caught fetch rejection is a dropped connection
+      }
       if (/^playwright\.config\.[cm]?[jt]s$/.test(file) && node.type === 'ObjectProperty') {
         const key = node.key.name ?? node.key.value;
         const value = resolve(node.value);

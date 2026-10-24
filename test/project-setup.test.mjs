@@ -35,6 +35,7 @@ test('new projects detect checks, API, themes, retries, responsive widths, sampl
       export const App = () => <HashRouter><Route path="/" /><Route path="teams/:id" />
         <Link to="/teams/ABC?season=2026" /><Link to="/teams/ABC?token=never-copy" />
         <ErrorState title="Something went wrong" /></HashRouter>;
+      const wait = (response) => response.headers.get('Retry-After');
     `);
     await f.write('src/LoadingState.tsx', 'export const Loading = () => <span className="loading-spinner" />;');
     await f.write('src/styles.css', '@media (min-width: 768px) and (max-width: 1024px) { body {} }');
@@ -56,6 +57,8 @@ test('new projects detect checks, API, themes, retries, responsive widths, sampl
     assert.ok(config.web.errorText.includes('Something went wrong'));
     assert.ok(!result.source.includes('never-copy'));
     assert.match(config.web.faultInjection.loadingSelector, /loading-spinner/);
+    assert.deepEqual(config.web.faultInjection.kinds, ['500', 'delay', 'abort', '429']);
+    assert.match(result.coverage.find((item) => item.field === 'web.faultInjection').evidence, /inferred fault kinds 429, abort from failure handling in src\/App\.tsx/);
     await f.write('src/App.tsx', 'const api = import.meta.env.VITE_BACKEND_URL;');
     await f.write('.env.example', 'VITE_BACKEND_URL=https://public-api.example.test');
     await f.write('playwright.config.ts', "export default { use: { viewport: { width: 1440, height: 900 }, colorScheme: 'dark', navigationTimeout: 45000 } };");

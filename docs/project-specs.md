@@ -66,6 +66,44 @@ journeys integration test seeds a broken save, a duplicate write, lost URL
 state, missing focus restoration and an unguarded route. Each one fails its
 named test as a new finding.
 
+## Recovery scenarios
+
+Specs also test what happens after a failure: the error the user sees, Retry,
+reconnecting, and controls leaving their loading or disabled state. Spotter has
+no fault language; use Playwright routing in the spec, which takes precedence
+over replayed fixtures:
+
+- **Disconnects:** `route.abort('internetdisconnected')` and
+  `context.setOffline(true/false)`; assert the offline message, then the reload
+  after the connection returns.
+- **401/403/429 and server errors:** `route.fulfill({ status })`, with a
+  `retry-after` header for 429. Assert a useful message, that Retry (or Sign in)
+  reloads, and that no Retry is offered where it cannot help.
+- **Malformed responses:** fulfil a 200 with a truncated JSON body.
+- **Response ordering:** hold one response (an unresolved promise in the route
+  handler), answer a newer request first, then release the old one and assert it
+  did not overwrite the newer data.
+- **Retry windows:** the adapter freezes `Date` at record time, but timers run,
+  so a real `Retry-After` wait works. Give the waiting expectation an explicit
+  `timeout` of the documented window plus a margin. Each test has its own
+  context and route state, so a fault never leaks into the next test.
+- **Injected versus unexpected:** handled, injected failures produce no
+  findings, because the spec stage reports only failed tests. Collect
+  `page.on('pageerror')` and assert it stays empty, so an unhandled failure
+  fails the named test.
+- **Levels:** tag the scenarios low should run `@critical`; medium and high run
+  every configured spec.
+
+The [runnable example](../examples/recovery/scores.journey.mjs) and its
+[app](../examples/recovery/index.html) cover each case. The recovery
+integration test seeds a permanently disabled control, an ineffective Retry and
+a stale overwrite; each fails its named test as a new finding.
+
+Without specs, `web.faultInjection.kinds` adds disconnects, 401, 403, 429 and
+malformed responses to the sweep's fault visits. Those find crashes, blank
+pages and stuck loading, not whether the app recovers. See
+[browser checks](browser-checks.md).
+
 ## API contracts
 
 Every successful `record` writes `fixtures/contracts.json` and

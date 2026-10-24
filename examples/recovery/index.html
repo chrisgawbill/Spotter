@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Recovery example</title>
+<main>
+  <h1>Scores</h1>
+  <label>Season <select id="season"><option>2026</option><option>2025</option></select></label>
+  <button id="refresh">Refresh</button>
+  <div id="error" role="alert" hidden></div>
+  <ul id="list" aria-busy="false"></ul>
+</main>
+<script type="module">
+const [season, refresh, error, list] = ['season', 'refresh', 'error', 'list'].map((id) => document.getElementById(id));
+let latest = 0;
+let offline = false;
+
+const button = (text, onclick) => Object.assign(document.createElement('button'), { textContent: text, onclick });
+
+const parse = (text) => {
+  try {
+    return JSON.parse(text).scores.map((score) => score.name);
+  } catch {} // undefined: unreadable
+};
+const retry = () => button('Retry', load);
+
+function fail(message, action) {
+  error.replaceChildren(message, ...(action ? [' ', action] : []));
+  error.hidden = false;
+}
+
+async function load() {
+  const request = ++latest;
+  list.setAttribute('aria-busy', 'true');
+  refresh.disabled = true;
+  let response;
+  let text;
+  try {
+    response = await fetch(`api/scores?season=${season.value}`);
+    text = await response.text();
+  } catch {
+    response = null;
+  }
+  if (request !== latest) return; // a newer request owns the page now
+  const names = response?.ok && parse(text);
+  list.setAttribute('aria-busy', 'false');
+  refresh.disabled = false;
+  offline = !response;
+  if (!response) return fail('You are offline. Scores reload when the connection returns.', retry());
+  if (response.status === 401) {
+    return fail('Your session has expired. Sign in again.', button('Sign in', async () => {
+      await fetch('api/session', { method: 'POST' });
+      load();
+    }));
+  }
+  if (response.status === 403) return fail('You do not have access to these scores.');
+  if (response.status === 429) {
+    const seconds = Math.min(Number(response.headers.get('retry-after')) || 1, 10);
+    setTimeout(load, seconds * 1000);
+    return fail(`Too many requests. Retrying in ${seconds} s.`);
+  }
+  if (!response.ok) return fail(`Scores could not load (${response.status}).`, retry());
+  if (!names) return fail('The server sent an unreadable response.', retry());
+  error.hidden = true;
+  list.replaceChildren(...names.map((name) => Object.assign(document.createElement('li'), { textContent: name })));
+}
+
+refresh.onclick = load;
+season.onchange = load;
+addEventListener('online', () => {
+  if (offline) load();
+});
+load();
+</script></html>

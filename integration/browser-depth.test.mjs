@@ -8,6 +8,7 @@ import path from 'node:path';
 import { normalizeConfig } from '../src/config.mjs';
 import { runWebStage } from '../src/stages/web.mjs';
 import { compareWithBaseline } from '../src/findings.mjs';
+import { FAULT_KINDS } from '../src/levels.mjs';
 
 const shell = (body) => `<!doctype html><html lang="en"><head><title>Depth check</title><style>button:focus-visible{outline:3px solid blue}</style></head><body><main><div aria-busy="true">Existing loading</div>${body}</main></body></html>`;
 
@@ -113,6 +114,37 @@ test('expected API statuses suppress only the listed replayed status; fault visi
     assert.deepEqual(apiErrors, ['API answered 404: GET /docs/other', 'API answered 409: GET /docs/rules'], JSON.stringify(result.findings));
     assert.equal(result.summary.faultVisits, 6);
     assert(result.findings.some((f) => f.check === 'fault-blank' && f.where.includes('500 GET /docs/library')), JSON.stringify(result.findings));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('every fault kind is injected; a resilient app is clean and an unguarded app crashes', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'spotter-kinds-'));
+  try {
+    await mkdir(path.join(dir, 'dist'));
+    await mkdir(path.join(dir, 'logs'));
+    const config = normalizeConfig({ repo: dir, web: {
+      build: { run: 'true' }, api: { envVar: 'API_URL' }, routes: ['/'], viewports: [375], colorSchemes: ['light'], settleMs: 0, accessibility: false, keyboard: false,
+      errorText: ['Could not load'], faultInjection: { kinds: FAULT_KINDS, delayMs: 80, timeoutMs: 400 },
+    } }, { projectName: 'kinds' });
+    const run = () => runWebStage({ config, workdir: dir, logDir: path.join(dir, 'logs'), screenshotDir: path.join(dir, 'screenshots'), fixtures: { entries: { 'GET /items': { status: 200, body: '{"items":["one"]}' } }, sessions: {} } });
+    const page = (script) => shell(`<h1>Items</h1><p id="out">Loading</p><script>const render = (data) => { document.querySelector('main').removeAttribute('aria-busy'); document.getElementById('out').textContent = data.items.join(); };
+      const showError = () => { document.querySelector('main').removeAttribute('aria-busy'); document.getElementById('out').textContent = 'Could not load'; };
+      ${script}</script>`);
+    await writeFile(path.join(dir, 'dist/index.html'), page("fetch('http://api.spotter.test/items').then((r) => r.ok ? r.json() : Promise.reject(r.status)).then(render).catch(showError);"));
+    const healthy = await run();
+    assert.equal(healthy.summary.faultVisits, 7);
+    assert.equal(healthy.summary.faultVisitsFailed, 0);
+    assert.equal(healthy.findings.filter((f) => f.severity !== 'low').length, 0, JSON.stringify(healthy.findings));
+    assert(!healthy.findings.some((f) => f.check === 'api-error' || f.check === 'unrecorded-request'), JSON.stringify(healthy.findings));
+    await writeFile(path.join(dir, 'dist/index.html'), page("fetch('http://api.spotter.test/items').then((r) => r.json()).then(render);"));
+    const seeded = await run();
+    const fresh = compareWithBaseline(seeded.findings, healthy.findings).newFindings;
+    for (const kind of ['abort', 'malformed']) {
+      assert(fresh.some((f) => f.check === 'fault-crash' && f.title === `page crashes during ${kind} response`), `${kind}: ${JSON.stringify(seeded.findings)}`);
+    }
+    assert(!fresh.some((f) => f.check === 'api-error' || f.check === 'unrecorded-request'));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

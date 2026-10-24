@@ -34,6 +34,11 @@ router/build source, public environment examples, CSS breakpoints, Playwright
 settings and Spotter adapter specs. It selects known check parsers, adds Vitest
 JSON reports, discovers API URL variables/fallbacks, plain theme-storage keys,
 literal failure UI text, loading classes and retry-aware observation budgets.
+It also suggests sweep [fault kinds](browser-checks.md) for failures the app
+visibly handles: `.status` checks against 401, 403 or 429, a `Retry-After`
+header (429), `online`/`offline` listeners, a caught `fetch` or retry backoff
+(`abort`), and JSON parsing inside `try`/`catch` (`malformed`). The defaults
+`500` and `delay` stay in the list.
 Inferred values need review: source syntax cannot establish every runtime state.
 Private `.env` and session-state files are not scanned, and generation never runs
 project code, installs dependencies or records API requests.
