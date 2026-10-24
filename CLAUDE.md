@@ -9,7 +9,8 @@ The current assignment is to review the dashboard design and implement a focused
 cleanup. Read QA-06 in [the ticket index](docs/ticket-index.md),
 [dashboard behavior](docs/dashboard.md), and
 [configuration editing](docs/project-configuration.md). QA-08 through QA-21 are
-IDEA backlog items, not part of this cleanup.
+not part of this cleanup (QA-08, QA-09, QA-10 and QA-12 are DONE; the rest are
+IDEA backlog items).
 
 Inspect the rendered dashboard before choosing changes. Improve hierarchy,
 spacing, typography, navigation, responsive layouts, status clarity and form

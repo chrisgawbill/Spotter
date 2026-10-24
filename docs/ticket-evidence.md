@@ -239,7 +239,7 @@ finding IDs to the accepted reports. Evidence:
 
 ## QA-10
 
-**Interaction journeys evidence (2026-10-23, not yet accepted):**
+**Interaction journeys evidence (2026-10-23, accepted by Product Owner 2026-10-24):**
 
 - No `src/` change. `npm test`: 157/157 pass. Docker integration
   (`journeys`, `specs`, `authentication`, `examples/` mounted): 9/9 pass;
