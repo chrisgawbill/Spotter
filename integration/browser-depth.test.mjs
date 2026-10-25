@@ -12,6 +12,42 @@ import { FAULT_KINDS } from '../src/levels.mjs';
 
 const shell = (body) => `<!doctype html><html lang="en"><head><title>Depth check</title><style>button:focus-visible{outline:3px solid blue}</style></head><body><main><div aria-busy="true">Existing loading</div>${body}</main></body></html>`;
 
+test('selected fault routes complete on terminal errors while delays retain their deadline', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'spotter-fault-budget-'));
+  try {
+    await mkdir(path.join(dir, 'dist'));
+    await mkdir(path.join(dir, 'logs'));
+    const config = normalizeConfig({ repo: dir, web: {
+      build: { run: 'true' }, api: { envVar: 'API_URL' },
+      routes: [{ name: 'one', path: '#/one' }, { name: 'two', path: '#/two' }],
+      viewports: [375], colorSchemes: ['light'], settleMs: 0,
+      accessibility: false, keyboard: false, concurrency: 1,
+      faultInjection: { routes: ['one'], concurrency: 2, kinds: ['500', 'delay'], delayMs: 5000, timeoutMs: 2500, terminalSelector: '#failed', minObservationMs: 100 },
+    } }, { projectName: 'budget' });
+    await writeFile(path.join(dir, 'dist/index.html'), `<!doctype html><h1>Items</h1><p id="loading" aria-busy="true">Loading</p><p id="failed" hidden>Failed</p><script>
+      fetch('http://api.spotter.test/items').then(r => {
+        document.getElementById('loading').remove();
+        if (!r.ok) {
+          document.getElementById('failed').hidden = false;
+          setTimeout(() => { throw Error('seeded late crash'); }, 600);
+        }
+      });
+    </script>`);
+    const result = await runWebStage({ config, workdir: dir, logDir: path.join(dir, 'logs'), screenshotDir: path.join(dir, 'screenshots'), fixtures: { entries: { 'GET /items': { status: 200, body: '[]' } } } });
+    assert.equal(result.summary.pages, 2);
+    assert.equal(result.summary.faultVisits, 2);
+    assert.deepEqual(result.summary.faultRoutes, ['one']);
+    assert.equal(result.summary.faultEarlyCompletions, 1);
+    assert.equal(result.summary.faultVisitsFailed, 0);
+    assert(result.summary.timings.faultsMs >= 2500);
+    assert(result.findings.some(f => f.check === 'fault-crash' && f.where.startsWith('#/one')));
+    assert(result.findings.some(f => f.check === 'fault-loading' && f.where.includes('delay')));
+    assert(!result.findings.some(f => f.where?.startsWith('#/two')));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('browser depth detects seeded defects as new, preserves session replay, and exercises delays', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'spotter-depth-'));
   const api = createServer((request, response) => { response.setHeader('content-type', 'text/plain'); response.end(request.headers['x-session'] || 'anonymous'); });

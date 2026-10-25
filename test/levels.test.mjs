@@ -149,3 +149,15 @@ test('high injects every fault kind only when fault visits are configured', () =
   assert.match(summarizePlan(high), /\+ fault visits \(500, delay, abort, 401, 403, 429, malformed\)/);
   assert.match(summarizePlan(resolvePlan(config, 'medium')), /sessions \+ fault visits ·/);
 });
+
+
+test('routine fault routes are explicit in the plan and high restores exhaustive route coverage', () => {
+  const config = make({ web: { faultInjection: { routes: ['home'], concurrency: 8, terminalSelector: '#failed', minObservationMs: 1000 } } });
+  assert.match(summarizePlan(resolvePlan(config, 'medium')), /fault routes: home/);
+  const high = resolvePlan(config, 'high');
+  assert.equal(high.config.web.faultInjection.routes, undefined);
+  assert.equal(high.config.web.faultInjection.concurrency, 8);
+  assert.equal(high.config.web.faultInjection.minObservationMs, 1000);
+  assert.deepEqual(config.web.faultInjection.routes, ['home']);
+  assert.doesNotMatch(summarizePlan(high), /fault routes:/);
+});

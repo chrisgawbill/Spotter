@@ -56,6 +56,39 @@ reconnecting works needs a [recovery spec](project-specs.md#recovery-scenarios).
 `delayMs` controls the response delay; use a value above `timeoutMs`
 to observe pending requests. Choose settling and fault budgets that allow the
 app's retry window to finish. Set `web.faultInjection: false` to skip this sweep.
+For faster routine sweeps, configure fault visits independently of healthy visits:
+
+```yaml
+web:
+  faultInjection:
+    concurrency: 32           # default: web.concurrency, per head/base side
+    routes: [home, team]       # configured route names; high always uses all routes
+    terminalSelector: '[data-fault-finished]' # optional, app-owned terminal state
+    minObservationMs: 8000     # required with terminalSelector; cover all retries
+    timeoutMs: 20000           # maximum observation time after navigation
+```
+
+Without these options, existing behavior is unchanged. Route selection applies to
+medium and runs without a level; it leaves healthy visits and specs unchanged.
+High ignores the route selection and still runs every endpoint/fault combination.
+The plan lists selected fault routes. A fault concurrency override shares the same
+pool across kinds and endpoints, separately from healthy visits and spec workers;
+an uncached baseline can double the configured number. Tune it for host capacity.
+
+Early completion is opt-in. Choose a selector that means the app has finished
+handling the injected failure, and a minimum observation time covering its full
+retry/backoff budget. After that minimum, a visible terminal state must persist
+for 500 ms with quiet networking and no visible loading indicators. The targeted
+endpoint must have been requested. A selector already visible on the healthy
+visit disables early completion for that visit, and delay faults always retain
+the full deadline. Missing terminal states use the full deadline. This is a
+shorter observation window, not proof that no later failure can occur; recovery
+and delayed side effects still need project specs. Invalid selector syntax fails
+the page check rather than silently skipping it.
+
+`report.json` saves `head.stages.web.timings` (`healthyMs`, `faultsMs`, `specsMs`),
+`faultEarlyCompletions` and `faultRoutes` for reviewing the effect without reruns.
+
 Screenshots include session and fault identity. Review visual changes in `report.html`; keyboard and accessibility judgment
 still require human review.
 

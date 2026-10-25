@@ -68,7 +68,10 @@ export function resolvePlan(config, selected) {
   else if (name === 'high' && config.web) {
     const union = (base, extra) => [...new Set([...base, ...extra])];
     effective = { ...config, web: { ...config.web, browsers: union(config.web.browsers, BROWSERS), devices: union(config.web.devices, HIGH_DEVICES) } };
-    if (config.web.faultInjection) effective.web.faultInjection = { ...config.web.faultInjection, kinds: FAULT_KINDS };
+    if (config.web.faultInjection) {
+      const { routes, ...fault } = config.web.faultInjection;
+      effective.web.faultInjection = { ...fault, kinds: FAULT_KINDS };
+    }
   }
   const record = name && { name, source, exclusions, unsupported: name === 'high' ? UNSUPPORTED_AT_HIGH : [] };
   const hash = createHash('sha1').update(JSON.stringify({ name, skip: [...skip].sort(), config: effective })).digest('hex').slice(0, 10);
@@ -123,6 +126,7 @@ export function summarizePlan({ config, skip, record }) {
   const web = config.web;
   if (web) {
     parts.push(`${web.routes.length} routes × ${web.viewports.length} viewports × ${web.colorSchemes.length} schemes × ${web.sessions?.length ?? 1} sessions${web.faultInjection ? ` + fault visits${faultKindsNote(web.faultInjection.kinds)}` : ''}`);
+    if (web.faultInjection?.routes) parts.push(`fault routes: ${web.faultInjection.routes.join(', ')}`);
     if (!isDefaultMatrix(web)) parts.push(`matrix ${listTargets(web).map((t) => t.label).join(', ')}`);
     if (web.specs) parts.push(web.specs.grep ? `specs (grep ${web.specs.grep})` : 'specs');
   }

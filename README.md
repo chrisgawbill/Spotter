@@ -61,7 +61,7 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `web.specs` | See [spec options](docs/project-specs.md); optional `{ files: ['qa/ticket.spec.mjs'], grep: 'Verify' }`; project-owned Playwright tests run against the same build and recorded fixtures |
 | `web.settleMs`, `web.pageTimeoutMs`, `web.concurrency` | Healthy-page settling delay, navigation timeout and parallel visits |
 | `web.accessibility`, `web.keyboard` | Enable axe and advisory Tab/focus checks (both default true) |
-| `web.faultInjection` | `{ delayMs, timeoutMs, loadingSelector }`, or false to skip endpoint fault visits |
+| `web.faultInjection` | `{ delayMs, timeoutMs, loadingSelector }`, or false to skip endpoint fault visits. Optional `concurrency`, routine `routes`, and `terminalSelector` with `minObservationMs`; see [fault budgets](docs/browser-checks.md) |
 | `web.colorSchemeStorage` | localStorage entries to seed per scheme, for apps with their own theme switch |
 | `web.errorText`, `web.ignoreConsole`, `web.ignoreRequests` | Visible text that means failure; regexes to ignore |
 | `coverage.required` | Item names that must run: check names, `rules`, `web`, `specs`, `fixtures`, or a session name with `expectSelector`. Skipping one (for example with `--skip`) makes the run incomplete |

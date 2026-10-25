@@ -48,21 +48,26 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
     browsers = await launchBrowsers([...new Set((mode === 'record' ? targets.slice(0, 1) : targets).map((target) => target.browser ?? deviceOptions(target.device).engine))]);
     const jobs = listPageJobs(web, mode);
     await mkdir(screenshotDir, { recursive: true });
+    const healthyStarted = Date.now();
     const results = await runPool(jobs, web.concurrency, (job) =>
       visitPage({ browsers, job, config, fixtures, mode, recordedEntries, appOrigin: server.origin, screenshotDir, log }),
     );
+    const healthyMs = Date.now() - healthyStarted;
     const faultJobs = [];
     if (mode === 'sweep' && web.api && web.faultInjection) {
       for (let i = 0; i < results.length; i++) {
         if (jobs[i].target.id !== targets[0].id || jobs[i].viewport.width !== toViewport(web.viewports[0]).width || jobs[i].colorScheme !== web.colorSchemes[0]) continue;
+        if (web.faultInjection.routes && !web.faultInjection.routes.includes(jobs[i].route.name)) continue;
         for (const key of results[i].requests) {
           for (const kind of web.faultInjection.kinds ?? DEFAULT_FAULT_KINDS) faultJobs.push({ job: jobs[i], healthy: results[i], fault: { ...web.faultInjection, key, kind } });
         }
       }
     }
-    const faultResults = await runPool(faultJobs, web.concurrency, ({ job, fault, healthy }) =>
+    const faultsStarted = Date.now();
+    const faultResults = await runPool(faultJobs, web.faultInjection?.concurrency ?? web.concurrency, ({ job, fault, healthy }) =>
       visitPage({ browsers, job, config, fixtures, mode, appOrigin: server.origin, screenshotDir, fault, healthy, log }),
     );
+    const faultsMs = Date.now() - faultsStarted;
     const sessionChecks = {};
     for (const result of results) {
       if (result.sessionCheck == null) continue;
@@ -75,10 +80,12 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
     const shape = `${web.routes.length} routes × ${web.viewports.length} viewports × ${mode === 'record' ? 1 : web.colorSchemes.length} schemes × ${web.sessions.length} sessions${isDefaultMatrix(web) ? '' : ` in ${targetPages.map((target) => `${target.label} ${target.pages}`).join(', ')}`}`;
     const projects = isDefaultMatrix(web) ? null : targets.map((target) => ({ name: target.id, use: target.device ? devices[target.device] : { browserName: target.browser } }));
     if (mode === 'sweep' && web.specs) log('project specs');
+    const specsStarted = Date.now();
     const specs = mode === 'sweep' && web.specs ? await runSpecsStage({ config, workdir, logDir, fixtures, appOrigin: server.origin, projects }) : null;
+    const specsMs = specs ? Date.now() - specsStarted : 0;
     if (specs) log('project specs', 'done');
     const schemeFindings = mode === 'sweep' ? await findIneffectiveSchemes(web, results) : [];
-    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(schemeFindings, specs?.findings ?? []), summary: { built: true, pages: jobs.length, shape, targets: targetPages, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
+    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(schemeFindings, specs?.findings ?? []), summary: { built: true, timings: { healthyMs, faultsMs, specsMs }, faultEarlyCompletions: faultResults.filter((result) => result.completedEarly).length, faultRoutes: web.api && web.faultInjection ? web.faultInjection.routes ?? web.routes.map((route) => route.name) : [], pages: jobs.length, shape, targets: targetPages, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
   } finally {
     await Promise.all([...browsers.values()].map((browser) => browser.close()));
     await server.close();
@@ -172,6 +179,8 @@ async function visitPage({ browsers, job, config, fixtures, mode, recordedEntrie
   let blank = false;
   let sessionCheck = null;
   let screenshot = null;
+  let terminalPresent = false;
+  let completedEarly = false;
   const storageState = await sessionStorageState(session, appOrigin, web.colorSchemeStorage?.[colorScheme]);
   const secrets = session.storageState ? [...storageState.cookies.map((cookie) => cookie.value), ...storageState.origins.flatMap((origin) => origin.localStorage.map((entry) => entry.value))] : [];
   const sessionFixtures = session.name === 'anonymous' ? fixtures : { ...fixtures, entries: fixtures?.sessions?.[session.name] ?? {} };
@@ -216,12 +225,13 @@ async function visitPage({ browsers, job, config, fixtures, mode, recordedEntrie
 
   try {
     await page.goto(`${appOrigin}${web.base.replace(/\/?$/, '/')}${route.path.replace(/^\//, '')}`, { waitUntil: 'load', timeout: web.pageTimeoutMs });
-    if (fault) await page.waitForTimeout(fault.timeoutMs);
+    if (fault) completedEarly = await observeFault(page, { fault, healthy, requests, network });
     else {
       await network.waitForQuiet();
       await page.waitForTimeout(web.settleMs);
     }
     if (mode === 'sweep') {
+      if (!fault && web.faultInjection?.terminalSelector) terminalPresent = await hasVisibleMatch(page, web.faultInjection.terminalSelector);
       if (!fault && session.expectSelector) sessionCheck = (await page.locator(session.expectSelector).count()) > 0;
       const content = await page.evaluate(measureVisibleContent);
       blank = !content.textLength && !content.mediaCount;
@@ -269,7 +279,7 @@ async function visitPage({ browsers, job, config, fixtures, mode, recordedEntrie
 
   if (mode === 'record') return { findings: [] };
   return {
-    requests: [...requests], apiNotReplayed: [...notReplayed], job, loading, blank, where, sessionCheck, screenshot,
+    terminalPresent, completedEarly, requests: [...requests], apiNotReplayed: [...notReplayed], job, loading, blank, where, sessionCheck, screenshot,
     findings: redactSecrets(problems, secrets).map((problem) =>
       createFinding({
         stage: 'web',
@@ -284,6 +294,31 @@ async function visitPage({ browsers, job, config, fixtures, mode, recordedEntrie
       }),
     ),
   };
+}
+
+async function hasVisibleMatch(page, selector) {
+  return page.locator(selector).evaluateAll((elements) => elements.some((element) => element.checkVisibility()));
+}
+
+/** A configured terminal state can shorten observation, never a deliberate delay. */
+export async function observeFault(page, { fault, healthy, requests, network }) {
+  if (!fault.terminalSelector || fault.kind === 'delay' || healthy.terminalPresent) {
+    await page.waitForTimeout(fault.timeoutMs);
+    return false;
+  }
+  const started = Date.now();
+  await page.waitForTimeout(fault.minObservationMs);
+  let terminalSince = null;
+  while (Date.now() - started < fault.timeoutMs) {
+    const terminal = requests.has(fault.key) && network.isQuiet() && await hasVisibleMatch(page, fault.terminalSelector) && !await hasVisibleMatch(page, fault.loadingSelector);
+    if (!terminal) terminalSince = null;
+    else {
+      terminalSince ??= Date.now();
+      if (Date.now() - terminalSince >= QUIET_NETWORK_MS) return true;
+    }
+    await page.waitForTimeout(Math.min(100, Math.max(0, fault.timeoutMs - (Date.now() - started))));
+  }
+  return false;
 }
 
 /** Counts in-flight requests so a visit can wait until the page stops fetching. */
@@ -301,6 +336,7 @@ function trackNetwork(page) {
   page.on('requestfinished', onRequestSettled);
   page.on('requestfailed', onRequestSettled);
   return {
+    isQuiet: () => pendingRequestCount === 0 && Date.now() - lastActivity >= QUIET_NETWORK_MS,
     async waitForQuiet() {
       const startedAt = Date.now();
       while (Date.now() - startedAt < MAX_NETWORK_WAIT_MS) {

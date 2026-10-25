@@ -160,3 +160,12 @@ test('fault kinds accept known values, stringify them and add no default', () =>
     assert.throws(() => faults({ kinds }), /`web.faultInjection.kinds` must list unique values from 500, delay, abort, 401, 403, 429, malformed/);
   }
 });
+
+
+test('fault optimization options validate route names, concurrency and observation budgets', () => {
+  const options = { routes: ['/'], concurrency: 8, terminalSelector: '#failed', minObservationMs: 1000, timeoutMs: 2000 };
+  assert.equal(faults(options).web.faultInjection.concurrency, 8);
+  for (const bad of [{ routes: [] }, { routes: ['missing'] }, { routes: ['/', '/'] }, { concurrency: 0 }, { concurrency: 1.5 }, { terminalSelector: '' }, { terminalSelector: '#failed' }, { minObservationMs: 0 }, { ...options, minObservationMs: -1 }, { ...options, minObservationMs: 2000 }]) {
+    assert.throws(() => faults(bad), /Invalid projects/);
+  }
+});

@@ -88,6 +88,13 @@ export function normalizeConfig(config, { projectName, source = '' }) {
       if (kinds !== undefined && (!Array.isArray(kinds) || !kinds.length || new Set(kinds.map(String)).size !== kinds.length || kinds.some((kind) => !FAULT_KINDS.includes(String(kind))))) {
         problems.push(`\`web.faultInjection.kinds\` must list unique values from ${FAULT_KINDS.join(', ')}`);
       }
+      const fault = config.web.faultInjection;
+      if (fault.concurrency !== undefined && (!Number.isSafeInteger(fault.concurrency) || fault.concurrency < 1)) problems.push('`web.faultInjection.concurrency` must be a positive integer');
+      if (fault.routes !== undefined && (!Array.isArray(fault.routes) || !fault.routes.length || new Set(fault.routes).size !== fault.routes.length || fault.routes.some((name) => !(config.web.routes ?? []).some((route) => (typeof route === 'string' ? route : route.name) === name)))) problems.push('`web.faultInjection.routes` must list unique configured route names');
+      if (fault.terminalSelector !== undefined && (typeof fault.terminalSelector !== 'string' || !fault.terminalSelector.trim())) problems.push('`web.faultInjection.terminalSelector` must be a nonempty selector');
+      if (fault.minObservationMs !== undefined && (!Number.isFinite(fault.minObservationMs) || fault.minObservationMs < 0 || fault.minObservationMs >= (fault.timeoutMs ?? 5000))) problems.push('`web.faultInjection.minObservationMs` must be nonnegative and below timeoutMs');
+      if (fault.terminalSelector !== undefined && fault.minObservationMs === undefined) problems.push('`web.faultInjection.terminalSelector` requires minObservationMs covering the retry window');
+      if (fault.minObservationMs !== undefined && fault.terminalSelector === undefined) problems.push('`web.faultInjection.minObservationMs` requires terminalSelector');
       for (const field of ['delayMs', 'timeoutMs']) {
         const value = config.web.faultInjection[field];
         if (value !== undefined && (!Number.isFinite(value) || value <= 0)) problems.push(`web.faultInjection.${field} must be positive`);
