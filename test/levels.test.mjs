@@ -35,7 +35,7 @@ test('high is medium plus the browser matrix and the unsupported list', () => {
   const config = make();
   const plan = resolvePlan(config, 'high');
   assert.deepEqual({ ...plan.config, web: { ...plan.config.web, browsers: config.web.browsers, devices: config.web.devices, faultInjection: config.web.faultInjection } }, config);
-  assert.deepEqual(UNSUPPORTED_AT_HIGH.map((item) => item.ticket), ['QA-13', 'QA-15']);
+  assert.deepEqual(UNSUPPORTED_AT_HIGH.map((item) => item.ticket), ['QA-13']);
   assert.deepEqual(plan.record.unsupported, UNSUPPORTED_AT_HIGH);
   assert.deepEqual(plan.record.exclusions, []);
 });
@@ -106,7 +106,7 @@ test('summarizePlan renders low and no-level lines', () => {
     'level low (selected) · 1 checks · no rules · 1 routes × 1 viewports × 1 schemes × 1 sessions · excluded: unit, format, rules, config, about, more, 1280, dark, fault visits, specs');
   assert.equal(summarizePlan(resolvePlan(config, undefined)),
     'no level · 3 checks · rules · 3 routes × 2 viewports × 2 schemes × 1 sessions + fault visits · specs (grep all)');
-  assert.match(summarizePlan(resolvePlan(config, 'high')), /unsupported: data edge cases \(QA-13\), .*performance budgets \(QA-15\)$/);
+  assert.match(summarizePlan(resolvePlan(config, 'high')), /unsupported: data edge cases \(QA-13\)$/);
 });
 
 test('high adds every browser and the standard devices to any web project, keeping configured ones first', () => {
@@ -160,4 +160,33 @@ test('routine fault routes are explicit in the plan and high restores exhaustive
   assert.equal(high.config.web.faultInjection.minObservationMs, 1000);
   assert.deepEqual(config.web.faultInjection.routes, ['home']);
   assert.doesNotMatch(summarizePlan(high), /fault routes:/);
+});
+
+const perf = { budgets: [{ metric: 'build.js', max: 1 }, { metric: 'timing.home.load', maxIncrease: 200 }], timings: { samples: 5, routes: ['home'] } };
+
+test('level low drops performance budgets with an exclusion', () => {
+  const plan = resolvePlan(make({ web: { performance: perf } }), 'low');
+  assert.equal(plan.config.web.performance, null);
+  assert.ok(plan.record.exclusions.some((item) => item.name === 'performance' && item.kind === 'performance' && item.reason === 'excluded at level low'));
+  assert.deepEqual(resolvePlan(make(), 'low').record.exclusions.filter((item) => item.kind === 'performance'), []);
+});
+
+test('timings run only at high: medium strips them with an exclusion, no level strips silently', () => {
+  const config = make({ web: { performance: perf } });
+  const medium = resolvePlan(config, 'medium');
+  assert.equal(medium.config.web.performance.timings, null);
+  assert.equal(medium.config.web.performance.budgets.length, 2);
+  assert.deepEqual(medium.record.exclusions, [{ name: 'performance timings', kind: 'performance', reason: 'timings run at level high' }]);
+  const none = resolvePlan(config, undefined);
+  assert.equal(none.config.web.performance.timings, null);
+  assert.equal(none.record, null);
+  assert.equal(config.web.performance.timings.samples, 5);
+  assert.deepEqual(resolvePlan(config, 'high').config.web.performance, config.web.performance);
+  assert.deepEqual(resolvePlan(config, 'high').record.exclusions, []);
+});
+
+test('summarizePlan lists performance budgets and timings', () => {
+  const config = make({ web: { performance: perf } });
+  assert.match(summarizePlan(resolvePlan(config, 'high')), /specs \(grep all\) · performance \(2 budgets\) \+ timings ×5 · /);
+  assert.match(summarizePlan(resolvePlan(config, 'medium')), /performance \(2 budgets\) · excluded: performance timings/);
 });

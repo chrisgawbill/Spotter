@@ -22,7 +22,7 @@ ticket.
 | [QA-12](#qa-12--cross-browser-and-device-matrix) | DONE | Browser compatibility |
 | [QA-13](#qa-13--data-edge-case-scenarios) | IDEA | Data robustness |
 | [QA-14](#qa-14--deployed-application-smoke-checks) | IDEA | Deployment verification |
-| [QA-15](#qa-15--performance-regression-budgets) | IDEA | Performance checks |
+| [QA-15](#qa-15--performance-regression-budgets) | ACTIVE | Performance checks |
 | [QA-16](#qa-16--failure-traces-and-flaky-test-tracking) | IDEA | Failure diagnosis |
 | [QA-17](#qa-17--visual-comparison-controls) | IDEA | Visual review quality |
 | [QA-18](#qa-18--project-owned-backend-integration-mode) | IDEA | Server and API testing |
@@ -336,7 +336,7 @@ Historical verification: [evidence](ticket-evidence.md#qa-07).
 ## Proposed robustness backlog
 
 QA-08 through QA-21 capture the requested feature proposals. QA-08, QA-09,
-QA-10, QA-11 and QA-12 are DONE; the rest remain IDEA. Writing these tickets does not start
+QA-10, QA-11 and QA-12 are DONE; QA-15 is ACTIVE; the rest remain IDEA. Writing these tickets does not start
 implementation or activate services.
 Suggested first delivery sequence: QA-08, QA-09, QA-10, then QA-11.
 
@@ -566,7 +566,10 @@ establish hosting and runtime integration behavior.
 
 ## QA-15 — Performance regression budgets
 
-**Status:** IDEA
+**Status:** ACTIVE — started by Product Owner 2026-10-27; implemented and verified,
+sample report acceptance pending. Plan: [performance-budgets](plans/performance-budgets.md).
+Usage: [performance budgets](browser-checks.md#performance-budgets). Verification:
+[evidence](ticket-evidence.md#qa-15).
 
 **Goal:** Detect measurable resource and responsiveness regressions with repeatable
 measurements and configurable project budgets.

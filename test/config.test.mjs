@@ -169,3 +169,17 @@ test('fault optimization options validate route names, concurrency and observati
     assert.throws(() => faults(bad), /Invalid projects/);
   }
 });
+
+const perfConfig = (performance) => normalizeConfig({ repo: '/tmp/app', web: { build: { run: 'true' }, routes: ['home'], performance } }, { projectName: 'demo' });
+
+test('web.performance normalizes, is null when absent and rejects invalid budgets', () => {
+  assert.equal(perfConfig(undefined).web.performance, null);
+  const normalized = perfConfig({ budgets: [{ metric: 'build.js', max: 100 }, { metric: 'route.*.requests', maxIncrease: '20%', blocking: true }] }).web.performance;
+  assert.deepEqual(normalized.budgets, [
+    { metric: 'build.js', max: 100, maxIncrease: null, blocking: false },
+    { metric: 'route.*.requests', max: null, maxIncrease: { percent: 20 }, blocking: true },
+  ]);
+  assert.equal(normalized.timings, null);
+  assert.throws(() => perfConfig({ budgets: [{ metric: 'build.nope', max: 1 }] }), /Invalid projects\/demo\.yml/);
+  assert.throws(() => perfConfig({ budgets: [] }), /budgets/);
+});

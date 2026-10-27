@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { runAccessibility, runKeyboardSmoke } from './accessibility.mjs';
 import { mkdir } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { chromium, devices, firefox, webkit } from 'playwright';
 import { DEFAULT_TARGET_ID, isDefaultMatrix, listTargets } from '../browsers.mjs';
@@ -12,7 +13,8 @@ import { createFinding } from '../findings.mjs';
 import { apiRequestMatcher, isExpectedStatus, recordFixtures, recordingHeaders, replayFixtures } from '../fixtures.mjs';
 import { startStaticServer } from '../staticServer.mjs';
 import { findHorizontalOverflow, measureVisibleContent } from './pageProbes.mjs';
-import { runSpecsStage } from './specs.mjs';
+import { absoluteBudgetFindings, aggregate, measureBuild, routeMetrics } from '../performance.mjs';
+import { runSpecsStage, runTimedSpecs } from './specs.mjs';
 import { sessionStorageState, redactSecrets } from '../sessions.mjs';
 
 const require = createRequire(import.meta.url);
@@ -27,7 +29,7 @@ const MAX_NETWORK_WAIT_MS = 15_000;
  * returns findings plus screenshots; in `record` mode it forwards API calls to
  * the live API and fills `recordedEntries`.
  */
-export async function runWebStage({ config, workdir, logDir, screenshotDir, fixtures, mode = 'sweep', recordedEntries, log = () => {} }) {
+export async function runWebStage({ config, workdir, logDir, screenshotDir, fixtures, mode = 'sweep', recordedEntries, timingGate, log = () => {} }) {
   const web = config.web;
   if (web.specs?.mode === 'live') {
     log('live authentication specs');
@@ -41,16 +43,20 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
   const build = await buildApp({ config, workdir, logDir });
   log('web build', 'done');
   if (build.finding) return { findings: [build.finding], summary: { built: false, pages: 0 } };
+  const perf = mode === 'sweep' ? web.performance : null;
+  const buildMetrics = perf ? await measureBuild(path.join(workdir, web.build.outDir)) : null;
 
   const server = await startStaticServer(path.join(workdir, web.build.outDir), web.base);
   let browsers = new Map();
   try {
     browsers = await launchBrowsers([...new Set((mode === 'record' ? targets.slice(0, 1) : targets).map((target) => target.browser ?? deviceOptions(target.device).engine))]);
     const jobs = listPageJobs(web, mode);
+    const primaryJobs = new Map();
+    if (perf) for (const job of jobs) if (job.target.id === targets[0].id && job.colorScheme === web.colorSchemes[0] && job.session.name === 'anonymous' && !primaryJobs.has(job.route.name)) primaryJobs.set(job.route.name, job);
     await mkdir(screenshotDir, { recursive: true });
     const healthyStarted = Date.now();
     const results = await runPool(jobs, web.concurrency, (job) =>
-      visitPage({ browsers, job, config, fixtures, mode, recordedEntries, appOrigin: server.origin, screenshotDir, log }),
+      visitPage({ browsers, job, config, fixtures, mode, recordedEntries, appOrigin: server.origin, screenshotDir, measure: primaryJobs.get(job.route.name) === job, log }),
     );
     const healthyMs = Date.now() - healthyStarted;
     const faultJobs = [];
@@ -85,10 +91,73 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
     const specsMs = specs ? Date.now() - specsStarted : 0;
     if (specs) log('project specs', 'done');
     const schemeFindings = mode === 'sweep' ? await findIneffectiveSchemes(web, results) : [];
-    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(schemeFindings, specs?.findings ?? []), summary: { built: true, timings: { healthyMs, faultsMs, specsMs }, faultEarlyCompletions: faultResults.filter((result) => result.completedEarly).length, faultRoutes: web.api && web.faultInjection ? web.faultInjection.routes ?? web.routes.map((route) => route.name) : [], pages: jobs.length, shape, targets: targetPages, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}) } };
+    let performance = null;
+    if (perf) {
+      const resources = { ...buildMetrics };
+      for (const result of results) if (result.traffic) Object.assign(resources, routeMetrics(result.job.route.name, result.traffic));
+      performance = { resources, ...await sampleTimings({ config, workdir, logDir, fixtures, appOrigin: server.origin, targets, projects, browsers, primaryJobs, timingGate, log }) };
+    }
+    const budgetFindings = performance ? absoluteBudgetFindings(perf, performance, { project: config.name }) : [];
+    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(schemeFindings, specs?.findings ?? [], budgetFindings), summary: { built: true, timings: { healthyMs, faultsMs, specsMs }, faultEarlyCompletions: faultResults.filter((result) => result.completedEarly).length, faultRoutes: web.api && web.faultInjection ? web.faultInjection.routes ?? web.routes.map((route) => route.name) : [], pages: jobs.length, shape, targets: targetPages, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}), ...(performance ? { performance } : {}) } };
   } finally {
     await Promise.all([...browsers.values()].map((browser) => browser.close()));
     await server.close();
+  }
+}
+
+/** Page-load and interaction samples for `web.performance.timings`; never throws, failures become `timingError`. */
+async function sampleTimings({ config, workdir, logDir, fixtures, appOrigin, targets, projects, browsers, primaryJobs, timingGate, log }) {
+  const web = config.web;
+  const timings = web.performance.timings;
+  if (!timings) return { timings: null, environment: null, timingError: null };
+  const target = targets[0];
+  const device = target.device ? deviceOptions(target.device) : null;
+  const browser = browsers.get(device?.engine ?? target.browser);
+  const turn = (fn) => (timingGate ? timingGate.turn(fn) : fn());
+  const measured = {};
+  let timingError = null;
+  log('performance timings');
+  try {
+    await timingGate?.arrive();
+    for (const name of timings.routes) {
+      const samples = [];
+      const missing = [];
+      for (let i = 0; i < timings.samples && !missing.length; i++) samples.push(await turn(() => samplePageLoad({ browser, device, web, fixtures, appOrigin, job: primaryJobs.get(name), missing })));
+      if (missing.length) timingError ??= `page-load sampling requested unrecorded API data without the frozen clock (${missing[0]})`;
+      else measured[`timing.${name}.load`] = aggregate(samples);
+    }
+    if (timings.interactions) {
+      const run = await turn(() => runTimedSpecs({ config, workdir, logDir, fixtures, appOrigin, project: projects?.[0] ?? null, samples: timings.samples, grep: timings.interactions.grep }));
+      for (const [metric, samples] of Object.entries(run.samples)) measured[metric] = aggregate(samples);
+      timingError ??= run.error;
+    }
+  } catch (error) {
+    timingError = firstLine(error.message);
+  } finally {
+    timingGate?.done();
+  }
+  log('performance timings', 'done');
+  const ran = Object.keys(measured).length > 0;
+  return {
+    timings: ran ? measured : null,
+    environment: ran ? { browser: `${device?.engine ?? target.browser} ${browser.version()}`, cpus: os.cpus().length, api: web.api ? 'replayed' : 'none', samples: timings.samples } : null,
+    timingError,
+  };
+}
+
+/** Navigation start to the end of the load event, in a fresh context set up like the healthy visit. The clock is not frozen: Chromium returns no navigation timing entries under clock.setFixedTime. */
+async function samplePageLoad({ browser, device, web, fixtures, appOrigin, job, missing }) {
+  const { route, viewport, colorScheme, session } = job;
+  const storageState = await sessionStorageState(session, appOrigin, web.colorSchemeStorage?.[colorScheme]);
+  const context = await browser.newContext({ ...device?.options, viewport, colorScheme, storageState, serviceWorkers: 'block', reducedMotion: 'reduce' });
+  try {
+    if (web.api) await replayFixtures(context, { fakeOrigin: web.api.fakeOrigin, apiPaths: web.api.paths, appOrigin, fixtures, onUnrecorded: (key) => missing.push(key) });
+    const page = await context.newPage();
+    await page.goto(`${appOrigin}${web.base.replace(/\/?$/, '/')}${route.path.replace(/^\//, '')}`, { waitUntil: 'load', timeout: web.pageTimeoutMs });
+    await page.waitForFunction(() => performance.getEntriesByType('navigation')[0]?.loadEventEnd > 0);
+    return await page.evaluate(() => performance.getEntriesByType('navigation')[0].loadEventEnd);
+  } finally {
+    await context.close();
   }
 }
 
@@ -166,7 +235,7 @@ async function runPool(items, limit, worker) {
   return results;
 }
 
-async function visitPage({ browsers, job, config, fixtures, mode, recordedEntries, appOrigin, screenshotDir, fault, healthy, log = () => {} }) {
+async function visitPage({ browsers, job, config, fixtures, mode, recordedEntries, appOrigin, screenshotDir, fault, healthy, measure = false, log = () => {} }) {
   const web = config.web;
   const { route, viewport, colorScheme, session, target } = job;
   const primary = target.id === listTargets(web)[0].id;
@@ -207,6 +276,26 @@ async function visitPage({ browsers, job, config, fixtures, mode, recordedEntrie
   }
 
   const page = await context.newPage();
+  let traffic = null;
+  if (measure) {
+    const isApi = web.api ? apiRequestMatcher({ fakeOrigin: web.api.fakeOrigin, apiPaths: web.api.paths, appOrigin }) : () => false;
+    const counted = { requests: 0, apiRequests: 0, bytes: 0, imageBytes: 0, bodies: [], done: false };
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (counted.done || !/^https?:$/.test(url.protocol)) return;
+      counted.requests += 1;
+      if (isApi(url)) counted.apiRequests += 1;
+    });
+    page.on('response', (response) => {
+      const url = new URL(response.url());
+      if (counted.done || url.origin !== appOrigin || isApi(url)) return;
+      counted.bodies.push(response.body().catch(() => null).then((body) => {
+        counted.bytes += body?.length ?? 0;
+        if (body && response.request().resourceType() === 'image') counted.imageBytes += body.length;
+      }));
+    });
+    traffic = counted;
+  }
   const network = trackNetwork(page);
   watchPageProblems(page, { web, appOrigin, onNotReplayed: (endpoint, status) => {
     if (fault || mode !== 'sweep' || notReplayed.has(endpoint)) return;
@@ -229,6 +318,10 @@ async function visitPage({ browsers, job, config, fixtures, mode, recordedEntrie
     else {
       await network.waitForQuiet();
       await page.waitForTimeout(web.settleMs);
+      if (traffic) {
+        traffic.done = true;
+        await Promise.all(traffic.bodies);
+      }
     }
     if (mode === 'sweep') {
       if (!fault && web.faultInjection?.terminalSelector) terminalPresent = await hasVisibleMatch(page, web.faultInjection.terminalSelector);
@@ -270,6 +363,7 @@ async function visitPage({ browsers, job, config, fixtures, mode, recordedEntrie
     }
   } catch (error) {
     if (mode === 'record') throw error;
+    if (traffic && !traffic.done) traffic = null;
     if (!fault && mode === 'sweep' && session.expectSelector && sessionCheck === null) sessionCheck = false;
     report({ check: fault ? 'fault-navigation' : 'navigation', severity: 'high', title: `${fault ? `${fault.kind} ${fault.key}: ` : ''}page check failed: ${firstLine(error.message)}` });
   } finally {
@@ -279,7 +373,7 @@ async function visitPage({ browsers, job, config, fixtures, mode, recordedEntrie
 
   if (mode === 'record') return { findings: [] };
   return {
-    terminalPresent, completedEarly, requests: [...requests], apiNotReplayed: [...notReplayed], job, loading, blank, where, sessionCheck, screenshot,
+    ...(traffic ? { traffic } : {}), terminalPresent, completedEarly, requests: [...requests], apiNotReplayed: [...notReplayed], job, loading, blank, where, sessionCheck, screenshot,
     findings: redactSecrets(problems, secrets).map((problem) =>
       createFinding({
         stage: 'web',

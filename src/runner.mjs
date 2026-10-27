@@ -14,7 +14,7 @@ export const STAGES = ['static', 'rules', 'web', 'config'];
  * its merge base) in a fresh export. `sha` null means the working tree.
  * Returns { findings, stages } where `stages` maps stage name to its summary.
  */
-export async function runSide({ config, sha, sideDir, workRoot, fixtures, changes, skip, log }) {
+export async function runSide({ config, sha, sideDir, workRoot, fixtures, changes, skip, timingGate, log }) {
   const exportDir = path.join(workRoot, sha ? sha.slice(0, 12) : 'working-tree');
   const workdir = path.join(exportDir, config.workdir);
   const logDir = path.join(sideDir, 'logs');
@@ -62,12 +62,13 @@ export async function runSide({ config, sha, sideDir, workRoot, fixtures, change
     if (!config.web || skip.has('web') || !staticResult.installed) stages.web = 'skipped';
     else {
       log(`web sweep (${config.web.routes.length} routes)`);
-      const webResult = await runWebStage({ config, workdir, logDir, screenshotDir: path.join(sideDir, 'screenshots'), fixtures, log });
+      const webResult = await runWebStage({ config, workdir, logDir, screenshotDir: path.join(sideDir, 'screenshots'), fixtures, timingGate, log });
       findings.push(...webResult.findings);
       log(`web sweep (${config.web.routes.length} routes)`, 'done');
       stages.web = webResult.summary;
     }
   } finally {
+    timingGate?.done();
     await rm(exportDir, { recursive: true, force: true });
   }
   return { findings: dedupeFindings(findings), stages, screenshotDir: path.join(sideDir, 'screenshots') };

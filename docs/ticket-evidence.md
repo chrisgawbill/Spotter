@@ -356,3 +356,44 @@ finding IDs to the accepted reports. Evidence:
   `~/spotter/triple-crown/runs/20261024-181219-main-23934278/report.md`.
 - Not verified: Firefox/WebKit (faults and the example ran in Chromium only);
   consumer adoption of a recovery journey.
+
+## QA-15
+
+**Performance budget evidence (2026-10-27, awaiting Product Owner sample acceptance):**
+
+- Unit: `npm test` 188/188 (166 before QA-15): budget validation and normalization,
+  build measurement, aggregation, absolute and relative budgets, the timing noise
+  rule, environment equivalence, the timing gate, levels, completeness, reports.
+- Docker `integration/performance.test.mjs` 6/6 (three runs, ~62 s each):
+  healthy repeats give identical resources and no timing finding; seeds, each new
+  and only for its metric: bundle growth (`build.js` 1.2 kB → 151.9 kB),
+  request multiplication (`route.home.requests` 3 → 7, medium;
+  `route.home.apiRequests` 5 over max 1), slow interaction (`interaction.open
+  details` ~45 ms → ~450 ms; `timing.home.load` not flagged); two sides sharing a
+  timing gate never overlap and a side that stops early does not block the other.
+- Other Docker integration: authentication 2/2, browser-depth 5/5,
+  browser-matrix 4/4, contracts 1/1, dashboard 1/1, journeys 4/4, recovery 4/4,
+  same-origin-api 2/2, specs 3/3. `visual` failed identically on unchanged
+  `HEAD` (its fake run lacked `head`); fixed in the test, 1/1.
+- Sample CLI runs (temporary `projects/qa15-performance.yml`: `examples/performance`
+  in a throwaway repo, hand-written fixtures, five budgets, timings on `home` and
+  `@perf`):
+  - `main` at high vs itself: PASS, exit 0, `not compared (no baseline)`:
+    `~/spotter/qa15-performance/runs/20261027-033446-main-66289c4d/report.md`.
+  - seeded branch at high, fresh base: FAIL, exit 1; exactly three new findings
+    (requests regression medium, apiRequests over max low, interaction
+    regression low with median/min–max detail); base and head timing turns
+    alternate: `~/spotter/qa15-performance/runs/20261027-033508-seeded-f75fd200/report.html`.
+  - same branch, cached base: timings `not compared (cached base)`, resource
+    findings unchanged: `~/spotter/qa15-performance/runs/20261027-033541-seeded-39d5d9ab/report.md`.
+  - same branch at medium: no timings, `excluded: performance timings`:
+    `~/spotter/qa15-performance/runs/20261027-033602-seeded-384437dc/report.md`.
+- HockeyStats main (no `web.performance`, behaviour unchanged): PASS, COMPLETE
+  78/78, 34 specs, exit 0; only the known low keyboard-focus advisory:
+  `~/spotter/hockeystats-webapp/runs/20261027-034143-main-55554e1a/report.md`.
+  An earlier run at the same time as the Docker integration suite had
+  `net::ERR_NETWORK_CHANGED` asset failures (environmental) and was discarded.
+- Not verified: timings in Firefox/WebKit (timings run in the first target;
+  page-load sampling skips the frozen clock, observed only in Chromium); a real
+  project with `web.performance` configured; the HTML report's performance table
+  was checked at 1280 and 390 px only.

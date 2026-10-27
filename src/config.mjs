@@ -5,6 +5,7 @@ import YAML from 'yaml';
 import { matrixProblems } from './browsers.mjs';
 import { requirableNames } from './completeness.mjs';
 import { FAULT_KINDS, levelProblems, normalizeLevels } from './levels.mjs';
+import { normalizePerformance, performanceProblems } from './performance.mjs';
 import { spotterRoot } from './paths.mjs';
 import { readSessionState } from './sessions.mjs';
 
@@ -100,6 +101,7 @@ export function normalizeConfig(config, { projectName, source = '' }) {
         if (value !== undefined && (!Number.isFinite(value) || value <= 0)) problems.push(`web.faultInjection.${field} must be positive`);
       }
     }
+    problems.push(...performanceProblems(config.web));
     if (config.web.api !== undefined) problems.push(...apiProblems(config.web.api));
     if (!config.web.routes?.length) problems.push('`web.routes` needs at least one route');
   }
@@ -143,6 +145,7 @@ function normalizeWebConfig(web) {
     ...web,
     sessions: [{ name: 'anonymous', localStorage: {} }, ...(web.sessions ?? [])],
     faultInjection: web.faultInjection === false ? null : { delayMs: 2000, timeoutMs: 5000, loadingSelector: '[aria-busy="true"], [role="progressbar"]', ...web.faultInjection, ...(Array.isArray(web.faultInjection?.kinds) ? { kinds: web.faultInjection.kinds.map(String) } : {}) },
+    performance: normalizePerformance(web.performance),
     base: web.base ?? '/',
     build: { outDir: 'dist', env: {}, ...web.build },
     api: web.api ? {

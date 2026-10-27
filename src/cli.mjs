@@ -14,6 +14,7 @@ import { createActivity } from './activity.mjs';
 import { startBackend } from './backend.mjs';
 import { startDashboard } from './dashboard.mjs';
 import { loadSavedRetention, pruneProject, retentionSettings } from './prune.mjs';
+import { createTimingGate, relativeBudgetFindings } from './performance.mjs';
 import { renderMarkdownReport } from './report.mjs';
 import { renderHtmlReport } from './htmlReport.mjs';
 import { compareScreenshots } from './visual.mjs';
@@ -152,15 +153,18 @@ async function runProject(config, options) {
         }
       : { addedLines: [], commits: [] };
     const sideArguments = { config: plan.config, fixtures, skip: runSkip, workRoot, activity };
+    const baseRuns = Boolean(baseSha && (baseSha !== headSha || options.workingTree));
+    const gate = createTimingGate(baseRuns && plan.config.web?.performance?.timings ? 2 : 1);
 
     const headPromise = runSide({
       ...sideArguments,
       sha: options.workingTree ? null : headSha,
       sideDir: runDir,
       changes,
+      timingGate: gate.side(),
       log: (step, state) => { log(`head: ${step} (${state ?? 'started'})`); activity.event('head', step, state); },
     });
-    const basePromise = baseSha && (baseSha !== headSha || options.workingTree) ? loadOrRunBase({ ...sideArguments, baseSha, directories, planHash: plan.hash }).catch((error) => {
+    const basePromise = baseRuns ? loadOrRunBase({ ...sideArguments, baseSha, directories, planHash: plan.hash, timingGate: gate.side() }).catch((error) => {
       log(`base: failed — ${error.message}`);
       activity.event('base', 'base run failed', 'done');
       return { error };
@@ -173,6 +177,15 @@ async function runProject(config, options) {
     const comparison = base?.side && baseline.status !== 'failed'
       ? compareWithBaseline(head.findings, base.side.findings)
       : { newFindings: head.findings, existingFindings: [], fixedFindings: [] };
+    let performance;
+    if (plan.config.web?.performance) {
+      const headPerf = head.stages.web?.performance ?? null;
+      const comparable = baseline.status !== 'failed' && baseline.status !== 'none';
+      const basePerf = comparable ? base?.side?.stages.web?.performance ?? null : null;
+      const relative = headPerf ? relativeBudgetFindings(plan.config.web.performance, headPerf, basePerf, { baseCached: baseline.status === 'cached', project: config.name }) : { findings: [], notCompared: [] };
+      comparison.newFindings = [...comparison.newFindings, ...relative.findings];
+      performance = { budgets: plan.config.web.performance.budgets, head: headPerf, base: basePerf, notCompared: relative.notCompared };
+    }
     for (const category of Object.keys(comparison)) {
       comparison[category] = sortFindings(comparison[category], STAGES).map(withHostPaths);
     }
@@ -185,6 +198,7 @@ async function runProject(config, options) {
       plan: summarizePlan(plan),
       completeness: assessCompleteness({ config: plan.config, skip: options.skip, stages: head.stages, fixtures, baseline, liveAuth: !!options.liveAuth, level: plan.record }),
       comparison,
+      ...(performance ? { performance } : {}),
       visual: await compareScreenshots(path.join(runDir, 'screenshots'), base?.side?.screenshotDir ?? (baseSha === headSha && !options.workingTree ? path.join(runDir, 'screenshots') : null), runDir),
       durationMs: Date.now() - startedAt,
       paths: {
@@ -220,7 +234,15 @@ async function runProject(config, options) {
 }
 
 /** The merge base's findings, from cache when the same commit, config and fixtures ran before. */
-async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, directories, activity, planHash }) {
+async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, directories, activity, planHash, timingGate }) {
+  try {
+    return await loadOrRunBaseSide({ config, fixtures, skip, workRoot, baseSha, directories, activity, planHash, timingGate });
+  } finally {
+    timingGate.done();
+  }
+}
+
+async function loadOrRunBaseSide({ config, fixtures, skip, workRoot, baseSha, directories, activity, planHash, timingGate }) {
   const cacheKey = `${baseSha.slice(0, 12)}-${spotterCodeHash()}-${config.configHash}-${fixtures?.hash ?? 'none'}-${[...skip].sort().join('_') || 'all'}-${planHash}`;
   const cacheFile = path.join(directories.baselines, cacheKey, 'side.json');
   const cached = await readCachedSide(cacheFile);
@@ -238,6 +260,7 @@ async function loadOrRunBase({ config, fixtures, skip, workRoot, baseSha, direct
     sha: baseSha,
     sideDir: path.dirname(cacheFile),
     changes: { addedLines: [], commits: [] },
+    timingGate,
     log: (step, state) => { log(`base: ${step} (${state ?? 'started'})`); activity.event('base', step, state); },
   });
   await writeCachedSide(cacheFile, base);

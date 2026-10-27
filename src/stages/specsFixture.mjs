@@ -17,6 +17,12 @@ export const test = base.extend({
     if (!session) throw new Error(`Unknown Spotter session: ${spotterSession}`);
     await use(spotterLive ? { cookies: [], origins: [] } : await sessionStorageState(session, settings.appOrigin, settings.web.colorSchemeStorage?.[colorScheme]));
   },
+  spotterTiming: async ({}, use, testInfo) => use(async (name, fn) => {
+    const started = performance.now();
+    const result = await fn();
+    await testInfo.attach('spotter-timing', { body: JSON.stringify({ name, ms: performance.now() - started }), contentType: 'application/json' });
+    return result;
+  }),
   _spotter: [async ({ context, spotterLive, spotterSession }, use) => {
     if (!spotterLive && settings.fixtures?.recordedAt) await context.clock.setFixedTime(new Date(settings.fixtures.recordedAt));
     const missing = [];

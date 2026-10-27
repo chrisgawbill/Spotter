@@ -36,3 +36,9 @@ web:
   colorSchemes: [light, dark]
   # browsers: [chromium, firefox, webkit]   # default [chromium]
   # devices: ['iPhone 13']                  # Playwright device names, emulated
+  # Optional performance budgets (advisory unless blocking: true); timings run at level high.
+  # performance:
+  #   budgets:
+  #     - { metric: build.js, maxIncrease: '10%' }
+  #     - { metric: 'route.*.requests', maxIncrease: 0 }
+  #   timings: { samples: 5, routes: [home] }

@@ -1,4 +1,5 @@
 import { summarizeCompleteness } from './completeness.mjs';
+import { summarizePerformance } from './performance.mjs';
 import { SEVERITIES } from './findings.mjs';
 
 const STAGE_ORDER = ['static', 'rules', 'web', 'config'];
@@ -145,6 +146,7 @@ export function renderStageSummary(run) {
       if (summary.specs) lines.push(`- project specs${summary.specs.mode ? ` (${summary.specs.mode})` : ''}: ${summary.specs.passed} passed, ${summary.specs.failed} failed, ${summary.specs.skipped} skipped`);
     }
   }
+  if (run.performance) lines.push(`- ${summarizePerformance(run)}`);
   if (run.plan) lines.push(`- plan: ${run.plan}`);
   if (run.completeness) lines.push(`- coverage: ${summarizeCompleteness(run.completeness)}`);
   return lines;
