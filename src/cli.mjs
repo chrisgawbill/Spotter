@@ -144,7 +144,7 @@ async function runProject(config, options) {
   const workRoot = path.join(directories.work, path.basename(runDir));
   await mkdir(runDir, { recursive: true });
 
-  const activity = createActivity(runDir, { project: config.name, branch: headRef, startedAt: new Date(startedAt).toISOString(), level: plan.record?.name ?? null, plan: summarizePlan(plan) });
+  const activity = createActivity(runDir, { project: config.name, branch: headRef, handoff: !!options.ref && !options.workingTree && !options.repo && !options.liveAuth, startedAt: new Date(startedAt).toISOString(), level: plan.record?.name ?? null, plan: summarizePlan(plan) });
   try {
     const changes = baseSha
       ? {

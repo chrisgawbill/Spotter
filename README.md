@@ -83,6 +83,11 @@ The dashboard's Settings page shows disk use and changes the same settings; they
 are saved to `retention.json` in the Spotter data folder. Precedence: command
 flags, then environment variables, then saved settings, then the defaults.
 
+Settings also takes the address of a Paddock dashboard. Runs of a committed
+branch in the configured repository (not `--working-tree`, `--repo` or
+`--live-auth`) then show **Open in Paddock**, which opens that branch's preview
+or Paddock's start form with it filled in. Project names must match Paddock's.
+
 `spotter prune [<project>] [--dry-run] [--keep-runs <n>] [--keep-baselines <n>]`
 runs the same cleanup on demand for one project or all of them. The flags
 override the variables; `--dry-run` only lists what would be removed.

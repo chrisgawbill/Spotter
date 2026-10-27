@@ -193,7 +193,7 @@ test('dashboard serves its app manifest and accepts only a configured HTTPS tail
     assert.equal(await post({ Host: 'box.tail1.ts.net', Origin: 'https://box.tail1.ts.net' }), 403);
     assert.equal(await post({ Origin: https }), 403);
     assert.equal(await post({ Origin: origin }), 400);
-    assert.deepEqual(await (await fetch(`${origin}/api/app`)).json(), { httpsOrigin: https, locked: true });
+    assert.deepEqual(await (await fetch(`${origin}/api/app`)).json(), { httpsOrigin: https, locked: true, paddockOrigin: null });
     assert.equal((await fetch(`${origin}/api/app`, { method: 'PUT', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ httpsOrigin: '' }) })).status, 409);
   } finally {
     server.closeAllConnections();
@@ -218,7 +218,7 @@ test('Settings saves the HTTPS address, applies it immediately and keeps it acro
     req.end(JSON.stringify({ project: '../x', branch: 'main' }));
   });
   try {
-    assert.deepEqual(await (await fetch(`${origin}/api/app`)).json(), { httpsOrigin: null, locked: false });
+    assert.deepEqual(await (await fetch(`${origin}/api/app`)).json(), { httpsOrigin: null, locked: false, paddockOrigin: null });
     assert.equal(await post({ Host: 'box.tail1.ts.net:8444', Origin: saved }), 403);
     assert.equal((await put(saved, { Origin: 'http://outside.example' })).status, 403);
     assert.equal((await put('https://example.com')).status, 400);
@@ -226,11 +226,38 @@ test('Settings saves the HTTPS address, applies it immediately and keeps it acro
     assert.equal(await post({ Host: 'box.tail1.ts.net:8444', Origin: saved }), 400);
     await close(server);
     [server, origin] = await listen();
-    assert.deepEqual(await (await fetch(`${origin}/api/app`)).json(), { httpsOrigin: saved, locked: false });
+    assert.deepEqual(await (await fetch(`${origin}/api/app`)).json(), { httpsOrigin: saved, locked: false, paddockOrigin: null });
     assert.equal(await post({ Host: 'box.tail1.ts.net:8444', Origin: saved }), 400);
     assert.equal((await put('')).status, 200);
     assert.equal(await post({ Host: 'box.tail1.ts.net:8444', Origin: saved }), 403);
   } finally { await close(server); }
+});
+
+test('runs of a committed branch link to the saved Paddock address', async () => {
+  const home = await mkdtemp(path.join(tmpdir(), 'spotter-paddock-'));
+  const server = createDashboardServer({ branchRefreshMs: 0, home, projectNames: async () => ['demo'], env: { SPOTTER_DASHBOARD_ORIGIN: 'https://box.tail1.ts.net:8444' } });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  const put = (body) => fetch(`${origin}/api/app`, { method: 'PUT', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const run = async (id) => (await (await fetch(`${origin}/api/runs/demo/${id}`)).json()).paddock;
+  for (const [id, activity] of [['flagged', { branch: 'origin/fix x', handoff: true }], ['working', { branch: 'origin/main' }]]) {
+    await mkdir(path.join(home, 'demo/runs', id), { recursive: true });
+    await writeFile(path.join(home, 'demo/runs', id, 'activity.json'), JSON.stringify({ ...activity, status: 'running', updatedAt: new Date().toISOString() }));
+  }
+  try {
+    assert.equal(await run('flagged'), null);
+    assert.equal((await put({ paddockOrigin: 'javascript:alert(1)' })).status, 400);
+    assert.equal((await put({ httpsOrigin: '' })).status, 409);
+    const saved = await (await put({ paddockOrigin: 'https://box.tail1.ts.net:8445/' })).json();
+    assert.deepEqual(saved, { httpsOrigin: 'https://box.tail1.ts.net:8444', locked: true, paddockOrigin: 'https://box.tail1.ts.net:8445' });
+    assert.equal(await run('flagged'), 'https://box.tail1.ts.net:8445/#start/demo/origin%2Ffix%20x');
+    assert.equal(await run('working'), null, 'working-tree, --repo and older runs get no link');
+    assert.equal((await put({ paddockOrigin: '' })).status, 200);
+    assert.equal(await run('flagged'), null);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test('config editor validates YAML, preserves comments, detects stale edits and confines writes', async () => {
