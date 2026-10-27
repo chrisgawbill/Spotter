@@ -10,6 +10,7 @@ export function requirableNames(config) {
     names.push('web');
     if (web.api) names.push('fixtures');
     if (web.specs) names.push('specs');
+    if (web.performance) names.push('performance');
     for (const session of Array.isArray(web.sessions) ? web.sessions : []) {
       if (session?.expectSelector !== undefined && typeof session.name === 'string') names.push(session.name);
     }
@@ -78,6 +79,12 @@ function listItems({ config, skip, stages, fixtures, liveAuth }) {
     if (fixtures) add('fixtures', 'fixtures', 'executed');
     else add('fixtures', 'fixtures', 'missing', `no fixtures recorded; run spotter record ${config.name}`);
   }
+  if (config.web.performance) {
+    const perf = web?.performance;
+    if (webDown) add('performance', 'performance', webItem.status, webItem.reason);
+    else if (perf && !perf.timingError) add('performance', 'performance', 'executed');
+    else add('performance', 'performance', required.includes('performance') ? 'missing' : 'skipped', perf?.timingError ? `timings failed: ${perf.timingError}` : 'not measured');
+  }
   return items;
 }
 
@@ -137,6 +144,8 @@ export function assessCompleteness({ config, skip, stages, fixtures, baseline, l
   if (data && !data.data && data.empty + data.clientErrors) {
     notes.push(`fixtures hold no data; pages show empty states only (${data.empty} empty, ${data.clientErrors} 4xx responses). ${data.seeded ? 'Check the recording backend\'s seed step' : data.seeded === false ? 'Seed the recording backend (or set web.api.backend.seeded when it seeds itself)' : 'Record from an API with data'} and run spotter record ${config.name}`);
   }
+  const performance = items.find((item) => item.name === 'performance' && item.kind === 'performance');
+  if (performance?.status === 'skipped' && !performance.required && !liveAuth && !skip.has('web')) notes.push(`performance: ${performance.reason}`);
   return { status: gaps.length ? 'incomplete' : 'complete', gaps, notes, items, counts, fixtures: describeFixtures(fixtures, now), baseline, level };
 }
 

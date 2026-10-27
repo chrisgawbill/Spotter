@@ -104,6 +104,28 @@ malformed responses to the sweep's fault visits. Those find crashes, blank
 pages and stuck loading, not whether the app recovers. See
 [browser checks](browser-checks.md).
 
+## Performance timings
+
+A spec times an interaction by wrapping its boundary in the `spotterTiming`
+fixture. The duration covers exactly the callback:
+
+```js
+test('Performance Verify: opening details is quick @perf', async ({ page, spotterTiming }) => {
+  await page.goto('./');
+  await spotterTiming('open details', async () => {
+    await page.getByRole('button', { name: 'Open details' }).click();
+    await expect(page.getByRole('region', { name: 'Details' })).toBeVisible();
+  });
+});
+```
+
+At `--level high`, specs matching `web.performance.timings.interactions.grep`
+run again with one worker, repeated `samples` times, and each call becomes the
+`interaction.<name>` metric. In normal runs the fixture just runs the callback.
+Failures in the timed run add no findings (the normal run reports them). See
+[performance budgets](browser-checks.md#performance-budgets) and
+`examples/performance`.
+
 ## API contracts
 
 Every successful `record` writes `fixtures/contracts.json` and

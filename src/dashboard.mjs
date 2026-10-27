@@ -35,6 +35,14 @@ export function httpsOrigin(value) {
   return url;
 }
 
+/** Parses Paddock's dashboard address (an http or https origin); '' or null gives null. */
+export function paddockOrigin(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const url = URL.canParse(value) ? new URL(value) : null;
+  if (!url || !['http:', 'https:'].includes(url.protocol) || url.origin !== String(value).replace(/\/$/, '')) throw new Error('The Paddock address must look like https://<machine>.<tailnet>.ts.net:8445 or http://<tailscale-ip>:8090.');
+  return url.origin;
+}
+
 export async function branches(config) {
   const { stdout } = await exec('git', ['-C', config.repo, 'for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes']);
   return stdout.trim().split('\n').filter((name) => name && !name.endsWith('/HEAD')).map((name) => name.replace(/^refs\/(heads|remotes)\//, ''));
@@ -62,7 +70,7 @@ async function readRun(home, project, id) {
     current: status === 'running' ? [...current.values()] : [], events,
     report: report ? `/artifacts/${encodeURIComponent(project)}/${encodeURIComponent(id)}/report.html` : null,
     coverage: report?.completeness ? summarizeCompleteness(report.completeness) : null, gaps: report?.completeness?.gaps ?? [], notes: report?.completeness?.notes ?? [],
-    plan: activity?.plan ?? report?.plan ?? null,
+    plan: activity?.plan ?? report?.plan ?? null, handoff: activity?.handoff === true,
     checks: report?.head.stages };
 }
 
@@ -111,6 +119,8 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
   // the dashboard as an app. The environment variable beats the address saved from the Settings page.
   const envOrigin = httpsOrigin(env.SPOTTER_DASHBOARD_ORIGIN);
   let savedOrigin = jsonFile(path.join(home, APP_SETTINGS_FILE)).then((saved) => httpsOrigin(saved?.httpsOrigin)).catch(() => null);
+  // Paddock's dashboard, for Open in Paddock links on runs of a committed branch; unset means no link.
+  let savedPaddock = jsonFile(path.join(home, APP_SETTINGS_FILE)).then((saved) => paddockOrigin(saved?.paddockOrigin)).catch(() => null);
   let starting = false;
   let editing = false;
   const children = new Set();
@@ -273,22 +283,26 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
           return send(202, { project, id });
         } finally { starting = false; }
       }
-      if (url.pathname === '/api/app' && req.method === 'GET') return send(200, { httpsOrigin: https?.origin ?? null, locked: !!envOrigin });
+      if (url.pathname === '/api/app' && req.method === 'GET') return send(200, { httpsOrigin: https?.origin ?? null, locked: !!envOrigin, paddockOrigin: await savedPaddock });
       if (url.pathname === '/api/app' && req.method === 'PUT') {
         if (!sameOriginJson()) return send(403, { error: 'Same-origin JSON required' });
-        if (envOrigin) return send(409, { error: 'The HTTPS address is set by SPOTTER_DASHBOARD_ORIGIN on the server.' });
         let body = '';
         for await (const chunk of req) {
           body += chunk;
           if (Buffer.byteLength(body) > 4096) return send(413, { error: 'Request too large' });
         }
-        const next = httpsOrigin(JSON.parse(body).httpsOrigin);
+        // Each address is saved on its own; a field left out keeps its saved value.
+        const input = JSON.parse(body);
+        if ('httpsOrigin' in input && envOrigin) return send(409, { error: 'The HTTPS address is set by SPOTTER_DASHBOARD_ORIGIN on the server.' });
+        const next = 'httpsOrigin' in input ? httpsOrigin(input.httpsOrigin) : await savedOrigin;
+        const nextPaddock = 'paddockOrigin' in input ? paddockOrigin(input.paddockOrigin) : await savedPaddock;
         const file = path.join(home, APP_SETTINGS_FILE);
         await mkdir(home, { recursive: true });
-        await writeFile(`${file}.tmp`, `${JSON.stringify({ httpsOrigin: next?.origin ?? null }, null, 2)}\n`);
+        await writeFile(`${file}.tmp`, `${JSON.stringify({ httpsOrigin: next?.origin ?? null, paddockOrigin: nextPaddock }, null, 2)}\n`);
         await rename(`${file}.tmp`, file);
         savedOrigin = Promise.resolve(next);
-        return send(200, { httpsOrigin: next?.origin ?? null, locked: false });
+        savedPaddock = Promise.resolve(nextPaddock);
+        return send(200, { httpsOrigin: (envOrigin ?? next)?.origin ?? null, locked: !!envOrigin, paddockOrigin: nextPaddock });
       }
       if (url.pathname === '/api/storage' && req.method === 'GET') {
         const settings = retentionSettings(env, {}, await loadSavedRetention(home));
@@ -352,7 +366,9 @@ export function createDashboardServer({ home = spotterHome, projectNames = listP
         const [, project, id] = activity.map(decodeURIComponent);
         if (!safeName(project) || !runName(id) || !(await projectNames()).includes(project)) return send(404, { error: 'Run not found' });
         const run = await readRun(home, project, id);
-        return send(run ? 200 : 404, run ?? { error: 'Run not found' });
+        if (!run) return send(404, { error: 'Run not found' });
+        const paddock = await savedPaddock;
+        return send(200, { ...run, paddock: run.handoff && paddock ? `${paddock}/#start/${encodeURIComponent(project)}/${encodeURIComponent(run.branch)}` : null });
       }
       if (url.pathname.startsWith('/artifacts/')) {
         const [, , project, id, ...parts] = url.pathname.split('/').map(decodeURIComponent);

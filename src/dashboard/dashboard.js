@@ -178,6 +178,8 @@ async function refresh() {
       html('identity', labelled('Run', `${chips([run.project, run.branch], ' / ')}<span class="ds-visually-hidden"> · </span>${chips([run.id])}`));
       html('run-plan', run.plan ? labelled('Plan', chips(run.plan.split(' · '))) : '');
       $('run-plan').hidden = !run.plan;
+      $('open-paddock').hidden = !run.paddock;
+      $('open-paddock').href = run.paddock ?? '';
       html('status', badge(run.status));
       html('updated', labelled('Updated', chips([`Runner ${time(run.updatedAt)}`, `Checked ${new Date().toLocaleTimeString()}`])));
       html('current', run.current.map((e) => `<li><span class="side">${escape(e.side)}</span> ${escape(e.activity)}</li>`).join('') || (run.status === 'running' ? '' : '<li>Run finished</li>'));
@@ -423,8 +425,10 @@ async function loadStorage() {
 }
 // The HTTPS address the dashboard also answers on; the server may fix it with SPOTTER_DASHBOARD_ORIGIN.
 let appDirty = false;
-function showApp({ httpsOrigin, locked }) {
+let paddockDirty = false;
+function showApp({ httpsOrigin, locked, paddockOrigin }) {
   if (!appDirty) $('https-origin').value = httpsOrigin ?? '';
+  if (!paddockDirty) $('paddock-origin').value = paddockOrigin ?? '';
   $('https-origin').disabled = locked;
   $('save-app').disabled = locked;
   $('https-origin-help').textContent = locked ? 'Set by SPOTTER_DASHBOARD_ORIGIN on the server.' : 'Leave empty to turn it off. Run controls also accept this exact address.';
@@ -444,6 +448,18 @@ $('app-form').addEventListener('submit', async (event) => {
     showApp(result);
     $('app-message').textContent = result.httpsOrigin ? 'Address saved. Open it to install the app.' : 'HTTPS address removed.';
   } catch (error) { $('app-message').textContent = error.message; $('save-app').disabled = false; }
+});
+$('paddock-form').addEventListener('input', () => { paddockDirty = true; $('paddock-message').textContent = ''; });
+$('paddock-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  $('save-paddock').disabled = true;
+  try {
+    const result = await configRequest('/api/app', 'PUT', { paddockOrigin: $('paddock-origin').value.trim().replace(/\/$/, '') });
+    paddockDirty = false;
+    showApp(result);
+    $('paddock-message').textContent = result.paddockOrigin ? 'Address saved. Runs of a committed branch now link to Paddock.' : 'Paddock link turned off.';
+  } catch (error) { $('paddock-message').textContent = error.message; }
+  finally { $('save-paddock').disabled = false; }
 });
 $('refresh-storage').addEventListener('click', loadStorage);
 $('retention-form').addEventListener('input', () => { retentionDirty = true; updateCleanup(); });

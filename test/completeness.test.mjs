@@ -207,3 +207,22 @@ test('expected pages count browsers and devices', () => {
   config.web.devices = ['iPhone 13'];
   assert.equal(assess({ config }).counts.pages.expected, 2 * 12 + 6);
 });
+
+test('performance is requirable and reported as executed, a gap, or a note', () => {
+  const perfConfig = (required = []) => base({ coverage: { required, minSpecs: null }, web: { ...base().web, performance: { budgets: [] } } });
+  assert.ok(requirableNames(perfConfig()).includes('performance'));
+  assert.ok(!requirableNames(base()).includes('performance'));
+  const measured = assess({ config: perfConfig(), stages: stages(web({ performance: { resources: {}, timingError: null } })) });
+  assert.equal(item(measured, 'performance').status, 'executed');
+  const missing = assess({ config: perfConfig(['performance']), stages: stages(web({ performance: { resources: {}, timingError: 'boom' } })) });
+  assert.equal(item(missing, 'performance').status, 'missing');
+  assert.equal(missing.status, 'incomplete');
+  assert.deepEqual(missing.gaps, ['performance: timings failed: boom']);
+  const optional = assess({ config: perfConfig() });
+  assert.equal(item(optional, 'performance').status, 'skipped');
+  assert.equal(optional.status, 'complete');
+  assert.deepEqual(optional.notes, ['performance: not measured']);
+  assert.equal(item(assess(), 'performance'), undefined);
+  const excluded = assess({ config: perfConfig(), level: { name: 'low', exclusions: [{ name: 'performance', kind: 'performance', reason: 'excluded at level low' }] } });
+  assert.equal(item(excluded, 'performance').status, 'excluded');
+});

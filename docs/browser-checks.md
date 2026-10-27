@@ -93,6 +93,52 @@ Screenshots include session and fault identity. Review visual changes in `report
 still require human review.
 
 
+## Performance budgets
+
+Opt in with `web.performance`; without it nothing is measured. Findings come only
+from budgets and are advisory (`low`) unless a budget sets `blocking: true`
+(`medium`, fails the run).
+
+```yaml
+web:
+  performance:
+    budgets:
+      - { metric: build.js, maxIncrease: '10%' }
+      - { metric: 'route.*.requests', maxIncrease: 0, blocking: true }
+      - { metric: 'route.*.apiRequests', max: 4 }
+      - { metric: timing.home.load, maxIncrease: '50%' }
+      - { metric: interaction.open details, max: 300 }
+    timings: { samples: 5, routes: [home], interactions: { grep: '@perf' } }
+```
+
+| Metric | Measured |
+| --- | --- |
+| `build.js`, `build.css`, `build.images`, `build.fonts`, `build.other`, `build.total` | Bytes of `web.build.outDir` (gzip size for text files, raw for the rest; source maps excluded) |
+| `route.<name>.requests`, `.apiRequests`, `.bytes`, `.imageBytes` | One healthy visit per route: first browser, viewport and colour scheme, anonymous session. Bytes are same-origin, non-API response bodies as served |
+| `timing.<route>.load` | Navigation start to the end of the `load` event, in fresh contexts one at a time |
+| `interaction.<name>` | A project spec's `spotterTiming(name, fn)` boundary; see [project specs](project-specs.md#performance-timings) |
+
+`route.*` and `timing.*` apply a budget to every route. `max` is an absolute limit
+and goes through the usual baseline split (a breach already on the base is
+existing, not new). `maxIncrease` (`'10%'`, or an amount in the metric's unit)
+compares the branch with its merge base.
+
+Timings run only at `--level high`; medium and low leave them out (low leaves out
+performance entirely). Each timing is the median of `samples` (3 to 20, default
+5). A relative timing regression needs the median over budget **and** the
+branch's fastest sample slower than the base's slowest. The branch and base take
+turns sampling after both sweeps finish. Timings from a cached base, or from a
+different browser, CPU count or sample count, are never compared; reports say
+"not comparable". Timings use replayed API responses: they measure the front end,
+not backend performance. Page-load samples run without the frozen clock (Chromium
+reports no navigation timing under it); if a sample then requests data missing
+from the fixtures, the timing is dropped and reported.
+
+`report.md` lists budget findings and one `performance:` line; `report.html` has
+a head/base table with the environment; `report.json` holds every measurement.
+Add `performance` to `coverage.required` to make a run incomplete when
+measurement fails. Example: `examples/performance`.
+
 ## Browsers and devices
 
 Every web project gets the browser matrix at `--level high` with no

@@ -61,10 +61,11 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `web.specs` | See [spec options](docs/project-specs.md); optional `{ files: ['qa/ticket.spec.mjs'], grep: 'Verify' }`; project-owned Playwright tests run against the same build and recorded fixtures |
 | `web.settleMs`, `web.pageTimeoutMs`, `web.concurrency` | Healthy-page settling delay, navigation timeout and parallel visits |
 | `web.accessibility`, `web.keyboard` | Enable axe and advisory Tab/focus checks (both default true) |
+| `web.performance` | Opt-in budgets on build bytes, per-route requests and bytes, and (at level high) page-load and spec interaction timings; advisory unless `blocking: true`. See [performance budgets](docs/browser-checks.md#performance-budgets) |
 | `web.faultInjection` | `{ delayMs, timeoutMs, loadingSelector }`, or false to skip endpoint fault visits. Optional `concurrency`, routine `routes`, and `terminalSelector` with `minObservationMs`; see [fault budgets](docs/browser-checks.md) |
 | `web.colorSchemeStorage` | localStorage entries to seed per scheme, for apps with their own theme switch |
 | `web.errorText`, `web.ignoreConsole`, `web.ignoreRequests` | Visible text that means failure; regexes to ignore |
-| `coverage.required` | Item names that must run: check names, `rules`, `web`, `specs`, `fixtures`, or a session name with `expectSelector`. Skipping one (for example with `--skip`) makes the run incomplete |
+| `coverage.required` | Item names that must run: check names, `rules`, `web`, `specs`, `fixtures`, `performance`, or a session name with `expectSelector`. Skipping one (for example with `--skip`) makes the run incomplete |
 | `coverage.minSpecs` | Minimum number of executed (not skipped) project spec tests; requires `web.specs` |
 | `levels` | Optional `default` (`low`, `medium`, `high`), and `low: { routes, specs: { grep } }`. See [Testing levels](#testing-levels) |
 
@@ -81,6 +82,11 @@ run `runs/latest` points to are always kept.
 The dashboard's Settings page shows disk use and changes the same settings; they
 are saved to `retention.json` in the Spotter data folder. Precedence: command
 flags, then environment variables, then saved settings, then the defaults.
+
+Settings also takes the address of a Paddock dashboard. Runs of a committed
+branch in the configured repository (not `--working-tree`, `--repo` or
+`--live-auth`) then show **Open in Paddock**, which opens that branch's preview
+or Paddock's start form with it filled in. Project names must match Paddock's.
 
 `spotter prune [<project>] [--dry-run] [--keep-runs <n>] [--keep-baselines <n>]`
 runs the same cleanup on demand for one project or all of them. The flags
@@ -120,7 +126,7 @@ behaves exactly as before and `completeness.level` is `null`.
 | --- | --- |
 | `low` | Only `coverage.required` checks (the rules stage only when `rules` is required), no config inference, the `levels.low.routes` smoke set at the first viewport and colour scheme for every session in the first browser (no devices), no fault visits; specs only when required or narrowed by `levels.low.specs.grep` (which also drops `coverage.minSpecs`) |
 | `medium` | The full configured run |
-| `high` | Medium plus Chromium, Firefox, WebKit and emulated iPhone 13 and Pixel 7 for every web project, with no configuration, and every [fault kind](docs/browser-checks.md) (disconnects, 401, 403, 429, malformed) when fault visits are on. Data and performance scenarios are listed as unsupported until QA-13 and QA-15 add them. Recovery scenarios are [project specs](docs/project-specs.md#recovery-scenarios), run at medium and high |
+| `high` | Medium plus Chromium, Firefox, WebKit and emulated iPhone 13 and Pixel 7 for every web project, with no configuration, and every [fault kind](docs/browser-checks.md) (disconnects, 401, 403, 429, malformed) when fault visits are on. Configured performance timings run only at high. Data scenarios are listed as unsupported until QA-13 adds them. Recovery scenarios are [project specs](docs/project-specs.md#recovery-scenarios), run at medium and high |
 
 ```yaml
 levels:
@@ -178,7 +184,7 @@ are provided; services are not installed automatically.
 
 | Task | Guide |
 | --- | --- |
-| Configure accessibility, keyboard, sessions and endpoint faults | [Browser checks](docs/browser-checks.md) |
+| Configure accessibility, keyboard, sessions, endpoint faults and performance budgets | [Browser checks](docs/browser-checks.md) |
 | Run project-owned acceptance tests and interaction journeys; inspect API shape drift | [Project specs and API contracts](docs/project-specs.md) |
 | Test sign-in, saved sessions or live authentication | [Authentication](docs/authentication.md) |
 | Start runs, edit configurations or generate a draft from a folder | [Dashboard](docs/dashboard.md) |

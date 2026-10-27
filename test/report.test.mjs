@@ -179,3 +179,29 @@ test('HTML report shows the result banner, findings table, evidence and links', 
   assert.doesNotMatch(render({}), /<h3>/);
   assert.match(html, /<details class="plain"><summary>Plain-text report/);
 });
+
+test('performance appears in the summary and HTML only when measured', async () => {
+  const { renderHtmlReport } = await import('../src/htmlReport.mjs');
+  const run = (performance) => ({
+    project: 'demo', head: { label: 'x', sha: 'a', shortSha: 'a', stages: {} }, base: null, fixtures: null,
+    comparison: { newFindings: [], existingFindings: [], fixedFindings: [] }, durationMs: 1,
+    paths: { reportJson: 'j', screenshots: 's', logs: 'l' }, ...(performance ? { performance } : {}),
+  });
+  const plain = renderMarkdownReport(run());
+  assert.doesNotMatch(plain, /performance/);
+  assert.doesNotMatch(renderHtmlReport(run(), plain), /Performance/);
+  const budgets = [{ metric: 'build.js', max: 100, maxIncrease: { percent: 10 }, blocking: true }, { metric: 'timing.*.load', max: null, maxIncrease: { amount: 50 }, blocking: false }];
+  const resources = { 'build.js': 2500 };
+  const environment = { browser: 'chromium', cpus: 4, api: 'replayed', samples: 5 };
+  const timing = { median: 100, min: 90, max: 110, samples: [90, 100, 110] };
+  const withTimings = run({ budgets, head: { resources, timings: { 'timing.home.load': timing }, environment }, base: { resources: { 'build.js': 2000 }, timings: { 'timing.home.load': timing }, environment }, notCompared: [] });
+  const markdown = renderMarkdownReport(withTimings);
+  assert.equal(markdown.split('\n').filter((line) => line.startsWith('- performance:')).length, 1);
+  const html = renderHtmlReport(withTimings, markdown);
+  assert.match(html, /<h2>Performance<\/h2>/);
+  assert.match(html, /<td>build\.js<\/td><td>2\.0 kB<\/td><td>2\.5 kB<\/td><td>\+500 B<\/td><td>max 100 B \+10% blocking<\/td>/);
+  assert.match(html, /timing\.home\.load<\/td><td>100\.0 ms \(90\.0–110\.0\)/);
+  assert.match(html, /measure the front end, not backend performance/);
+  const resourcesOnly = run({ budgets, head: { resources, timings: null, environment: null }, base: null, notCompared: [] });
+  assert.doesNotMatch(renderHtmlReport(resourcesOnly, markdown), /measure the front end/);
+});

@@ -37,7 +37,7 @@ test('visual comparison handles unchanged, changed, resized, added and removed p
     ]);
     assert.equal(visual.changes.find((c) => c.name === 'changed.png').changedPixels, 400);
     assert.equal(visual.changes.find((c) => c.name === 'resize.png').changedPixels, 100);
-    const html = renderHtmlReport({ project: '<script>x</script>', comparison: { newFindings: [] }, visual }, '<script>bad</script>');
+    const html = renderHtmlReport({ project: '<script>x</script>', head: { label: 'head', shortSha: 'abc1234', stages: {} }, comparison: { newFindings: [], existingFindings: [], fixedFindings: [] }, durationMs: 1000, paths: {}, visual }, '<script>bad</script>');
     assert.ok(!html.includes('<script>'));
     for (const change of visual.changes) for (const file of [change.before, change.after, change.diff].filter(Boolean)) {
       assert.ok((await readFile(path.join(run, file))).length);

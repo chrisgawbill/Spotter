@@ -14,7 +14,6 @@ export const DEFAULT_FAULT_KINDS = ['500', 'delay'];
 /** Wider coverage high would add that is not implemented yet. Listed, never enabled. */
 export const UNSUPPORTED_AT_HIGH = [
   { name: 'data edge cases', ticket: 'QA-13', reason: 'not implemented' },
-  { name: 'performance budgets', ticket: 'QA-15', reason: 'not implemented' },
 ];
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -73,6 +72,10 @@ export function resolvePlan(config, selected) {
       effective.web.faultInjection = { ...fault, kinds: FAULT_KINDS };
     }
   }
+  if (name !== 'high' && name !== 'low' && effective.web?.performance?.timings) {
+    effective = { ...effective, web: { ...effective.web, performance: { ...effective.web.performance, timings: null } } };
+    if (name === 'medium') exclusions.push({ name: 'performance timings', kind: 'performance', reason: 'timings run at level high' });
+  }
   const record = name && { name, source, exclusions, unsupported: name === 'high' ? UNSUPPORTED_AT_HIGH : [] };
   const hash = createHash('sha1').update(JSON.stringify({ name, skip: [...skip].sort(), config: effective })).digest('hex').slice(0, 10);
   return { config: effective, skip, record, hash };
@@ -98,10 +101,11 @@ function narrowToLow(config, skip, exclusions) {
   const viewports = keep(web.viewports ?? [], 'viewport', (viewport) => String(viewport?.width ?? viewport));
   const colorSchemes = keep(web.colorSchemes ?? [], 'colorScheme', (scheme) => scheme);
   if (web.faultInjection) exclude('fault visits', 'faults');
+  if (web.performance) exclude('performance', 'performance');
   const { specs, ...rest } = web;
   web.browsers.slice(1).forEach((name) => exclude(name, 'browser'));
   web.devices.forEach((name) => exclude(name, 'device'));
-  const narrowedWeb = { ...rest, routes, viewports, colorSchemes, browsers: web.browsers.slice(0, 1), devices: [], faultInjection: null };
+  const narrowedWeb = { ...rest, routes, viewports, colorSchemes, browsers: web.browsers.slice(0, 1), devices: [], faultInjection: null, ...(web.performance ? { performance: null } : {}) };
   let specsChanged = false;
   if (low.specs) {
     narrowedWeb.specs = { ...specs, grep: low.specs.grep };
@@ -129,6 +133,7 @@ export function summarizePlan({ config, skip, record }) {
     if (web.faultInjection?.routes) parts.push(`fault routes: ${web.faultInjection.routes.join(', ')}`);
     if (!isDefaultMatrix(web)) parts.push(`matrix ${listTargets(web).map((t) => t.label).join(', ')}`);
     if (web.specs) parts.push(web.specs.grep ? `specs (grep ${web.specs.grep})` : 'specs');
+    if (web.performance) parts.push(`performance (${web.performance.budgets.length} budgets)${web.performance.timings ? ` + timings ×${web.performance.timings.samples}` : ''}`);
   }
   if (record?.exclusions.length) parts.push(`excluded: ${record.exclusions.map((item) => item.name).join(', ')}`);
   if (record?.unsupported.length) parts.push(`unsupported: ${record.unsupported.map((item) => `${item.name} (${item.ticket})`).join(', ')}`);

@@ -133,6 +133,10 @@ test('dashboard starts real runs, updates activity, and embeds reports with scre
     await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'save-app');
     await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'paddock-origin');
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'save-paddock');
+    await page.keyboard.press('Tab');
     assert.equal(await page.evaluate(() => document.activeElement.id), 'keep-runs');
     await page.locator('#keep-runs').fill('7');
     assert.equal(await page.locator('#cleanup-now').isDisabled(), true);

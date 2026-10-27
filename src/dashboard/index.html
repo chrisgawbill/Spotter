@@ -25,7 +25,7 @@
 <div id="record-help" class="record-help ds-stack" role="status" aria-labelledby="record-title" hidden><h3 id="record-title">Record API fixtures first</h3><p id="record-reason"></p><p>Recording starts the project's API, so it runs only in a terminal on the server; the dashboard cannot start it. In the Spotter folder, run:</p><pre id="record-command" class="record-command" tabindex="0" aria-label="Record command"></pre><div class="ds-cluster"><button id="copy-record" class="ds-button button-secondary" type="button">Copy command</button><span id="record-message"></span></div><p class="muted">Then start the run here.</p></div></section>
 <section id="detail" class="ds-stack" hidden aria-labelledby="detail-title">
 <div class="section-head"><h2 id="detail-title" tabindex="-1">Run activity</h2><span id="status" role="status"></span><a class="ds-button button-secondary" href="#">Close run</a></div>
-<div class="run-meta"><p id="identity"></p><p id="run-plan" class="muted" hidden></p><p id="updated" class="muted"></p><p id="coverage" class="muted" hidden></p></div>
+<div class="run-meta"><p id="identity"></p><p><a id="open-paddock" class="ds-button button-secondary" target="_blank" rel="noopener" hidden>Open in Paddock ↗</a></p><p id="run-plan" class="muted" hidden></p><p id="updated" class="muted"></p><p id="coverage" class="muted" hidden></p></div>
 <div class="run-layout">
 <section class="ds-card ds-aero-surface ds-stack checklist-card" aria-labelledby="checklist-title"><h3 id="checklist-title">Checklist</h3><ol id="checklist" class="checklist" tabindex="0" aria-labelledby="checklist-title"></ol></section>
 <div class="ds-stack">
@@ -79,6 +79,14 @@
 <p id="https-origin-help" class="muted"></p>
 <p id="app-message" role="status"></p>
 <div class="ds-cluster"><button id="save-app" type="submit" class="ds-button">Save address</button><a id="open-https" class="ds-button button-secondary" hidden>Open HTTPS address</a></div>
+</form></section>
+<section class="ds-card ds-aero-surface ds-stack" aria-labelledby="paddock-title"><h2 id="paddock-title">Paddock</h2>
+<p class="muted">Runs of a committed branch link to this Paddock dashboard, so you can try the branch by hand.</p>
+<form id="paddock-form" class="ds-stack">
+<label class="ds-field">Paddock address<input id="paddock-origin" class="ds-input" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://machine.tailnet.ts.net:8445" aria-describedby="paddock-help"></label>
+<p id="paddock-help" class="muted">Leave empty to hide the link.</p>
+<p id="paddock-message" role="status"></p>
+<div class="ds-cluster"><button id="save-paddock" type="submit" class="ds-button">Save address</button></div>
 </form></section>
 <section class="ds-card ds-aero-surface ds-stack"><h2 id="storage-title">Cleanup settings</h2>
 <form id="retention-form" class="ds-stack">

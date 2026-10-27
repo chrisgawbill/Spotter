@@ -11,9 +11,37 @@ const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
 /** Run the project's named Playwright tests against the already-built app. */
 export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrigin, projects = null }) {
+  const { findings, summary } = await runSpecs({ config, workdir, logDir, fixtures, appOrigin, projects });
+  return { findings, summary };
+}
+
+/** Re-runs timed specs; returns samples per interaction metric. */
+export async function runTimedSpecs({ config, workdir, logDir, fixtures, appOrigin, project, samples, grep }) {
+  try {
+    const { report } = await runSpecs({ config, workdir, logDir, fixtures, appOrigin, projects: project ? [project] : null }, { dirName: 'specs-timing', repeatEach: samples, workers: 1, grep });
+    const collected = {};
+    const walk = (suites) => {
+      for (const suite of suites ?? []) {
+        for (const spec of suite.specs ?? []) for (const test of spec.tests ?? []) for (const result of test.results ?? []) for (const attachment of result.attachments ?? []) {
+          if (attachment.name !== 'spotter-timing' || !attachment.body) continue;
+          const { name, ms } = JSON.parse(Buffer.from(attachment.body, 'base64').toString('utf8'));
+          (collected[`interaction.${name}`] ??= []).push(ms);
+        }
+        walk(suite.suites);
+      }
+    };
+    walk(report?.suites);
+    return Object.keys(collected).length ? { samples: collected, error: null } : { samples: {}, error: 'no spotterTiming samples' };
+  } catch (error) {
+    return { samples: {}, error: String(error.message).split('\n')[0] };
+  }
+}
+
+async function runSpecs({ config, workdir, logDir, fixtures, appOrigin, projects }, { dirName = 'specs', repeatEach, workers: workersOverride, grep: grepOverride } = {}) {
   const specs = config.web.specs;
   const live = specs.mode === 'live';
-  const workers = live ? 1 : (specs.workers ?? 1);
+  const workers = workersOverride ?? (live ? 1 : (specs.workers ?? 1));
+  const grep = grepOverride ?? specs.grep;
   const required = specs.live?.env ?? [];
   if (live) for (const name of required) {
     if (!process.env[name]?.trim()) throw new Error(`Live authentication requires environment variable ${name}`);
@@ -24,7 +52,7 @@ export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrig
     secrets.push(...state.cookies.map((cookie) => cookie.value), ...state.origins.flatMap((entry) => (entry.localStorage ?? []).map((item) => item.value)));
   }
   const redact = (value) => redactSecrets(value, secrets);
-  const dir = path.join(logDir, 'specs');
+  const dir = path.join(logDir, dirName);
   await mkdir(dir, { recursive: true });
   const privateDir = await mkdtemp(path.join(os.tmpdir(), 'spotter-spec-run-'));
   const reportFile = path.join(privateDir, 'results.json');
@@ -36,11 +64,11 @@ export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrig
     await writeFile(settingsFile, JSON.stringify({ web: config.web, fixtures, appOrigin }));
     const testMatch = (live ? specs.live.files : specs.files).map((file) => path.resolve(workdir, file).replaceAll('\\', '/'));
     await writeFile(configFile, `const config = ${JSON.stringify({
-      testDir: workdir, testMatch, workers, fullyParallel: workers > 1, retries: 0, forbidOnly: true,
+      testDir: workdir, testMatch, workers, fullyParallel: workers > 1, retries: 0, forbidOnly: true, ...(repeatEach ? { repeatEach } : {}),
       outputDir: path.join(privateDir, 'artifacts'), reporter: [['json', { outputFile: reportFile }]],
       use: { baseURL: live ? specs.live.baseURL : `${appOrigin}${config.web.base.replace(/\/?$/, '/')}`, trace: 'off', screenshot: 'off', video: 'off', serviceWorkers: 'block', reducedMotion: 'reduce' },
       ...(!live && projects?.length ? { projects } : {}),
-    })}; ${specs.grep ? `config.grep = new RegExp(${JSON.stringify(specs.grep)});` : ''} export default config;\n`);
+    })}; ${grep ? `config.grep = new RegExp(${JSON.stringify(grep)});` : ''} export default config;\n`);
     result = await runCommand(`${quote(process.execPath)} ${quote(path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'))} test --config ${quote(configFile)}`, {
       cwd: workdir, env: {
         ...Object.fromEntries(required.map((name) => [name, live ? process.env[name] : undefined])),
@@ -58,7 +86,7 @@ export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrig
   const runnerFailed = Boolean(result.exitCode) && !findings.length;
   if (runnerFailed) findings.push(createFinding({ stage: 'web', check: 'project-spec', severity: 'high', title: 'project specs could not complete', detail: report?.errors?.map((error) => error.message).join('\n') || lastLines(result.output, 10), key: { reason: 'runner' } }));
   for (const finding of findings) finding.detail = live ? 'Live authentication failed; inspect the named project spec. Raw output and browser artifacts are withheld.' : redact(finding.detail ?? '');
-  return { findings, summary: specSummary(report, runnerFailed, findings.length, live) };
+  return { findings, summary: specSummary(report, runnerFailed, findings.length, live), report };
 }
 
 /** Counts for the stage summary; `completed` means the runner produced a report and did not fail outright. */
