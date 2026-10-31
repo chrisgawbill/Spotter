@@ -205,3 +205,23 @@ test('performance appears in the summary and HTML only when measured', async () 
   const resourcesOnly = run({ budgets, head: { resources, timings: null, environment: null }, base: null, notCompared: [] });
   assert.doesNotMatch(renderHtmlReport(resourcesOnly, markdown), /measure the front end/);
 });
+
+test('the time line lists stages that took meaningful time and the baseline', async () => {
+  const { describeTimings } = await import('../src/report.mjs');
+  const timings = { static: { install: 30_000, typecheck: 2_000 }, rules: 100, config: 400, web: { build: 41_000, sweep: 362_000, faults: 550_000, specs: 63_000, performance: 0, matrix: { firefox: 120_000 } }, baseline: 'cached' };
+  assert.equal(describeTimings(timings), 'time: install 30s · build 41s · sweep 6m 2s · faults 9m 10s · firefox 2m 0s · specs 1m 3s · baseline cached');
+  assert.equal(describeTimings({ ...timings, baseline: 90_000 }).endsWith('baseline 1m 30s'), true);
+  assert.equal(describeTimings({ rules: 10, baseline: null }), null);
+  assert.equal(describeTimings(undefined), null);
+  const markdown = renderMarkdownReport({
+    project: 'demo',
+    head: { label: 'main', sha: 'abc1234', shortSha: 'abc1234', stages: { rules: 'skipped' } },
+    base: null,
+    fixtures: null,
+    comparison: { newFindings: [], existingFindings: [], fixedFindings: [] },
+    durationMs: 1_000,
+    timings,
+    paths: { reportJson: '/r/report.json', screenshots: '/r/shots', logs: '/r/logs' },
+  });
+  assert.match(markdown, /\n- time: install 30s · build 41s/);
+});

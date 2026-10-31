@@ -279,6 +279,29 @@ finding IDs to the accepted reports. Evidence:
   `/admin/ingest-runs/latest`, which now answers 204, and opening it as a page
   aborted recording.
 
+## QA-13
+
+**Data edge-case scenario evidence (2026-10-31, accepted by Product Owner 2026-10-31):**
+
+- `examples/data-scenarios` defines project-owned empty, long-text, missing
+  optional-field, large-list, Unicode, zero-value and unexpected-shape variants
+  with ordinary Playwright route overrides. Every scenario checks page/console
+  errors and horizontal layout, asserts its own rendering and attaches a
+  scenario-named screenshot.
+- `integration/data-scenarios.test.mjs`: 4/4 pass. All seven healthy variants
+  pass; empty-list crash, long-text overflow and missing-field crash seeds each
+  produce one distinct new stable finding; `@critical` selects 3 scenarios; the
+  original recording remains byte-for-byte equivalent in memory.
+- `npm test`: 195/195 pass. `git diff --check` passes.
+- HockeyStats main: PASS and COMPLETE, 78/78 pages, 106/106 specs, 325 fault
+  visits, only eight low advisories:
+  `~/spotter/hockeystats-webapp/runs/20261031-021501-main-9b4599f0/report.html`.
+- Existing seeded depth checkout: all six seeded groups are new, including the
+  blocking accessibility and cut-off-content defects. Exit 3 because this old
+  seed predates the configured specs (0/106), not because a page or baseline
+  failed:
+  `~/spotter/hockeystats-webapp/runs/20261031-022114-verify-browser-depth-defects-9c3dce5c/report.html`.
+
 ## QA-12
 
 **Browser and device matrix evidence (2026-10-23, accepted by Product Owner 2026-10-23):**

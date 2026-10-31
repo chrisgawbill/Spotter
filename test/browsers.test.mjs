@@ -21,6 +21,7 @@ test('only Chromium alone is the default matrix', () => {
 test('devices visit once per route, scheme and session', () => {
   assert.equal(countPageVisits(web(['chromium'])), 12);
   assert.equal(countPageVisits(web(['chromium', 'firefox'], ['Pixel 7'])), 30);
+  assert.equal(countPageVisits({ ...web(['chromium', 'firefox'], ['Pixel 7']), sampleSecondary: true }), 24);
 });
 
 test('matrix lists are validated', () => {

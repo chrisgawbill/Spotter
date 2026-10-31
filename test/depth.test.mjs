@@ -38,3 +38,23 @@ test('fault replay changes only the selected recorded endpoint and preserves mis
   assert.deepEqual(observed, ['GET /one', 'GET /two']);
   assert.deepEqual(missing, ['GET /missing']);
 });
+
+test('fixture refresh records a missing GET but never sends a missing write', async () => {
+  let handler;
+  const context = { route: async (_, fn) => { handler = fn; } };
+  const entries = {};
+  const missing = [];
+  await replayFixtures(context, {
+    fakeOrigin: 'http://api.test', appOrigin: 'http://app.test', fixtures: { entries }, onUnrecorded: (key) => missing.push(key),
+    recordMissing: { liveOrigin: 'http://live.test', entries },
+  });
+  const request = (method) => ({
+    request: () => ({ method: () => method, url: () => 'http://api.test/new', headers: () => ({}) }),
+    fetch: async ({ url }) => ({ status: () => 200, headers: () => ({ 'content-type': 'application/json' }), body: async () => Buffer.from(JSON.stringify({ url })) }),
+    fulfill: async (response) => response,
+  });
+  assert.equal((await handler(request('GET'))).status, 200);
+  assert.equal(JSON.parse(entries['GET /new'].body).url, 'http://live.test/new');
+  assert.equal((await handler(request('POST'))).status, 404);
+  assert.deepEqual(missing, ['POST /new']);
+});

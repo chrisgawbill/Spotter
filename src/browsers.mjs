@@ -23,6 +23,9 @@ export function isDefaultMatrix(web) {
 /** Configured page visits: browsers × routes × viewports × schemes × sessions, plus devices at their own viewport. */
 export function countPageVisits(web) {
   const perViewport = web.routes.length * web.colorSchemes.length * web.sessions.length;
+  if (web.sampleSecondary) {
+    return web.viewports.length * perViewport + (web.browsers.length + web.devices.length - 1) * web.routes.length * web.sessions.length;
+  }
   return web.browsers.length * web.viewports.length * perViewport + web.devices.length * perViewport;
 }
 

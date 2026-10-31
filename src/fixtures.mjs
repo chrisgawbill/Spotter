@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { SEEDS } from './backend-discovery.mjs';
 import { redactSecrets } from './sessions.mjs';
@@ -63,6 +63,11 @@ export async function loadFixtures(fixturesDir) {
   return { ...JSON.parse(raw), hash: createHash('sha1').update(raw).digest('hex').slice(0, 10) };
 }
 
+/** A committed tree can reuse fixtures recorded from that exact commit. */
+export function fixturesAreCurrent(fixtures, sha, workingTree = false) {
+  return !workingTree && fixtures?.sha === sha;
+}
+
 /**
  * What recorded responses hold: JSON bodies with data, empty JSON arrays/objects and 4xx statuses, and
  * whether the recording backend seeds data (`seeded`, or a seed/reset script in its run command; null without a backend).
@@ -88,7 +93,9 @@ export function summarizeFixtureData(fixtures, backend = null) {
 /** Writes recorded fixtures: { recordedAt, source, entries: { [requestKey]: response } }. */
 export async function saveFixtures(fixturesDir, fixtures) {
   await mkdir(fixturesDir, { recursive: true });
-  await writeFile(path.join(fixturesDir, FIXTURE_FILE), JSON.stringify(fixtures));
+  const file = path.join(fixturesDir, FIXTURE_FILE);
+  await writeFile(`${file}.tmp`, JSON.stringify(fixtures));
+  await rename(`${file}.tmp`, file);
 }
 
 /**
@@ -96,13 +103,22 @@ export async function saveFixtures(fixturesDir, fixtures) {
  * were never recorded get a fast 404 (so client retries don't stall the page)
  * and are passed to `onUnrecorded`.
  */
-export async function replayFixtures(context, { fakeOrigin, apiPaths = [], appOrigin, fixtures, onUnrecorded, onRequest = () => {}, fault }) {
+export async function replayFixtures(context, { fakeOrigin, apiPaths = [], appOrigin, fixtures, onUnrecorded, onRequest = () => {}, fault, recordMissing = null }) {
   await context.route(apiRequestMatcher({ fakeOrigin, apiPaths, appOrigin }), async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: corsHeaders(request, appOrigin) });
     const key = requestKey(request.method(), request.url());
     const recorded = fixtures?.entries?.[key];
     if (!recorded) {
+      if (request.method() === 'GET' && recordMissing) {
+        const live = await fetchFixture(route, { ...recordMissing, appOrigin });
+        if (live.entry && live.entry.status < 400) {
+          recordMissing.entries[key] ??= live.entry.encoding === 'utf8' ? redactSecrets(live.entry, recordMissing.secrets ?? []) : live.entry;
+          await recordMissing.onRecorded?.();
+          onRequest(key);
+          return route.fulfill(live.fulfill);
+        }
+      }
       onUnrecorded(key);
       return route.fulfill({
         status: 404,
@@ -141,35 +157,33 @@ export async function replayFixtures(context, { fakeOrigin, apiPaths = [], appOr
  * response in `entries` (first response per request key wins).
  */
 export async function recordFixtures(context, { fakeOrigin, apiPaths = [], liveOrigin, appOrigin, entries, headers = {}, secrets = [] }) {
-  const liveBase = liveOrigin.replace(/\/+$/, '');
   await context.route(apiRequestMatcher({ fakeOrigin, apiPaths, appOrigin }), async (route) => {
     const request = route.request();
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: corsHeaders(request, appOrigin) });
-    const url = new URL(request.url());
-    const liveUrl = liveBase + url.pathname + url.search;
-    let response;
-    try {
-      response = await route.fetch({ url: liveUrl, timeout: 90_000, ...(Object.keys(headers).length ? { headers: { ...request.headers(), ...headers } } : {}) });
-    } catch (error) {
-      return route.fulfill({ status: 502, headers: corsHeaders(request, appOrigin), body: String(error.message) });
-    }
-    const contentType = response.headers()['content-type'] ?? 'application/octet-stream';
-    const body = await response.body();
-    const isText = TEXT_CONTENT_TYPE.test(contentType);
+    const live = await fetchFixture(route, { liveOrigin, appOrigin, headers });
     const key = requestKey(request.method(), request.url());
-    const entry = {
-      status: response.status(),
-      contentType,
-      encoding: isText ? 'utf8' : 'base64',
-      body: isText ? body.toString('utf8') : body.toString('base64'),
-    };
-    entries[key] ??= isText ? redactSecrets(entry, secrets) : entry;
-    return route.fulfill({
-      status: response.status(),
-      headers: { ...corsHeaders(request, appOrigin), 'content-type': contentType },
-      body,
-    });
+    if (live.entry) entries[key] ??= live.entry.encoding === 'utf8' ? redactSecrets(live.entry, secrets) : live.entry;
+    return route.fulfill(live.fulfill);
   });
+}
+
+async function fetchFixture(route, { liveOrigin, appOrigin, headers = {} }) {
+  const request = route.request();
+  const url = new URL(request.url());
+  const liveUrl = liveOrigin.replace(/\/+$/, '') + url.pathname + url.search;
+  let response;
+  try {
+    response = await route.fetch({ url: liveUrl, timeout: 90_000, ...(Object.keys(headers).length ? { headers: { ...request.headers(), ...headers } } : {}) });
+  } catch (error) {
+    return { entry: null, fulfill: { status: 502, headers: corsHeaders(request, appOrigin), body: String(error.message) } };
+  }
+  const contentType = response.headers()['content-type'] ?? 'application/octet-stream';
+  const body = await response.body();
+  const isText = TEXT_CONTENT_TYPE.test(contentType);
+  return {
+    entry: { status: response.status(), contentType, encoding: isText ? 'utf8' : 'base64', body: isText ? body.toString('utf8') : body.toString('base64') },
+    fulfill: { status: response.status(), headers: { ...corsHeaders(request, appOrigin), 'content-type': contentType }, body },
+  };
 }
 
 function corsHeaders(request, appOrigin) {

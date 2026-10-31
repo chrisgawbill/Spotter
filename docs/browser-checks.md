@@ -62,15 +62,15 @@ For faster routine sweeps, configure fault visits independently of healthy visit
 web:
   faultInjection:
     concurrency: 32           # default: web.concurrency, per head/base side
-    routes: [home, team]       # configured route names; high always uses all routes
+    routes: [home, team]       # configured route names at medium and high
     terminalSelector: '[data-fault-finished]' # optional, app-owned terminal state
     minObservationMs: 8000     # required with terminalSelector; cover all retries
     timeoutMs: 20000           # maximum observation time after navigation
 ```
 
 Without these options, existing behavior is unchanged. Route selection applies to
-medium and runs without a level; it leaves healthy visits and specs unchanged.
-High ignores the route selection and still runs every endpoint/fault combination.
+medium, high and runs without a level; it leaves healthy visits and specs unchanged.
+High still runs every fault kind for each endpoint reached by the selected routes.
 The plan lists selected fault routes. A fault concurrency override shares the same
 pool across kinds and endpoints, separately from healthy visits and spec workers;
 an uncached baseline can double the configured number. Tune it for host capacity.
@@ -153,22 +153,28 @@ web:
   devices: ['iPad Mini']            # Playwright device names; default none
 ```
 
-Each browser visits every route × viewport × scheme × session. Each device
-visits every route × scheme × session once, at its own viewport, user agent,
-pixel ratio and touch settings, in the engine its Playwright descriptor names
-(iPhone and iPad devices run in WebKit, Pixel and Galaxy devices in Chromium).
+Routine configured matrices visit every route × viewport × scheme × session.
+At level high, the primary browser keeps that full matrix while each added
+browser and device visits every route and session once, rotating deterministically
+through the configured viewports and schemes. Devices use their own viewport,
+user agent, pixel ratio and touch settings (iPhone and iPad devices run in
+WebKit, Pixel and Galaxy devices in Chromium).
 The first browser is the primary case: only it runs fault visits, axe and
 keyboard checks, and `spotter record` visits only it, because fixtures do not
 depend on the browser. Low runs only the first browser. All visits share
-`web.concurrency`; a high run takes roughly twice as long as medium.
+`web.concurrency`; high adds one sampled visit per route and session for each
+secondary target.
 
 Findings, screenshots and `where` text name the browser or device for every
 case except Chromium, so existing configurations keep their names and baselines.
 The branch and its merge base run the same matrix, and each case is compared
-only with the same case. With more than one case, project specs run once per
-case as Playwright projects named after it (`webkit`, `iphone-13`); specs
-selected and `coverage.minSpecs` count every case. Live-authentication specs
-run in Chromium only. Reports list visits per case on the `web:` line.
+only with the same case. With more than one case, project specs run as
+Playwright projects named after it (`webkit`, `iphone-13`). At high,
+`web.specs.matrixGrep` can select a compact cross-browser/device subset while
+the primary browser still runs the full suite; without it every spec still runs
+in every case. Selected specs and `coverage.minSpecs` count every case.
+Live-authentication specs run in Chromium only. Reports list visits per case on
+the `web:` line.
 
 Device emulation is not a real phone: WebKit is not Safari, and Chromium with a
 mobile user agent is not Chrome for Android. Emulation does not cover

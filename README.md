@@ -23,6 +23,8 @@ itself on first use). Results go to `~/spotter/<project>/runs/<run>/`
 
 Prerequisites: Git, Bash and Docker. The dashboard also requires Tailscale.
 Before the first run, create a project config and record fixtures if it uses an API.
+After that, a run automatically re-records them when the tested commit changes; an
+exact-match recording is reused.
 
 ## What a run does
 
@@ -30,7 +32,7 @@ Before the first run, create a project config and record fixtures if it uses an 
 2. **Static:** install, then each configured check. Parsers turn `tsc`, Vitest JSON and Prettier output into findings with file and line; anything else reports exit code and log tail.
 3. **Rules:** forbidden text in commit messages, added lines or files (e.g. "no AI mentions", "no `../../` imports"), and import boundaries between slices with an allowlist.
 4. **Config:** runs setup's read-only inference on the exported tree (no installs, no project code) and reports, as low findings with suggested YAML, inferred `web.colorSchemeStorage`, routes, `web.api.paths` and project spec files (importing `SPOTTER_TEST_MODULE`, not live) and fault kinds the app handles (when fault visits are on) that the configuration lacks. A web run without `web.specs` lists interaction journeys under "Not checked". A configured `colorSchemeStorage`, even with other values, is left alone; routes match by path without query. `--skip config` turns it off.
-5. **Web:** builds the app with its API URL pointed at a fake origin (and intercepts same-origin `web.api.paths`), serves it, and visits every route × viewport × colour scheme in Chromium (by default) with the recorded API responses and the clock frozen at record time. Reports uncaught errors, console errors, failed requests, API errors, requests missing from the fixtures, same-origin data requests answered by the app's HTML page, pages that scroll sideways or cut content off at the right edge (naming the elements), blank pages and configured error text. With `web.browsers`/`web.devices` it repeats this in Firefox, WebKit or emulated devices. Saves a full-page screenshot of each, and reports a route whose colour schemes produce byte-identical screenshots on every visit.
+5. **Web:** builds the app with its API URL pointed at a fake origin (and intercepts same-origin `web.api.paths`), serves it, and visits every route × viewport × colour scheme in Chromium (by default) with the recorded API responses and the clock frozen at record time. Reports uncaught errors, console errors, failed requests, API errors, requests missing from the fixtures, same-origin data requests answered by the app's HTML page, pages that scroll sideways or cut content off at the right edge (naming the elements), blank pages and configured error text. Configured browser/device matrices repeat the full set; level high samples one deterministic variant per route on secondary targets. Saves a full-page screenshot of each, and reports a route whose colour schemes produce byte-identical screenshots on every visit.
 6. **Compare:** the same run on the merge base (cached by commit, config, fixtures and Spotter version) splits findings into new / already on base / fixed. Only new ones are listed.
 7. **Completeness:** records what the head side actually executed (checks, rules, page visits, specs, session assertions), fixture identity and age, and whether the baseline comparison succeeded. Missing coverage makes the run INCOMPLETE even when the same gap exists on the base. See [Coverage and completeness](#coverage-and-completeness).
 
@@ -58,7 +60,7 @@ and are ignored by Git; share only the templates in `examples/`. Fields:
 | `web.viewports`, `web.colorSchemes` | Widths (or `{ width, height }`) and `light`/`dark` |
 | `web.browsers`, `web.devices` | Browsers (`chromium`, `firefox`, `webkit`; default `chromium`) and Playwright device names to sweep and run specs in. See [browsers and devices](docs/browser-checks.md#browsers-and-devices) |
 | `web.sessions` | Additional `{ name, localStorage }` or `{ name, storageState, storageOrigin }` sessions; anonymous visits always run. Optional `expectSelector` must match on every sweep visit of that session, proving it reached its signed-in state; optional `apiHeaders` override `web.api.headers` while recording that session |
-| `web.specs` | See [spec options](docs/project-specs.md); optional `{ files: ['qa/ticket.spec.mjs'], grep: 'Verify' }`; project-owned Playwright tests run against the same build and recorded fixtures |
+| `web.specs` | See [spec options](docs/project-specs.md); optional `{ files: ['qa/ticket.spec.mjs'], grep: 'Verify', matrixGrep: '@matrix' }`; project-owned Playwright tests run against the same build and recorded fixtures, including data variants defined with route overrides |
 | `web.settleMs`, `web.pageTimeoutMs`, `web.concurrency` | Healthy-page settling delay, navigation timeout and parallel visits |
 | `web.accessibility`, `web.keyboard` | Enable axe and advisory Tab/focus checks (both default true) |
 | `web.performance` | Opt-in budgets on build bytes, per-route requests and bytes, and (at level high) page-load and spec interaction timings; advisory unless `blocking: true`. See [performance budgets](docs/browser-checks.md#performance-budgets) |
@@ -126,7 +128,7 @@ behaves exactly as before and `completeness.level` is `null`.
 | --- | --- |
 | `low` | Only `coverage.required` checks (the rules stage only when `rules` is required), no config inference, the `levels.low.routes` smoke set at the first viewport and colour scheme for every session in the first browser (no devices), no fault visits; specs only when required or narrowed by `levels.low.specs.grep` (which also drops `coverage.minSpecs`) |
 | `medium` | The full configured run |
-| `high` | Medium plus Chromium, Firefox, WebKit and emulated iPhone 13 and Pixel 7 for every web project, with no configuration, and every [fault kind](docs/browser-checks.md) (disconnects, 401, 403, 429, malformed) when fault visits are on. Configured performance timings run only at high. Data scenarios are listed as unsupported until QA-13 adds them. Recovery scenarios are [project specs](docs/project-specs.md#recovery-scenarios), run at medium and high |
+| `high` | Medium plus Chromium, Firefox, WebKit and emulated iPhone 13 and Pixel 7. The primary browser (Chromium by default) runs the full viewport/theme matrix; each secondary target visits every route with a deterministic sampled variant. High runs every [fault kind](docs/browser-checks.md) on the configured fault routes. Project specs run fully in the primary browser and, when `web.specs.matrixGrep` is set, that subset runs on secondary targets. Configured performance timings run only at high. Data and recovery scenarios are [project specs](docs/project-specs.md), run at medium and high. |
 
 ```yaml
 levels:

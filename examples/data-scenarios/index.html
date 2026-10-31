@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data scenarios</title>
+  <style>
+    body { font: 16px system-ui; margin: 0; }
+    main { margin: auto; max-width: 42rem; padding: 1rem; }
+    ul { list-style: none; padding: 0; }
+    li { border-bottom: 1px solid #ddd; padding: .5rem 0; overflow-wrap: anywhere; }
+    .score { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Results</h1>
+    <p id="status" role="status">Loading…</p>
+    <ul aria-label="Results"></ul>
+  </main>
+  <script>
+    const status = document.querySelector('#status');
+    const list = document.querySelector('ul');
+
+    fetch('/api/results').then((response) => response.json()).then((data) => {
+      const items = Array.isArray(data.items) ? data.items : null;
+      if (!items) {
+        status.textContent = 'Data unavailable';
+        status.setAttribute('role', 'alert');
+        return;
+      }
+      status.textContent = items.length ? `${items.length} results` : 'No results';
+      list.replaceChildren(...items.map((item) => {
+        const row = document.createElement('li');
+        row.innerHTML = `<strong></strong> <span class="score"></span> <span class="note"></span>`;
+        row.querySelector('strong').textContent = item.name;
+        row.querySelector('.score').textContent = String(item.score);
+        row.querySelector('.note').textContent = item.note ?? '—';
+        return row;
+      }));
+    });
+  </script>
+</body>
+</html>

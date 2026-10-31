@@ -31,11 +31,13 @@ test('medium selects the full run', () => {
   assert.deepEqual(plan.record, { name: 'medium', source: 'selected', exclusions: [], unsupported: [] });
 });
 
-test('high is medium plus the browser matrix and the unsupported list', () => {
+test('high is medium plus the browser matrix', () => {
   const config = make();
   const plan = resolvePlan(config, 'high');
-  assert.deepEqual({ ...plan.config, web: { ...plan.config.web, browsers: config.web.browsers, devices: config.web.devices, faultInjection: config.web.faultInjection } }, config);
-  assert.deepEqual(UNSUPPORTED_AT_HIGH.map((item) => item.ticket), ['QA-13']);
+  const { sampleSecondary, ...highWeb } = plan.config.web;
+  assert.equal(sampleSecondary, true);
+  assert.deepEqual({ ...plan.config, web: { ...highWeb, browsers: config.web.browsers, devices: config.web.devices, faultInjection: config.web.faultInjection } }, config);
+  assert.deepEqual(UNSUPPORTED_AT_HIGH, []);
   assert.deepEqual(plan.record.unsupported, UNSUPPORTED_AT_HIGH);
   assert.deepEqual(plan.record.exclusions, []);
 });
@@ -106,7 +108,7 @@ test('summarizePlan renders low and no-level lines', () => {
     'level low (selected) · 1 checks · no rules · 1 routes × 1 viewports × 1 schemes × 1 sessions · excluded: unit, format, rules, config, about, more, 1280, dark, fault visits, specs');
   assert.equal(summarizePlan(resolvePlan(config, undefined)),
     'no level · 3 checks · rules · 3 routes × 2 viewports × 2 schemes × 1 sessions + fault visits · specs (grep all)');
-  assert.match(summarizePlan(resolvePlan(config, 'high')), /unsupported: data edge cases \(QA-13\)$/);
+  assert.doesNotMatch(summarizePlan(resolvePlan(config, 'high')), /unsupported/);
 });
 
 test('high adds every browser and the standard devices to any web project, keeping configured ones first', () => {
@@ -117,7 +119,7 @@ test('high adds every browser and the standard devices to any web project, keepi
   assert.deepEqual(HIGH_DEVICES, ['iPhone 13', 'Pixel 7']);
   assert.deepEqual(plan.record.exclusions, []);
   assert.notEqual(plan.hash, resolvePlan(config, 'medium').hash);
-  assert.match(summarizePlan(resolvePlan(make(), 'high')), / · matrix chromium, firefox, webkit, iPhone 13, Pixel 7 · /);
+  assert.match(summarizePlan(resolvePlan(make(), 'high')), / · matrix chromium, firefox, webkit, iPhone 13, Pixel 7 \(secondary sampled\) · /);
 });
 
 test('high leaves a config without web alone', () => {
@@ -151,15 +153,15 @@ test('high injects every fault kind only when fault visits are configured', () =
 });
 
 
-test('routine fault routes are explicit in the plan and high restores exhaustive route coverage', () => {
+test('routine fault routes remain explicit at high while every fault kind runs', () => {
   const config = make({ web: { faultInjection: { routes: ['home'], concurrency: 8, terminalSelector: '#failed', minObservationMs: 1000 } } });
   assert.match(summarizePlan(resolvePlan(config, 'medium')), /fault routes: home/);
   const high = resolvePlan(config, 'high');
-  assert.equal(high.config.web.faultInjection.routes, undefined);
+  assert.deepEqual(high.config.web.faultInjection.routes, ['home']);
   assert.equal(high.config.web.faultInjection.concurrency, 8);
   assert.equal(high.config.web.faultInjection.minObservationMs, 1000);
   assert.deepEqual(config.web.faultInjection.routes, ['home']);
-  assert.doesNotMatch(summarizePlan(high), /fault routes:/);
+  assert.match(summarizePlan(high), /fault routes: home/);
 });
 
 const perf = { budgets: [{ metric: 'build.js', max: 1 }, { metric: 'timing.home.load', maxIncrease: 200 }], timings: { samples: 5, routes: ['home'] } };
@@ -187,6 +189,6 @@ test('timings run only at high: medium strips them with an exclusion, no level s
 
 test('summarizePlan lists performance budgets and timings', () => {
   const config = make({ web: { performance: perf } });
-  assert.match(summarizePlan(resolvePlan(config, 'high')), /specs \(grep all\) · performance \(2 budgets\) \+ timings ×5 · /);
+  assert.match(summarizePlan(resolvePlan(config, 'high')), /specs \(grep all\) · performance \(2 budgets\) \+ timings ×5$/);
   assert.match(summarizePlan(resolvePlan(config, 'medium')), /performance \(2 budgets\) · excluded: performance timings/);
 });

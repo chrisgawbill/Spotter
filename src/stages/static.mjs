@@ -11,10 +11,13 @@ import { parsers } from '../parsers/index.mjs';
 export async function runStaticStage({ config, workdir, logDir, log = () => {} }) {
   const findings = [];
   const summary = [];
+  const timings = {};
 
   if (config.install) {
     log('dependency install');
+    const installStarted = Date.now();
     const install = await runCommand(config.install, { cwd: workdir, logFile: path.join(logDir, 'install.log') });
+    timings.install = Date.now() - installStarted;
     log('dependency install', 'done');
     if (install.exitCode !== 0) {
       const [failure] = parsers.generic(install);
@@ -29,18 +32,20 @@ export async function runStaticStage({ config, workdir, logDir, log = () => {} }
         }),
       );
       summary.push({ name: 'install', status: 'FAIL' });
-      return { findings, summary, installed: false };
+      return { findings, summary, timings, installed: false };
     }
   }
 
   for (const check of config.checks) {
     log(`check: ${check.name}`);
+    const checkStarted = Date.now();
     const checkFindings = await runCheck({ check, config, workdir, logDir });
+    timings[check.name] = Date.now() - checkStarted;
     log(`check: ${check.name}`, 'done');
     findings.push(...checkFindings);
     summary.push({ name: check.name, status: checkFindings.length ? 'FAIL' : 'PASS', count: checkFindings.length });
   }
-  return { findings, summary, installed: true };
+  return { findings, summary, timings, installed: true };
 }
 
 async function runCheck({ check, config, workdir, logDir }) {

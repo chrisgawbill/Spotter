@@ -60,8 +60,8 @@ export function normalizeConfig(config, { projectName, source = '' }) {
     const specs = config.web.specs;
     if (specs?.mode !== undefined) problems.push('`web.specs.mode` is selected by --live-auth, not project configuration');
     if (specs !== undefined && (!specs || typeof specs !== 'object' || Array.isArray(specs)
-      || !validSpecFiles(specs.files) || (specs.grep !== undefined && typeof specs.grep !== 'string'))) {
-      problems.push('`web.specs` needs nonempty project-relative `files` and optional string `grep`');
+      || !validSpecFiles(specs.files) || [specs.grep, specs.matrixGrep].some((grep) => grep !== undefined && typeof grep !== 'string'))) {
+      problems.push('`web.specs` needs nonempty project-relative `files` and optional string `grep` and `matrixGrep`');
     }
     if (specs?.workers !== undefined && (!Number.isSafeInteger(specs.workers) || specs.workers < 1)) {
       problems.push('`web.specs.workers` must be a positive integer');

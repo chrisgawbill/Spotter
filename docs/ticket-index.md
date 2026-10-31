@@ -20,7 +20,7 @@ ticket.
 | [QA-10](#qa-10--critical-interaction-journeys) | DONE | Interaction testing |
 | [QA-11](#qa-11--fault-recovery-and-response-ordering) | DONE | Recovery testing |
 | [QA-12](#qa-12--cross-browser-and-device-matrix) | DONE | Browser compatibility |
-| [QA-13](#qa-13--data-edge-case-scenarios) | IDEA | Data robustness |
+| [QA-13](#qa-13--data-edge-case-scenarios) | DONE | Data robustness |
 | [QA-14](#qa-14--deployed-application-smoke-checks) | IDEA | Deployment verification |
 | [QA-15](#qa-15--performance-regression-budgets) | ACTIVE | Performance checks |
 | [QA-16](#qa-16--failure-traces-and-flaky-test-tracking) | IDEA | Failure diagnosis |
@@ -40,6 +40,11 @@ ticket.
 | [QA-30](#qa-30--stale-project-configuration-warning) | DONE | Config drift from the tested branch |
 | [QA-31](#qa-31--consistent-report-counts) | DONE | Report accuracy |
 | [QA-32](#qa-32--expected-api-statuses) | DONE | Fewer false API-error findings |
+| [QA-33](#qa-33--run-notifications) | IDEA | Know when a run finishes |
+| [QA-34](#qa-34--attach-follow-on-console-errors-to-their-cause) | IDEA | One finding per cause |
+| [QA-35](#qa-35--accepted-findings) | IDEA | Clean signal on the base branch |
+| [QA-36](#qa-36--record-only-missing-requests) | IDEA | Add fixtures without re-recording |
+| [QA-37](#qa-37--rerun-only-what-failed) | IDEA | Fast fix-and-confirm loop |
 
 Statuses and acceptance below are recorded decisions. Historical test output is
 in [ticket evidence](ticket-evidence.md); usage instructions are in the [README](../README.md).
@@ -515,7 +520,7 @@ Historical verification: [evidence](ticket-evidence.md#qa-12).
 
 ## QA-13 — Data edge-case scenarios
 
-**Status:** IDEA
+**Status:** DONE
 
 **Goal:** Exercise realistic response variants beyond the recorded happy-path data.
 
@@ -534,6 +539,8 @@ Historical verification: [evidence](ticket-evidence.md#qa-12).
 - Seed empty-list crashes, long-text overflow and missing-field crashes; each
   is new against a healthy baseline with stable scenario fingerprints.
 - Variants remain deterministic and never alter original recordings.
+
+Historical verification: [evidence](ticket-evidence.md#qa-13).
 
 ---
 
@@ -1157,3 +1164,180 @@ too broad.
   `origin/creature-bench` run has no `api-error` findings for them, and its
   500 fault visits are still checked. HockeyStatsWebApp main has no new
   findings.
+
+---
+
+## QA-33 — Run notifications
+
+**Status:** IDEA (moved from Paddock PD-08 by the Product Owner 2026-10-27).
+
+**Goal:** Send a Web Push through the notifier when a run finishes or fails, so
+a phone user knows when to read the report.
+
+**Scope:**
+
+- The push names the project, ref and result, and links to the run page (from
+  there, **Open in Paddock** is one tap away).
+
+---
+
+## QA-34 — Attach follow-on console errors to their cause
+
+**Status:** IDEA
+
+**Goal:** One cause produces one finding. Console errors that an app logs
+because a request failed are listed under that request's finding, not as
+separate medium findings.
+
+**Context:** In a HockeyStatsWebApp high run (2026-10-27), one
+`unrecorded-request` for `GET /schedule/playbyplay/…` also produced two medium
+`console-error` findings ("API request failed: 404 Not Found" and "API request
+failed: Error") on the same visits. An agent reads three issues and fixes one.
+
+**Scope:**
+
+- On one visit, a console error logged after an unrecorded, faulted or
+  `api-error` request of that visit, and whose text names a failed request or
+  that request's status or path, is attached to the request's finding as a
+  consequence line in `report.md` and a list in `report.json`.
+- A console error with no such request on its visit is reported as before.
+- Attached errors keep their own fingerprints in `report.json`, so a console
+  error that appears without its cause on a later run is still new.
+
+**Out of scope:** Other probable causes (uncaught errors, blank pages);
+project-specific matching rules.
+
+**Verify:**
+
+- Web-stage unit tests: attached after an unrecorded request; attached after a
+  fault visit; not attached when the request succeeded or is on another visit;
+  report counts stay consistent (QA-31).
+- The HockeyStatsWebApp branch above reports one medium finding for the
+  missing endpoint with its console errors attached. HockeyStatsWebApp main
+  has no new findings.
+
+---
+
+## QA-35 — Accepted findings
+
+**Status:** IDEA
+
+**Goal:** A project can record findings it has reviewed and accepted, so runs on
+the base branch and branches show only what still needs attention, while
+accepted items stay visible and expire.
+
+**Context:** Runs on main compare against the same commit and list every
+finding as new: 78–100 on HockeyStatsWebApp main, mostly low `keyboard-focus`.
+There is no way to say "known and accepted" short of `ignoreConsole` or
+`ignoreRequests`, which remove findings silently and by URL or text, not by
+finding.
+
+**Scope:**
+
+- Optional `accepted: [{ id, reason, until? }]` in the project config, where
+  `id` is a finding fingerprint from `report.json` and `until` an ISO date.
+- An accepted finding is not new and never fails a run. `report.md` shows one
+  line, `accepted: <n>`, with expired and unused entries named; `report.html`
+  and `report.json` list them with reasons.
+- After `until` passes, the finding is reported normally, and the entry is
+  named as expired.
+- Accepting never changes completeness (QA-09).
+- The HTML report and the dashboard run page show each finding's `id`, with a
+  copyable `accepted` entry. The configuration editor and `config-fields.mjs`
+  describe the field; validation rejects malformed entries.
+- The baseline cache key ignores `accepted`, so editing it does not rerun the
+  base.
+
+**Out of scope:** Accepting from the dashboard by writing the config; accepting
+by pattern or by check.
+
+**Verify:**
+
+- Config, findings and report unit tests: accepted finding not new and not
+  failing; expired entry reported; unused entry named; incomplete run stays
+  incomplete; exit codes unchanged otherwise.
+- HockeyStatsWebApp main with its current `keyboard-focus` findings accepted
+  reports them as `accepted` and passes. A seeded defect on a branch is still
+  new.
+
+---
+
+## QA-36 — Record only missing requests
+
+**Status:** IDEA
+
+**Goal:** Add the requests a run reported as missing from the fixtures without
+re-recording the rest, so existing responses, their frozen clock and the
+fixture identity of unrelated data do not churn.
+
+**Context:** A HockeyStatsWebApp branch that added one endpoint produced 116
+`unrecorded-request` visits. The current advice is to re-record everything,
+which replaces every response, moves the recorded time, and changes
+screenshots and baselines unrelated to the branch.
+
+**Scope:**
+
+- `spotter record <project> --missing [<run>]` (default `runs/latest`) reads
+  that run's `unrecorded-request` findings and records only those request keys
+  from the configured source (`recordFrom`, `web.api.backend` or
+  `--host-backend`), using the same headers and sessions as a full record.
+- New responses are merged into `fixtures/api.json`; existing entries and the
+  recorded time stay unchanged. Each added key is listed and marked in the
+  fixtures with its own record time.
+- A missing key that the source cannot answer (error status, connection
+  failure) is listed and not stored, and the command exits non-zero.
+- The `unrecorded-request` repro line suggests `--missing` when the run has
+  such findings.
+- The data summary (QA-29) and contract drift (QA-04) are updated for the
+  merged file.
+
+**Out of scope:** Recording on a branch's own backend automatically after a
+run; editing or removing existing entries.
+
+**Verify:**
+
+- Fixture and CLI unit tests: only listed keys requested; existing entries
+  byte-identical; failed key reported with non-zero exit; session-specific
+  keys recorded with that session's headers.
+- On the HockeyStatsWebApp branch above, `record --missing` adds the
+  play-by-play key only, and a rerun has no `unrecorded-request` findings and
+  no visual changes on other routes.
+
+---
+
+## QA-37 — Rerun only what failed
+
+**Status:** IDEA
+
+**Goal:** After a fix, an agent can confirm it by rerunning only the parts of a
+previous run that produced new findings or incomplete coverage, in seconds
+or minutes rather than a full run.
+
+**Context:** High runs take about 23 minutes on HockeyStatsWebApp and 10 on
+triple-crown. After fixing one finding, the only way to check it is a run of
+the same level or a hand-built `--level low` that may not cover the failing
+route.
+
+**Scope:**
+
+- `spotter run <project> --ref <ref> --rerun [<run>]` (default `runs/latest`)
+  builds a plan from that run's new findings and incomplete coverage items:
+  the checks, rule stage, routes, viewports, colour schemes, sessions,
+  browsers or devices, fault kinds and spec files involved.
+- The plan line names the source run; everything else appears as `excluded`
+  coverage items (QA-08), so the run is not reported as full coverage.
+- The rerun's report lists each source finding as fixed, still present or
+  not checked.
+- The dashboard's run page offers **Rerun failed** for a finished run with
+  new findings.
+
+**Out of scope:** Selecting tests by changed files; rerunning single spec tests
+by name.
+
+**Verify:**
+
+- Levels and CLI unit tests: plan built from findings of each stage; source
+  findings classified fixed, still present or not checked; exclusions listed.
+- On a seeded HockeyStatsWebApp branch, a rerun after reverting one seeded
+  defect reports it fixed, the others still present, and takes a fraction of
+  the source run's time.

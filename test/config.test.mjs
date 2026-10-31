@@ -8,12 +8,14 @@ const config = (specs) => normalizeConfig({
 }, { projectName: 'demo' });
 
 test('project specs accept repository-relative files and reject invalid paths', () => {
-  const specs = { files: ['qa/ticket.spec.mjs', 'qa/another.spec.js'] };
+  const specs = { files: ['qa/ticket.spec.mjs', 'qa/another.spec.js'], matrixGrep: '@matrix' };
   assert.deepEqual(config(specs).web.specs.files, specs.files);
+  assert.equal(config(specs).web.specs.matrixGrep, '@matrix');
   for (const files of [null, 'qa/ticket.spec.mjs', [null], [1], [''], ['/tmp/outside.spec.mjs'], ['../outside.spec.mjs'], ['qa/../../outside.spec.mjs']]) {
     assert.throws(() => config({ files }), /specs/);
   }
   assert.doesNotThrow(() => config(undefined));
+  assert.throws(() => config({ files: ['qa/test.mjs'], matrixGrep: 1 }), /matrixGrep/);
 });
 
 test('project spec workers must be positive integers', () => {

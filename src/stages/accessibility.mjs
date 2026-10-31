@@ -54,6 +54,15 @@ export async function runKeyboardSmoke(page, report) {
   if (missingFocus.length) report({ check: 'keyboard-focus', severity: 'low', title: 'check keyboard focus visibility', detail: `No outline or box shadow on: ${missingFocus.slice(0, 3).join('; ')}. Verify manually; other visual focus styles may be valid.` });
 }
 
-function describeElement(element) {
-  return `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ''} ${(element.getAttribute('aria-label') || element.innerText || element.getAttribute('name') || '').trim().slice(0, 60)}`;
+/** "tag#id \"accessible name\"" for finding details. Runs in the page, so it must stay self-contained. */
+export function describeElement(element) {
+  const text = (value) => (value ?? '').replace(/\s+/g, ' ').trim();
+  const labelledBy = (element.getAttribute('aria-labelledby') ?? '').split(/\s+/).filter(Boolean)
+    .map((id) => element.ownerDocument.getElementById(id)?.textContent).join(' ');
+  const name = [element.getAttribute('aria-label'), labelledBy, element.labels?.[0]?.innerText, element.getAttribute('placeholder'),
+    element.getAttribute('title'), element.innerText, element.getAttribute('name')].map(text).find(Boolean) ?? '';
+  // Library and framework ids (mantine-x91aq68rp, :r0:, «r0», radix-…) change per render and say nothing.
+  const generated = /^(?:mantine-|radix-|headlessui-|react-aria|:r|«r|_r_)/.test(element.id)
+    || element.id.split(/[-_:.]/).some((part) => part.length >= 5 && /[a-z]/i.test(part) && (part.match(/\d/g)?.length ?? 0) / part.length >= 0.25);
+  return `${element.tagName.toLowerCase()}${element.id && !generated ? `#${element.id}` : ''}${name ? ` "${name.slice(0, 60)}"` : ''}`;
 }

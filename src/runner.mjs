@@ -12,7 +12,7 @@ export const STAGES = ['static', 'rules', 'web', 'config'];
 /**
  * Runs every enabled stage on one side of the comparison (the branch head or
  * its merge base) in a fresh export. `sha` null means the working tree.
- * Returns { findings, stages } where `stages` maps stage name to its summary.
+ * Returns { findings, stages, timings }: `stages` maps stage name to its summary, `timings` to elapsed ms.
  */
 export async function runSide({ config, sha, sideDir, workRoot, fixtures, changes, skip, timingGate, log }) {
   const exportDir = path.join(workRoot, sha ? sha.slice(0, 12) : 'working-tree');
@@ -27,11 +27,14 @@ export async function runSide({ config, sha, sideDir, workRoot, fixtures, change
   log('export', 'done');
   const findings = [];
   const stages = {};
+  const timings = {};
+  const since = (started) => Date.now() - started;
   try {
     if (config.web && config.web.specs?.mode !== 'live') {
       if (skip.has('config')) stages.config = 'skipped';
       else {
         log('config inference');
+        const started = Date.now();
         try {
           const drift = compareWithInference(config.web, await inferWebSettings(exportDir, workdir));
           findings.push(...drift);
@@ -39,6 +42,7 @@ export async function runSide({ config, sha, sideDir, workRoot, fixtures, change
         } catch (error) {
           stages.config = { error: error.message };
         }
+        timings.config = since(started);
         log('config inference', 'done');
       }
     }
@@ -47,14 +51,17 @@ export async function runSide({ config, sha, sideDir, workRoot, fixtures, change
     if (skip.has('static')) stages.static = 'skipped';
     const staticResult = await runStaticStage({ config: skip.has('static') ? { ...config, checks: [] } : config, workdir, logDir, log });
     findings.push(...staticResult.findings);
+    if (Object.keys(staticResult.timings).length) timings.static = staticResult.timings;
     log('static checks', 'done');
     if (!skip.has('static')) stages.static = staticResult.summary;
 
     if (skip.has('rules')) stages.rules = 'skipped';
     else {
       log('rules');
+      const started = Date.now();
       const rulesResult = await runRulesStage({ config, workdir, changes });
       findings.push(...rulesResult.findings);
+      timings.rules = since(started);
       log('rules', 'done');
       stages.rules = { ruleCount: config.rules.forbiddenText.length, boundaryCount: config.rules.importBoundaries.length };
     }
@@ -66,12 +73,14 @@ export async function runSide({ config, sha, sideDir, workRoot, fixtures, change
       findings.push(...webResult.findings);
       log(`web sweep (${config.web.routes.length} routes)`, 'done');
       stages.web = webResult.summary;
+      const { buildMs, healthyMs, faultsMs, specsMs, performanceMs, matrix } = webResult.summary.timings ?? {};
+      timings.web = { build: buildMs, sweep: healthyMs, faults: faultsMs, specs: specsMs, performance: performanceMs, matrix };
     }
   } finally {
     timingGate?.done();
     await rm(exportDir, { recursive: true, force: true });
   }
-  return { findings: dedupeFindings(findings), stages, screenshotDir: path.join(sideDir, 'screenshots') };
+  return { findings: dedupeFindings(findings), stages, timings, screenshotDir: path.join(sideDir, 'screenshots') };
 }
 
 /** Reads a cached base-side result, or null. */
