@@ -1,9 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { test as base, expect } from 'playwright/test';
-import { replayFixtures } from '../fixtures.mjs';
+import { recordingHeaders, replayFixtures } from '../fixtures.mjs';
 import { sessionStorageState } from '../sessions.mjs';
 
 const settings = JSON.parse(await readFile(process.env.SPOTTER_SPEC_SETTINGS, 'utf8'));
+const recorded = settings.recordFile ? JSON.parse(await readFile(settings.recordFile, 'utf8')) : null;
 
 /** Project specs import this module through SPOTTER_TEST_MODULE. */
 export const test = base.extend({
@@ -26,10 +27,17 @@ export const test = base.extend({
   _spotter: [async ({ context, spotterLive, spotterSession }, use) => {
     if (!spotterLive && settings.fixtures?.recordedAt) await context.clock.setFixedTime(new Date(settings.fixtures.recordedAt));
     const missing = [];
+    const session = settings.web.sessions.find((item) => item.name === spotterSession);
     if (!spotterLive && settings.web.api) await replayFixtures(context, {
       fakeOrigin: settings.web.api.fakeOrigin, apiPaths: settings.web.api.paths ?? [], appOrigin: settings.appOrigin,
       fixtures: spotterSession === 'anonymous' ? settings.fixtures : { ...settings.fixtures, entries: settings.fixtures?.sessions?.[spotterSession] ?? {} },
       onUnrecorded: (key) => missing.push(key),
+      ...(recorded ? { recordMissing: {
+        liveOrigin: settings.web.api.recordFrom,
+        entries: spotterSession === 'anonymous' ? recorded.entries : (recorded.sessions[spotterSession] ??= {}),
+        ...recordingHeaders(settings.web.api, session),
+        onRecorded: () => writeFile(settings.recordFile, JSON.stringify(recorded)),
+      } } : {}),
     });
     await use();
     expect(missing, 'API requests missing from Spotter fixtures').toEqual([]);

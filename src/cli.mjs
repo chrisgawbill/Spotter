@@ -6,9 +6,9 @@ import { listProjectNames, loadProjectConfig } from './config.mjs';
 import { LEVELS, resolvePlan, summarizePlan } from './levels.mjs';
 import { assessBaseline, assessCompleteness, describeFixtures } from './completeness.mjs';
 import { compareWithBaseline, hasFailingFinding, sortFindings } from './findings.mjs';
-import { loadFixtures, saveFixtures, summarizeFixtureData } from './fixtures.mjs';
+import { fixturesAreCurrent, loadFixtures, saveFixtures, summarizeFixtureData } from './fixtures.mjs';
 import { compareContracts, snapshotContracts } from './contracts.mjs';
-import { exportCommit, findMergeBase, listAddedLines, listCommitMessages, resolveCommit } from './git.mjs';
+import { exportCommit, exportWorkingTree, findMergeBase, listAddedLines, listCommitMessages, resolveCommit } from './git.mjs';
 import { projectDirs, spotterCodeHash, spotterHome, toHostPath } from './paths.mjs';
 import { createActivity } from './activity.mjs';
 import { startBackend } from './backend.mjs';
@@ -108,7 +108,22 @@ async function runCommandLine(argv) {
     config.web.specs = { ...config.web.specs, mode: 'live' };
     options.noBaseline = true;
   }
-  return options.command === 'run' ? runProject(config, options) : recordProject(config, options);
+  if (options.command === 'run') {
+    await refreshFixtures(config, options);
+    return runProject(config, options);
+  }
+  return recordProject(config, options);
+}
+
+/** Refreshes API fixtures only when the tree about to run differs from their source tree. */
+async function refreshFixtures(config, options) {
+  if (options.liveAuth || options.skip.has('web') || !config.web?.api?.recordFrom) return;
+  const ref = options.ref ?? 'HEAD';
+  const sha = options.workingTree ? null : await resolveCommit(config.repo, ref);
+  const fixtures = await loadFixtures(projectDirs(config.name).fixtures).catch(() => null);
+  if (fixturesAreCurrent(fixtures, sha, options.workingTree)) return;
+  log(`fixtures: refreshing for ${options.workingTree ? 'the working tree' : `${ref} @ ${sha.slice(0, 7)}`}`);
+  await recordProject(config, { ...options, ref });
 }
 
 /** `spotter prune`: delete old artifacts for one project or all of them. */
@@ -164,11 +179,12 @@ async function runProject(config, options) {
       timingGate: gate.side(),
       log: (step, state) => { log(`head: ${step} (${state ?? 'started'})`); activity.event('head', step, state); },
     });
+    const baseStarted = Date.now();
     const basePromise = baseRuns ? loadOrRunBase({ ...sideArguments, baseSha, directories, planHash: plan.hash, timingGate: gate.side() }).catch((error) => {
       log(`base: failed — ${error.message}`);
       activity.event('base', 'base run failed', 'done');
       return { error };
-    }) : null;
+    }).then((result) => ({ ...result, ms: Date.now() - baseStarted })) : null;
     const [head, base] = await Promise.all([headPromise, basePromise]);
     await rm(workRoot, { recursive: true, force: true });
 
@@ -201,6 +217,8 @@ async function runProject(config, options) {
       ...(performance ? { performance } : {}),
       visual: await compareScreenshots(path.join(runDir, 'screenshots'), base?.side?.screenshotDir ?? (baseSha === headSha && !options.workingTree ? path.join(runDir, 'screenshots') : null), runDir),
       durationMs: Date.now() - startedAt,
+      // Informational only: never part of fingerprints, the baseline cache key, status or exit codes.
+      timings: { ...head.timings, baseline: base ? (base.cached ? 'cached' : base.ms) : null },
       paths: {
         reportHtml: toHostPath(path.join(runDir, 'report.html')),
         reportJson: toHostPath(path.join(runDir, 'report.json')),
@@ -272,8 +290,8 @@ async function recordProject(config, options) {
   if (!config.web?.api?.recordFrom) throw new Error('`web.api.recordFrom` is not configured for this project');
   const directories = projectDirs(config.name);
   const ref = options.ref ?? config.baseBranch;
-  const sha = await resolveCommit(config.repo, ref);
-  const previous = await loadFixtures(directories.fixtures);
+  const sha = await resolveCommit(config.repo, options.workingTree ? 'HEAD' : ref);
+  const previous = await loadFixtures(directories.fixtures).catch(() => null);
   const existing = options.merge ? previous : null;
   const entries = { ...(existing?.entries ?? {}) };
   const sessions = Object.fromEntries(Object.entries(existing?.sessions ?? {}).map(([name, responses]) => [name, { ...responses }]));
@@ -281,12 +299,13 @@ async function recordProject(config, options) {
   // Freeze the page clock exactly as replay will, so date-based requests match.
   const recordedAt = existing?.recordedAt ?? new Date().toISOString();
 
-  const exportDir = path.join(directories.work, `record-${sha.slice(0, 12)}`);
+  const exportDir = path.join(directories.work, `record-${sha.slice(0, 12)}-${randomUUID().slice(0, 8)}`);
   const logDir = path.join(directories.fixtures, 'logs');
   await mkdir(logDir, { recursive: true });
   await rm(exportDir, { recursive: true, force: true });
   try {
-    await exportCommit(config.repo, sha, exportDir);
+    if (options.workingTree) await exportWorkingTree(config.repo, exportDir);
+    else await exportCommit(config.repo, sha, exportDir);
     const workdir = path.join(exportDir, config.workdir);
     log(`installing ${ref} @ ${sha.slice(0, 7)}`);
     const install = await runStaticStage({ config: { ...config, checks: [] }, workdir, logDir });
@@ -311,7 +330,7 @@ async function recordProject(config, options) {
     await rm(exportDir, { recursive: true, force: true });
   }
 
-  const recorded = { recordedAt, source: config.web.api.recordFrom, ref, sha, entries, sessions };
+  const recorded = { recordedAt, source: config.web.api.recordFrom, ref: options.workingTree ? 'working-tree' : ref, sha: options.workingTree ? null : sha, entries, sessions };
   recorded.summary = summarizeFixtureData(recorded, config.web.api.backend);
   const drift = compareContracts(previous, recorded);
   await writeFile(path.join(directories.fixtures, 'contracts.json'), JSON.stringify(snapshotContracts(recorded), null, 2));

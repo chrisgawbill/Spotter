@@ -40,9 +40,11 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
   const targets = listTargets(web);
   targets.forEach((target) => target.device && deviceOptions(target.device));
   log('web build');
+  const buildStarted = Date.now();
   const build = await buildApp({ config, workdir, logDir });
+  const buildMs = Date.now() - buildStarted;
   log('web build', 'done');
-  if (build.finding) return { findings: [build.finding], summary: { built: false, pages: 0 } };
+  if (build.finding) return { findings: [build.finding], summary: { built: false, pages: 0, timings: { buildMs } } };
   const perf = mode === 'sweep' ? web.performance : null;
   const buildMetrics = perf ? await measureBuild(path.join(workdir, web.build.outDir)) : null;
 
@@ -55,9 +57,17 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
     if (perf) for (const job of jobs) if (job.target.id === targets[0].id && job.colorScheme === web.colorSchemes[0] && job.session.name === 'anonymous' && !primaryJobs.has(job.route.name)) primaryJobs.set(job.route.name, job);
     await mkdir(screenshotDir, { recursive: true });
     const healthyStarted = Date.now();
-    const results = await runPool(jobs, web.concurrency, (job) =>
-      visitPage({ browsers, job, config, fixtures, mode, recordedEntries, appOrigin: server.origin, screenshotDir, measure: primaryJobs.get(job.route.name) === job, log }),
-    );
+    const targetSpans = {};
+    const results = await runPool(jobs, web.concurrency, async (job) => {
+      const started = Date.now();
+      try {
+        return await visitPage({ browsers, job, config, fixtures, mode, recordedEntries, appOrigin: server.origin, screenshotDir, measure: primaryJobs.get(job.route.name) === job, log });
+      } finally {
+        const span = (targetSpans[job.target.label] ??= { started, ended: 0 });
+        span.started = Math.min(span.started, started);
+        span.ended = Date.now();
+      }
+    });
     const healthyMs = Date.now() - healthyStarted;
     const faultJobs = [];
     if (mode === 'sweep' && web.api && web.faultInjection) {
@@ -83,22 +93,29 @@ export async function runWebStage({ config, workdir, logDir, screenshotDir, fixt
     }
     const countFailed = (list, check) => list.filter((result) => result.findings.some((finding) => finding.check === check)).length;
     const targetPages = targets.map((target) => ({ id: target.id, label: target.label, pages: jobs.filter((job) => job.target.id === target.id).length }));
-    const shape = `${web.routes.length} routes × ${web.viewports.length} viewports × ${mode === 'record' ? 1 : web.colorSchemes.length} schemes × ${web.sessions.length} sessions${isDefaultMatrix(web) ? '' : ` in ${targetPages.map((target) => `${target.label} ${target.pages}`).join(', ')}`}`;
-    const projects = isDefaultMatrix(web) ? null : targets.map((target) => ({ name: target.id, use: target.device ? devices[target.device] : { browserName: target.browser } }));
+    const shape = `${web.routes.length} routes × ${web.viewports.length} viewports × ${mode === 'record' ? 1 : web.colorSchemes.length} schemes × ${web.sessions.length} sessions${isDefaultMatrix(web) ? '' : ` in ${targetPages.map((target, index) => `${target.label} ${target.pages}${index && web.sampleSecondary ? ' sampled' : ''}`).join(', ')}`}`;
+    const projects = isDefaultMatrix(web) ? null : targets.map((target, index) => ({
+      name: target.id,
+      use: target.device ? devices[target.device] : { browserName: target.browser },
+      ...(index && web.sampleSecondary && web.specs?.matrixGrep ? { grep: web.specs.matrixGrep } : {}),
+    }));
     if (mode === 'sweep' && web.specs) log('project specs');
     const specsStarted = Date.now();
-    const specs = mode === 'sweep' && web.specs ? await runSpecsStage({ config, workdir, logDir, fixtures, appOrigin: server.origin, projects }) : null;
+    const specs = web.specs ? await runSpecsStage({ config, workdir, logDir, fixtures: mode === 'record' ? { ...recordedEntries, recordedAt: fixtures.recordedAt } : fixtures, appOrigin: server.origin, projects: mode === 'sweep' ? projects : null, recordMissing: mode === 'record' ? recordedEntries : null }) : null;
     const specsMs = specs ? Date.now() - specsStarted : 0;
     if (specs) log('project specs', 'done');
     const schemeFindings = mode === 'sweep' ? await findIneffectiveSchemes(web, results) : [];
     let performance = null;
+    const performanceStarted = Date.now();
     if (perf) {
       const resources = { ...buildMetrics };
       for (const result of results) if (result.traffic) Object.assign(resources, routeMetrics(result.job.route.name, result.traffic));
       performance = { resources, ...await sampleTimings({ config, workdir, logDir, fixtures, appOrigin: server.origin, targets, projects, browsers, primaryJobs, timingGate, log }) };
     }
+    const performanceMs = perf ? Date.now() - performanceStarted : 0;
+    const matrix = isDefaultMatrix(web) ? null : Object.fromEntries(Object.entries(targetSpans).map(([label, span]) => [label, span.ended - span.started]));
     const budgetFindings = performance ? absoluteBudgetFindings(perf, performance, { project: config.name }) : [];
-    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(schemeFindings, specs?.findings ?? [], budgetFindings), summary: { built: true, timings: { healthyMs, faultsMs, specsMs }, faultEarlyCompletions: faultResults.filter((result) => result.completedEarly).length, faultRoutes: web.api && web.faultInjection ? web.faultInjection.routes ?? web.routes.map((route) => route.name) : [], pages: jobs.length, shape, targets: targetPages, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}), ...(performance ? { performance } : {}) } };
+    return { findings: [...results, ...faultResults].flatMap((result) => result.findings).concat(schemeFindings, specs?.findings ?? [], budgetFindings), summary: { built: true, timings: { buildMs, healthyMs, faultsMs, specsMs, performanceMs, ...(matrix ? { matrix } : {}) }, faultEarlyCompletions: faultResults.filter((result) => result.completedEarly).length, faultRoutes: web.api && web.faultInjection ? web.faultInjection.routes ?? web.routes.map((route) => route.name) : [], pages: jobs.length, shape, targets: targetPages, faultVisits: faultResults.length, pagesFailed: countFailed(results, 'navigation'), faultVisitsFailed: countFailed(faultResults, 'fault-navigation'), apiNotReplayed: [...new Set(results.flatMap((result) => result.apiNotReplayed ?? []))].sort(), sessionChecks, sessions: web.sessions.map((s) => s.name), accessibility: web.accessibility, keyboard: web.keyboard, variantCount: web.viewports.length * web.colorSchemes.length, ...(specs ? { specs: specs.summary } : {}), ...(performance ? { performance } : {}) } };
   } finally {
     await Promise.all([...browsers.values()].map((browser) => browser.close()));
     await server.close();
@@ -207,11 +224,15 @@ export function deviceOptions(name) {
 function listPageJobs(web, mode) {
   const schemes = mode === 'record' ? web.colorSchemes.slice(0, 1) : web.colorSchemes;
   const targets = mode === 'record' ? listTargets(web).slice(0, 1) : listTargets(web);
-  return targets.flatMap((target) => web.routes.flatMap((route) =>
-    (target.device ? [deviceOptions(target.device).options.viewport] : web.viewports.map(toViewport)).flatMap((viewport) =>
-      schemes.flatMap((colorScheme) => web.sessions.map((session) => ({ route, viewport, colorScheme, session, target }))),
-    ),
-  ));
+  return targets.flatMap((target, targetIndex) => web.routes.flatMap((route, routeIndex) => {
+    const viewports = target.device ? [deviceOptions(target.device).options.viewport] : web.viewports.map(toViewport);
+    if (web.sampleSecondary && targetIndex) {
+      const viewport = viewports[(routeIndex + targetIndex) % viewports.length];
+      const colorScheme = schemes[(routeIndex + targetIndex) % schemes.length];
+      return web.sessions.map((session) => ({ route, viewport, colorScheme, session, target }));
+    }
+    return viewports.flatMap((viewport) => schemes.flatMap((colorScheme) => web.sessions.map((session) => ({ route, viewport, colorScheme, session, target }))));
+  }));
 }
 
 function toViewport(viewport) {
@@ -482,10 +503,17 @@ function watchPageProblems(page, { web, appOrigin, report, onNotReplayed }) {
   page.on('requestfailed', (request) => {
     const url = request.url();
     const reason = request.failure()?.errorText ?? 'failed';
-    if (reason.includes('ERR_ABORTED') || isIgnored(web.ignoreRequests, url)) return;
+    if (isBrowserCancelled(reason) || isIgnored(web.ignoreRequests, url)) return;
     report(requestProblem(request, reason, appOrigin));
   });
 }
+
+/**
+ * The browser dropped the request itself (navigation, unmount, image swap): not a failure.
+ * Exact texts only, so injected disconnects and real network errors stay reported.
+ * Unrecorded API requests never reach this path; replay answers them with a 404.
+ */
+export const isBrowserCancelled = (errorText) => /^(?:net::ERR_ABORTED|NS_BINDING_ABORTED|cancelled|Load request cancelled)$/i.test(errorText);
 
 function requestProblem(request, reason, appOrigin) {
   const url = request.url();

@@ -10,8 +10,8 @@ const require = createRequire(import.meta.url);
 const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 
 /** Run the project's named Playwright tests against the already-built app. */
-export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrigin, projects = null }) {
-  const { findings, summary } = await runSpecs({ config, workdir, logDir, fixtures, appOrigin, projects });
+export async function runSpecsStage({ config, workdir, logDir, fixtures, appOrigin, projects = null, recordMissing = null }) {
+  const { findings, summary } = await runSpecs({ config, workdir, logDir, fixtures, appOrigin, projects, recordMissing });
   return { findings, summary };
 }
 
@@ -37,10 +37,10 @@ export async function runTimedSpecs({ config, workdir, logDir, fixtures, appOrig
   }
 }
 
-async function runSpecs({ config, workdir, logDir, fixtures, appOrigin, projects }, { dirName = 'specs', repeatEach, workers: workersOverride, grep: grepOverride } = {}) {
+async function runSpecs({ config, workdir, logDir, fixtures, appOrigin, projects, recordMissing = null }, { dirName = 'specs', repeatEach, workers: workersOverride, grep: grepOverride } = {}) {
   const specs = config.web.specs;
   const live = specs.mode === 'live';
-  const workers = workersOverride ?? (live ? 1 : (specs.workers ?? 1));
+  const workers = workersOverride ?? (live || recordMissing ? 1 : (specs.workers ?? 1));
   const grep = grepOverride ?? specs.grep;
   const required = specs.live?.env ?? [];
   if (live) for (const name of required) {
@@ -57,18 +57,20 @@ async function runSpecs({ config, workdir, logDir, fixtures, appOrigin, projects
   const privateDir = await mkdtemp(path.join(os.tmpdir(), 'spotter-spec-run-'));
   const reportFile = path.join(privateDir, 'results.json');
   const settingsFile = path.join(privateDir, 'settings.json');
+  const recordFile = path.join(privateDir, 'recorded.json');
   const configFile = path.join(dir, 'playwright.config.mjs');
   let result;
   let report;
   try {
-    await writeFile(settingsFile, JSON.stringify({ web: config.web, fixtures, appOrigin }));
+    if (recordMissing) await writeFile(recordFile, JSON.stringify(recordMissing));
+    await writeFile(settingsFile, JSON.stringify({ web: config.web, fixtures, appOrigin, recordFile: recordMissing ? recordFile : null }));
     const testMatch = (live ? specs.live.files : specs.files).map((file) => path.resolve(workdir, file).replaceAll('\\', '/'));
     await writeFile(configFile, `const config = ${JSON.stringify({
       testDir: workdir, testMatch, workers, fullyParallel: workers > 1, retries: 0, forbidOnly: true, ...(repeatEach ? { repeatEach } : {}),
       outputDir: path.join(privateDir, 'artifacts'), reporter: [['json', { outputFile: reportFile }]],
       use: { baseURL: live ? specs.live.baseURL : `${appOrigin}${config.web.base.replace(/\/?$/, '/')}`, trace: 'off', screenshot: 'off', video: 'off', serviceWorkers: 'block', reducedMotion: 'reduce' },
       ...(!live && projects?.length ? { projects } : {}),
-    })}; ${grep ? `config.grep = new RegExp(${JSON.stringify(grep)});` : ''} export default config;\n`);
+    })}; if (config.projects) config.projects = config.projects.map(({ grep, ...project }) => grep ? ({ ...project, grep: new RegExp(grep) }) : project); ${grep ? `config.grep = new RegExp(${JSON.stringify(grep)});` : ''} export default config;\n`);
     result = await runCommand(`${quote(process.execPath)} ${quote(path.join(path.dirname(require.resolve('playwright/package.json')), 'cli.js'))} test --config ${quote(configFile)}`, {
       cwd: workdir, env: {
         ...Object.fromEntries(required.map((name) => [name, live ? process.env[name] : undefined])),
@@ -77,6 +79,11 @@ async function runSpecs({ config, workdir, logDir, fixtures, appOrigin, projects
       },
     });
     report = await readFile(reportFile, 'utf8').then(JSON.parse).catch(() => null);
+    if (recordMissing) {
+      const recorded = await readFile(recordFile, 'utf8').then(JSON.parse);
+      Object.assign(recordMissing.entries, recorded.entries);
+      for (const [name, entries] of Object.entries(recorded.sessions ?? {})) Object.assign(recordMissing.sessions[name] ??= {}, entries);
+    }
     await writeFile(path.join(dir, 'run.log'), live ? 'Live authentication: raw output withheld to protect credentials.\n' : redact(result.output));
     if (!live && report) await writeFile(path.join(dir, 'results.json'), JSON.stringify(redact(report), null, 2));
   } finally {

@@ -6,6 +6,7 @@ const STAGE_ORDER = ['static', 'rules', 'web', 'config'];
 const MAX_GROUPS_SHOWN = 25;
 const MAX_DETAIL_LINES = 3;
 const MAX_PLACES_SHOWN = 6;
+const MEANINGFUL_MS = 5000;
 
 /** Known gaps, listed in every report so agents don't assume coverage that isn't there. */
 function notChecked(run) {
@@ -149,7 +150,21 @@ export function renderStageSummary(run) {
   if (run.performance) lines.push(`- ${summarizePerformance(run)}`);
   if (run.plan) lines.push(`- plan: ${run.plan}`);
   if (run.completeness) lines.push(`- coverage: ${summarizeCompleteness(run.completeness)}`);
+  const time = describeTimings(run.timings);
+  if (time) lines.push(`- ${time}`);
   return lines;
+}
+
+/** "time: build 41s · sweep 6m 2s · baseline cached" — stages under MEANINGFUL_MS are left out; null when nothing is left. */
+export function describeTimings(timings) {
+  if (!timings) return null;
+  const { static: checks = {}, web = {}, baseline } = timings;
+  const parts = [...Object.entries(checks), ['config', timings.config], ['rules', timings.rules],
+    ['build', web.build], ['sweep', web.sweep], ['faults', web.faults], ...Object.entries(web.matrix ?? {}), ['specs', web.specs], ['performance', web.performance]]
+    .filter(([, ms]) => ms >= MEANINGFUL_MS)
+    .map(([name, ms]) => `${name} ${formatDuration(ms)}`);
+  if (baseline != null) parts.push(`baseline ${baseline === 'cached' ? 'cached' : formatDuration(baseline)}`);
+  return parts.length ? `time: ${parts.join(' · ')}` : null;
 }
 
 /** "3 new issues (1 high, 2 medium) · …" — counted per issue (group), not per occurrence. */

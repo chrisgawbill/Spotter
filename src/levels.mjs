@@ -12,9 +12,7 @@ export const FAULT_KINDS = ['500', 'delay', 'abort', '401', '403', '429', 'malfo
 export const DEFAULT_FAULT_KINDS = ['500', 'delay'];
 
 /** Wider coverage high would add that is not implemented yet. Listed, never enabled. */
-export const UNSUPPORTED_AT_HIGH = [
-  { name: 'data edge cases', ticket: 'QA-13', reason: 'not implemented' },
-];
+export const UNSUPPORTED_AT_HIGH = [];
 
 const isObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const onlyKeys = (value, keys) => Object.keys(value).every((key) => keys.includes(key));
@@ -66,10 +64,9 @@ export function resolvePlan(config, selected) {
   if (name === 'low') effective = narrowToLow(config, skip, exclusions);
   else if (name === 'high' && config.web) {
     const union = (base, extra) => [...new Set([...base, ...extra])];
-    effective = { ...config, web: { ...config.web, browsers: union(config.web.browsers, BROWSERS), devices: union(config.web.devices, HIGH_DEVICES) } };
+    effective = { ...config, web: { ...config.web, browsers: union(config.web.browsers, BROWSERS), devices: union(config.web.devices, HIGH_DEVICES), sampleSecondary: true } };
     if (config.web.faultInjection) {
-      const { routes, ...fault } = config.web.faultInjection;
-      effective.web.faultInjection = { ...fault, kinds: FAULT_KINDS };
+      effective.web.faultInjection = { ...config.web.faultInjection, kinds: FAULT_KINDS };
     }
   }
   if (name !== 'high' && name !== 'low' && effective.web?.performance?.timings) {
@@ -131,8 +128,8 @@ export function summarizePlan({ config, skip, record }) {
   if (web) {
     parts.push(`${web.routes.length} routes × ${web.viewports.length} viewports × ${web.colorSchemes.length} schemes × ${web.sessions?.length ?? 1} sessions${web.faultInjection ? ` + fault visits${faultKindsNote(web.faultInjection.kinds)}` : ''}`);
     if (web.faultInjection?.routes) parts.push(`fault routes: ${web.faultInjection.routes.join(', ')}`);
-    if (!isDefaultMatrix(web)) parts.push(`matrix ${listTargets(web).map((t) => t.label).join(', ')}`);
-    if (web.specs) parts.push(web.specs.grep ? `specs (grep ${web.specs.grep})` : 'specs');
+    if (!isDefaultMatrix(web)) parts.push(`matrix ${listTargets(web).map((t) => t.label).join(', ')}${web.sampleSecondary ? ' (secondary sampled)' : ''}`);
+    if (web.specs) parts.push(web.specs.grep ? `specs (grep ${web.specs.grep})` : `specs${web.sampleSecondary && web.specs.matrixGrep ? ` (secondary grep ${web.specs.matrixGrep})` : ''}`);
     if (web.performance) parts.push(`performance (${web.performance.budgets.length} budgets)${web.performance.timings ? ` + timings ×${web.performance.timings.samples}` : ''}`);
   }
   if (record?.exclusions.length) parts.push(`excluded: ${record.exclusions.map((item) => item.name).join(', ')}`);

@@ -13,7 +13,9 @@ test('TICKET-12 Verify 1: standings are visible', async ({ page }) => {
 ```
 
 Enable them with `web.specs.files` in the project YAML. Optional `grep` selects
-test names using a regular expression. Set `web.specs.workers: 2` to run
+test names using a regular expression. Optional `matrixGrep` selects the
+smaller subset that runs in secondary browsers and devices at level high; the
+full suite still runs in the primary browser. Set `web.specs.workers: 2` to run
 independent tests in parallel, including tests in the same file. The default
 is 1; live authentication always uses 1 worker. Explicit Playwright serial
 groups retain their ordering. Parallel tests must isolate shared files,
@@ -103,6 +105,26 @@ Without specs, `web.faultInjection.kinds` adds disconnects, 401, 403, 429 and
 malformed responses to the sweep's fault visits. Those find crashes, blank
 pages and stuck loading, not whether the app recovers. See
 [browser checks](browser-checks.md).
+
+## Data edge-case scenarios
+
+Define realistic response variants in project specs with `page.route`; a route
+registered by the spec overrides Spotter's recorded replay without changing the
+recording. Cover the shapes the project actually supports: empty results, long
+text, missing optional fields, large lists, Unicode, zero values and unexpected
+response shapes. Keep the payloads and expected rendering in the project repo
+rather than asking Spotter to guess valid mutations.
+
+Give each variant its own named test so its finding fingerprint stays stable.
+In the test, collect uncaught and console errors, check horizontal overflow,
+assert the project-owned rendering, and attach a screenshot whose name includes
+the scenario. Tag the bounded set that low should run (for example `@critical`)
+and select it with `levels.low.specs.grep`; medium and high run the full suite.
+
+The [runnable example](../examples/data-scenarios/results.journey.mjs) covers all
+seven variants, normal error/layout checks and scenario-named screenshots. Its
+integration test seeds an empty-list crash, long-text overflow and missing-field
+crash and compares each with the healthy baseline.
 
 ## Performance timings
 

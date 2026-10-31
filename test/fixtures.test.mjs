@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { apiRequestMatcher, matchesApiPath, recordingHeaders, requestKey } from '../src/fixtures.mjs';
+import { apiRequestMatcher, fixturesAreCurrent, matchesApiPath, recordingHeaders, requestKey } from '../src/fixtures.mjs';
 
 test('matchesApiPath matches whole path segments only', () => {
   assert(matchesApiPath('/api', ['/api']));
@@ -84,4 +84,10 @@ test('old fixture files without a data summary still load', async () => {
     assert.equal(loaded.summary, undefined);
     assert.equal(loaded.entries['GET /a'].status, 200);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+
+test('fixtures are current only for the exact committed tree', () => {
+  assert.equal(fixturesAreCurrent({ sha: 'abc' }, 'abc'), true);
+  assert.equal(fixturesAreCurrent({ sha: 'abc' }, 'def'), false);
+  assert.equal(fixturesAreCurrent({ sha: 'abc' }, 'abc', true), false);
 });
